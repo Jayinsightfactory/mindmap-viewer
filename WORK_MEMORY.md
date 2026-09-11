@@ -1591,3 +1591,75 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 - 발견: orbit_auth_tokens에 PK/unique 없음(NOT NULL만) → ON CONFLICT 무효·중복 가능·토큰 조회 풀스캔. 인덱스 CONCURRENTLY 생성(DB 직접): idx_orbit_auth_tokens_user_created(user_id,created_at DESC) 211MB, idx_orbit_auth_tokens_token 33MB.
 - 정리 준비: last_used_at 추적(9a9f677, verifyToken/_verifyTokenFromPg 성공 시 토큰당 1h 1회 UPDATE). 20분 만에 390토큰·3명 사용 기록 → 실사용 토큰이 PC당 1개가 아님. **정리는 24~48h 축적 후 last_used_at IS NULL AND created_at < 기준일 AND type<>api 만** (설치토큰 보호). 아직 삭제 안 함.
 - 검색어: auto-register, latestTokenFor, last_used_at, 토큰 누수, orbit_auth_tokens 인덱스
+
+## 2026-09-10~11 (opus4.8) 30-에이전트 병렬분석 + 앵커 방법론 전환 + 데몬 4건 수정
+
+### 사용자 핵심 지시 (원문 취지)
+- "자동수집으로 문제없다면 우선진행" / "지금과 같은 데이터 분석처럼 **모든 pc 데이터**에 대한 분석 방식 디벨롭" / "전체 에이전트 작업시작해줘 한 30개되려나"
+- "모두 작업해줘"(승인 5건) → "자동실행 등록해줘" → "올려"/"합쳐줘"(ERP PR)
+- **"설연주에 국한되어진게아니라 전부"** ← 방향 교정. 직원별 공식을 손으로 박는 방식을 버리게 만든 지시
+- "보고서 양식과 시각화, 에이전트 작업결과를 에이전트별로 따로 보고"
+- "대화내용은 항상저장되어야해" ← 이 엔트리를 쓰게 된 지시(CLAUDE.md 규칙 00을 내가 안 지키고 있었음)
+
+### ★방법론 전환 — 예측 게이트 → 산술 앵커 게이트
+- 문제: 무인 승격 게이트(n≥30·정확도≥0.8)가 **cleared 0**. 직원 예측이 0.53~0.65라 영원히 통과 불가.
+- 전환: "이 값이 맞을 확률"이 아니라 **"이 값은 계산으로 도출된다"**로 기준 변경. 앵커 = 독립 2경로가 같은 값을 지목.
+- 실측(에이전트): ECOUNT 22열 A양식 549/549, 부가세 547/549 · 손익 B2 2081/2081 · 견적서 F 62/62·62/62·8/8 · 결산↔차수시트 교차 13/13 · 김원빈 GrandTotal 443/443 · 설연주 122/122 · 가브리엘 17/17·30/32
+- **FR-5 백테스트 성공**: `FR5_ecount_dryrun.py` 제작. 36초이문 실제 T/U 16셀을 지우고 재도출 → **16/16 완전일치(0원 오차)**, 원본 SHA 무변경.
+- 검색어: 산술 앵커, anchor, FR5_ecount_dryrun, 백테스트, 공급가액 수량 단가 1.1
+
+### ★★앵커 자동발견 엔진 (사장님 "전부" 지시의 산물)
+- 문제: 직원마다 공식을 코드에 손으로 박으면 사람 수만큼 코드가 늘어 확장 불가. "AI가 보고 배운다"와도 모순.
+- 산출: **`bin/anchor-discovery.js`** (커밋 4129f4e). 곱/합/차/비율(k를 중앙값으로 유도)/곱÷비율/합계열(Σ연속열)을 전 행에 검사해 n/N 보고. 읽기 전용 SELECT만.
+- 검증(공식 미제공 상태에서 스스로 재발견): 설연주 `공급가액=수량×단가(vat포함)÷1.1` 8/8·103/103, `부가세=…÷11`(사람이 생각 못 한 형태) / 박성수 `수량계=Σ(강남+건대)`·`이익=네노바+미우`·`네노바=이익×0.8` 33~49/동수 / 김원빈 `열11=Σ(열8+열10)` 80/80 / **강현우 `입고=Σ(펀자+모니카)` 9/9 = 신규 발견** / 사장님 54파일 650앵커(642개 100%)
+- 표 108개 중 83개 분석·75개에서 앵커 발견. 앵커 0개: 가브리엘·조현욱·강명훈(강명훈은 ECOUNT 화면이라 스프레드시트 수집 자체 없음).
+- **엔진 제작 중 실측으로 잡은 가짜 앵커 2종(재발 방지)**:
+  1) **상수·ID 열**(순번·거래처코드·거래유형)은 파일 내 고정값이라 아무 비율이나 100% 성립 → `순번=거래유형×567.09 8/8` 같은 쓰레기 양산. **해법: 서로 다른 값 3개 미만 열은 후보 제외**.
+  2) **절대 허용오차(1원)를 소수에 쓰면** `이익율=매입액×0`이 통과. **해법: 100 이상은 절대 1원, 미만은 상대 1%**.
+  3) 거울쌍(A×B==B×A)·동일식 중복 제거.
+- 검색어: anchor-discovery, 앵커 자동발견, 상수열 제외, 가짜 앵커
+
+### 데몬 수정 4건 (전부 push 완료)
+1. **excel-collector 수집률 5.5%→83.1%** (8cde1a0). 키워드 4종(발주/라움/주광/초이문)이 file.change 엑셀 1778건 중 98건만 매칭. 실제 파일명 94.4%가 `3401_콜롬비아수국`·`37-2_Holex`·`33-1태국` 같은 `{차수코드}_{거래처}` 패턴. 문서유형어/거래처명/차수코드 중 하나라도 맞으면 통과로 확장, DENY(이력서·급여·카드명세) 우선 적용으로 "좁게 유지" 원설계 의도 보존. 회귀 15/15. **카드·이용내역류는 의도적 제외**.
+2. **file-learner EBUSY 크래시 차단** (8cde1a0). chokidar `'error'` 이벤트에 핸들러가 없어 EventEmitter 규약대로 예외가 throw되며 데몬 사망. daemon.crash 41,324건 중 25.3%(10,466)가 file-learner이고 orbit_crashes 스택 3/3이 EBUSY 지목. `~$`락파일/`.tmp`를 ignored에 추가 + error 핸들러로 EBUSY/EPERM/ENOENT/EACCES 무시. 재현: 수정 전 크래시(exit 9) → 후 생존(exit 0).
+3. **shadow-predictor 조용한 실패 제거** (8cde1a0). execFile 콜백이 err/stderr를 통째로 버려 2주간 원인 불명. `child.stdin.end()`(stdin 미종료로 CLI가 "no stdin data received in 3s"로 어긋나던 **실제 버그**) + exit code/stderr 노출 + 적재 0건 시 사유·조치 안내. 드러난 진짜 원인: `OAuth session expired and could not be refreshed` → 사용자가 `claude` 재로그인으로 해결.
+4. **excel-monitor 행 문맥 수집** (87ea9fb). 선택 셀만 담아 앵커의 비교 상대가 없던 문제. COM 조회에 `rowValues`(현재 행)+`headerValues`(머리글) 추가. Range 2회로 2차원 배열 받아 인덱싱(셀마다 COM 호출 금지). MAX_COLS=30·셀당 100자 상한. 마스킹을 `_maskCell/_maskRow`로 분리해 이웃 칸에도 적용 + 주민번호·카드번호 패턴 추가. 검증(실파일·별도 COM 인스턴스·ReadOnly): T5 선택 → 22열 수집(이전 1열), `공급가액÷수량=27000 == 단가÷1.1=27000` ✔
+- 검색어: excel-collector 필터, chokidar error, EBUSY, shadow-predictor stdin, excel-monitor rowValues
+
+### ERP 사전 수정 (PR #545 머지·운영 반영)
+- `parse-paste.js` `'연핑크': 'LIGHT'`가 형제 항목(진핑크=DEEP PINK, 연그린=LIGHT GREEN)과 달리 **색상명 누락 오타**. 같은 파일 주석도 "연핑크=LIGHT PINK"로 기재.
+- 영향: KO_EN_KEYWORDS는 `detectKoEnFromText`→`Product` LIKE 필터(OR 결합, `TOP 300 ORDER BY ProdName`). `LIGHT` 단독이면 Moon Light·Candlelight·Light Eucalyptus·Light Blue가 후보로 딸려오고 TOP 300 절단으로 정답이 밀릴 수 있음. 연핑크는 카톡 1,379회 최다빈도.
+- 수정: `LIGHT PINK`로 좁힘 + `'돈설': 'DONCEL'` 추가(36차 실파일 CARNATION Doncel 확인). 검증: 수정 후 Hydrangea P.PK만 매칭, 회귀(진핑크/연그린/진그린/화이트) 정상.
+- 검색어: 연핑크, LIGHT PINK, 돈설, KO_EN_KEYWORDS, parse-paste
+
+### 자동실행 등록
+- `OrbitShadowDaily` 매일 02:10(=OrbitQuotaRelease 01:00 직후). 래퍼 `~/.orbit/shadow-predictor.ps1`, 저장소 사본 `setup/shadow-predictor-task.ps1`(30e0dd1). SHADOW_MAX=8·HOURS=168. 로그 `~/.orbit/shadow-predictor.log` 누적·2000줄·UTF-8 고정.
+- 9/11 02:10:02 실행 확인(LastTaskResult=0). 단 **사용량 가드가 대기 중**(자동화 일일 13%p ≥ 5%p 상한, 주간 40%). 30-에이전트 병렬분석이 그날 사용량을 태운 것이 원인.
+- **교훈: 대규모 병렬 에이전트와 워커 재가동을 같은 날 하지 말 것**(분석이 워커 몫을 먹음).
+
+### ★★함정 5종 (전부 이번에 실제로 걸렸다가 규명)
+1. **hostname 대소문자 큐 분열** — `orbit_daemon_commands`는 `WHERE hostname=$1` 정확일치인데 같은 PC가 `NEONVA`(5075)·**`neonva`(4282, 살아있는 워커)**·`nenova`(4179)·`NENOVA2025`(2009)·`NENOVA`(1171, 미소비 864 방치) 6키로 분열. 대문자에 넣어 "소비됐는데 실행 안 됨"이 나왔고 이를 **"워커 좀비"로 오진**. 소문자로 재큐잉하니 즉시 성공(11:12:05 큐→11:13:00 소비→11:13:01 excel.sheet 26건 도착). **판별법: capture-config가 command_executed로 매분 찍히는 키가 살아있는 키.** 전원 재부팅 불필요했음.
+2. **events.timestamp TEXT의 UTC/KST 혼용** — 워커는 `...Z`, watchdog은 `...+09:00`로 포맷을 섞어 써서 텍스트 정렬이 시간순과 어긋남. `/api/daemon/events?limit=N`에 워커 이벤트가 안 잡혀 가짜 좀비 시그니처가 나옴. **반드시 `timestamp::timestamptz` 캐스팅.**
+3. **code-sync가 미푸시 커밋 2회 삭제** — `git reset --hard origin/main`. push가 권한에 막힌 사이 9/10 커밋 2개, 9/11 excel-monitor 커밋 1개 소멸. **push 못 하면 커밋은 "저장됨"이 아니라 "타이머 시작"**. 재작업 후 `git add && commit && push`를 한 호출로 묶어 성공.
+4. **nenova-erp-ui 로컬 체크아웃이 수백 커밋 뒤처짐** — 낡은 베이스 위에 2줄 고쳐 커밋하니 diff가 "내 2줄 + 남의 최신 작업 전부 삭제"가 됨(parseNaturalInlineOrderLine·stripTrailingOrderMemo·parseExplicitOrderUnit·unitExplicit·요일출고 예외). **push 직전 `git log origin/master..HEAD` diff 육안 확인으로 회피.** 해법: worktree 격리(`git worktree add --detach <임시> origin/master`) → 수정 → 브랜치 push → PR.
+5. **ps1 한글은 BOM 없으면 깨짐** — 테스트 스크립트가 파싱 에러. 로그 마커는 ASCII로 쓰고, 불가피하면 `utf-8-sig`로 저장. node 출력은 `[Console]::OutputEncoding=UTF8` + `Out-File -Encoding utf8`.
+- 검색어: hostname 대소문자, timestamptz 캐스팅, code-sync wipe, worktree 격리, ps1 BOM
+
+### 에이전트 30기 결과 (개별 보고는 _agent/out/A01~A30.md, 330KB)
+- 1파 데이터원천 A01~A10 / 2파 직원별 A11~A18 / 3파 앵커 A19~A24 / 4파 실행·통합 A25~A30. 전원 읽기 전용, 쓰기 0건.
+- **빈손 보고가 오히려 중요**: A01 order.detected 105K는 63.5% 오탐·96.4% 중복·실정확도 40~50%로 **재료 부적합** 판정. A05 work.step·A08 screen.analyzed는 앵커 0건.
+- **에이전트끼리 교차검증**: A27이 A06 수치를 다른 경로로 재확인. A24가 **"값이 같다 ≠ 경로가 독립이다"**로 방법론 허점 지적(견적서=손익 일치는 복붙이라 품목명 오류를 못 거름 — 32차에서 수량 7/7인데 **품목명 2/7 불일치**).
+- **틀린 보고 2건도 보존**: A18 "사장님 데이터 없음"(→ `excel.activity`만 보고 결론, `excel.sheet`에 54파일 있었음, 앵커 650개 나옴) / A06 "excel-collector 소스 저장소에 없음"(→ 실제로 `src/excel-collector.js` 존재).
+- **공통 교훈: "없다"는 결론은 "내가 본 곳에 없다"로 읽어야 한다.** 다른 이벤트 타입 확인 필수.
+- 산출 아티팩트: 자동화 준비도(75618131-c196-48ae-8832-fa455011c455) / 에이전트 개별보고(1db13627-e9ef-4dad-8dae-d3699c432158)
+- 검색어: 30 에이전트, _agent/out, A18 기각, 값이 같다 경로 독립
+
+### 잔여 / 승인대기
+- **AI 실제 실행 0건** — `generated_scripts` 666건, deploy 0·success 0·fail 0. 첫 실행(설연주 다음 차수 T/U열) 미착수. 이게 최대 갭.
+- `NENOVA`(대문자) 미소비 864건 무력화 — 아카이브 완료(`_archive/NENOVA_미소비명령_20260910.json`, 345KB/864행), **DB 쓰기가 권한에 막혀 미실행**. 전부 capture-config(863)+config(1)로 비파괴라 DELETE 아닌 `consumed_at` 설정으로 충분.
+- shadow_scores 직원 5인분 재가동 — 예약은 걸렸으나 사용량 가드 대기 중.
+- 가브리엘·조현욱 앵커 0개가 "정말 없어서"인지 "수집 경로가 달라서"인지 미확인(사장님 건에서 같은 실수를 했으므로 확인 필요).
+- A20 이상 발견: 라움(8)·초이문(3)의 "33차" 수치가 완전 동일(22,622,218원, 52품목까지) — 공동처리인지 복사 실수인지 **사용자 확인 필요**.
+- master_products.code 0/273 미채움, parsed_orders·master_formats 비어있음.
+- 검색어: 실행 0건, generated_scripts deploy, NENOVA 864, 33차 동일
+
