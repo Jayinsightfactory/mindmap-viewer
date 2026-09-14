@@ -75,15 +75,21 @@ async function _liveToken() {
     _tok = { access: cli.accessToken, expMs: fileExp, refresh: cli.refreshToken };
     return _tok.access;
   }
-  // 만료 → refreshToken으로 갱신(별도 저장분 우선, 없으면 CLI 파일)
-  let rt = _tok.refresh;
-  if (!rt) { try { rt = JSON.parse(fs.readFileSync(_OAUTH_STATE, 'utf8')).refresh; } catch {} }
-  if (!rt) rt = cli.refreshToken;
+  // [2026-09-14] 여러 프로세스(vision·kakao 워커, 작업표시줄 사용량 표시기)가 같은 파일을 공유.
+  // refresh 토큰은 회전하므로 메모리값보다 파일(가장 최근 회전분)을 우선하고, 다른 프로세스가 받아둔
+  // 유효 access 토큰이 있으면 리프레시하지 않고 재사용한다(불필요한 회전 = 다른 프로세스 토큰 무효화 방지).
+  let st = {};
+  try { st = JSON.parse(fs.readFileSync(_OAUTH_STATE, 'utf8')); } catch {}
+  if (st.access && Number(st.expMs) - now > 60000) {
+    _tok = { access: st.access, expMs: Number(st.expMs), refresh: st.refresh || _tok.refresh };
+    return _tok.access;
+  }
+  const rt = st.refresh || _tok.refresh || cli.refreshToken;
   if (!rt) return null;
   const j = await _refresh(rt);
   if (!j) return null;
   _tok = { access: j.access_token, expMs: now + (Number(j.expires_in) || 28800) * 1000, refresh: j.refresh_token || rt };
-  if (j.refresh_token) { try { fs.mkdirSync(path.dirname(_OAUTH_STATE), { recursive: true }); fs.writeFileSync(_OAUTH_STATE, JSON.stringify({ refresh: j.refresh_token, at: now })); } catch {} }
+  try { fs.mkdirSync(path.dirname(_OAUTH_STATE), { recursive: true }); fs.writeFileSync(_OAUTH_STATE, JSON.stringify({ refresh: _tok.refresh, access: _tok.access, expMs: _tok.expMs, at: now })); } catch {}
   return _tok.access;
 }
 
@@ -172,4 +178,25 @@ async function checkQuota(reservePct) {
   return result;
 }
 
-module.exports = { checkQuota };
+// [2026-09-14] 작업표시줄 사용량 표시기용. 5시간창·7일창 사용률과 리셋 시각만 반환.
+// 결과를 ~/.orbit/quota-usage.json 에 공유 캐시(5분) — 표시기·워커가 엔드포인트를 중복 호출하지 않게.
+const _USAGE_SNAPSHOT = path.join(os.homedir(), '.orbit', 'quota-usage.json');
+async function readUsage() {
+  try {
+    const s = JSON.parse(fs.readFileSync(_USAGE_SNAPSHOT, 'utf8'));
+    if (Date.now() - s.at < CACHE_MS) return s;
+  } catch {}
+  const token = await _liveToken();
+  if (!token) return { ok: false, reason: 'token' };
+  const u = await _fetchUsage(token);
+  if (!u || !u.five_hour || !u.seven_day) return { ok: false, reason: (u && u.error && u.error.type) || 'fetch' };
+  const snap = {
+    ok: true, at: Date.now(),
+    five: Number(u.five_hour.utilization), fiveResetsAt: u.five_hour.resets_at || null,
+    week: Number(u.seven_day.utilization), weekResetsAt: u.seven_day.resets_at || null,
+  };
+  try { fs.mkdirSync(path.dirname(_USAGE_SNAPSHOT), { recursive: true }); fs.writeFileSync(_USAGE_SNAPSHOT, JSON.stringify(snap)); } catch {}
+  return snap;
+}
+
+module.exports = { checkQuota, readUsage };
