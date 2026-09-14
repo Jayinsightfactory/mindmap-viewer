@@ -618,7 +618,7 @@ function _postSpool(serverUrl, token, body) {
     } catch { resolve(false); }
   });
 }
-async function uploadPendingToSpool(limit = 15) {
+async function uploadPendingToSpool(limit = 30) { // [2026-09-14] 15→30: 3분당 한도에 막혀 이미지 미도달(사장님 승인 A안)
   // 분석 PC(owner)는 --local로 자기 캡처를 직접 처리 → 스풀 업로드 스킵(중복 방지)
   try { if (fs.existsSync(path.join(os.homedir(), '.orbit', '.no-spool-upload'))) return 0; } catch {}
   // RAM 92%+ 에서 PNG 1000장을 readdir/base64 하면 화면이 끊김
