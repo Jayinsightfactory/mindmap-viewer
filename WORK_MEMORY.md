@@ -1796,3 +1796,12 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 - 레버② bin/vision-worker.js: _buildPrompt에 [창제목]·[직전화면]·[타이핑] 맥락 블록, 스키마에 entities(거래처·품목·수량·차수·금액)·actionDone·changeFromPrev·nextLikely. '보이는것만 추측금지' 명시. _lastByUser로 직전요약 스레딩(큐/스풀/로컬). max_tokens 1024→1536. typedContext는 vision item에 원문필드 없어 미연결(hook만 열어둠)
 - ★남은 검증(미검증): 직원 크롬이 강제설치 확장을 **자동갱신**해야 웹 step 유입 시작(Chrome 업데이트주기=수시간/재시작). owner 크롬 재시작은 사장님 작업중이라 안 함. 첫 web work.step(source=ext-work) 도착을 백그라운드 워처로 감시중. 데스크톱 nenova.exe는 UIA 0/9라 영영 좌표만 → Vision(레버②)이 그쪽 유일 리더
 - 다음: 웹 step 유입 확인되면 work-flow에서 '주문등록' 실제 흐름 확인. Vision 엔티티는 다음 분석분부터 채워짐(과거분 소급 안 됨)
+
+## 2026-09-15 (8) 데이터 최신화 — 전체 30일 백필 (promote 배치화 1ed2a5a + purposes 500 수정 4cd41f)
+검색어: 데이터 최신화, promote, ops-ontology, 백필, work.action, untilHours, OOM 배치, 목적 타임라인 500
+- purposes 500: routes/purposes.js _getSes가 async getSessionsForUser를 await 안 함 → sessions.slice 500. async+await+배열가드로 수정(4cd41f). 이후 200·purposes 0(관리자 계정엔 Claude세션 목적 데이터 없음=정상)
+- "기존 데이터 모두 적용": POST /api/ops-ontology/promote는 events(30일 보존)를 work.action으로 승격하나 **청크 없이 전량 로드=OOM 위험**(48h만도 3.1만건, 30일 ~47만건). 
+- ★수정: promote(pool,hours,opts)에 시간창 상한 노출(opts.sinceHours/untilHours, 엔드포인트 쿼리파라미터). cron·기본은 untilHours=0 그대로. 멱등 upsert라 경계중복 안전
+- 실행: [0~96h) 앞서 완료 + [96~720h)를 48h씩 13창 순차(창마다 /api/events/health 200 확인 후 진행). 508초, src 누적 279,905건 처리. work.action 294,876→296,747(+1,871, 대부분 재upsert=cron이 이미 최신 유지중이었음 확인). 자동화후보 3,383→3,896
+- ★함정(응답 오독 주의): 엔드포인트가 `res.json({...r, ...e})`인데 enrichHandoff(e)도 `actions` 키를 반환해 **promote(r)의 actions를 덮어씀** → 창마다 actions~10,867로 동일하게 보이는 건 enrichHandoff의 최근24h 수치(promote 실제 처리량 아님). 실제 처리량은 sourceEvents(src)와 work.action 총계 델타로 봐야 정확. (수정 후보: 엔드포인트에서 promote actions를 promotedActions로 별키 반환)
+- 검증: 주/월 시간표·회사흐름은 work.action 읽으니 즉시 반영(캐시45s). 시간별·일별·작업흐름은 원본 직접=상시 최신. Vision 화면해석은 owner PC CLI워커 별도경로(여기서 강제 불가)
