@@ -8379,6 +8379,7 @@ app.use('/api/ops-ontology', createOpsOntologyRouter({ getPool: dbModule.getDb, 
 app.use('/api/verification', createVerificationRouter({ getDb: dbModule.getDb, isAdminReq: isAdminReqAsync }));
 app.use('/api/flow', require('./routes/flow-map')({ getPool: dbModule.getDb, isAdminToken: env.isAdminToken })); // 업무 흐름 청사진 API
 app.use('/api/timetable', require('./routes/work-timetable')({ getPool: dbModule.getDb, isAdminReq: isAdminReqAsync })); // 직원 업무시간 타임테이블 (시간/일/주/월)
+app.use('/api/work-flow', require('./routes/work-flow')({ getPool: dbModule.getDb, isAdminReq: isAdminReqAsync })); // 작업 흐름: 클릭→입력 순서 (관리자 전용)
 
 // ─── 데이터 관리 (Export / Delete / Summary) ─────────────────��───────────────
 const createDataManagementRouter = require('./routes/data-management');

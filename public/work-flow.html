@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>작업 흐름</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{--bg:#0d1117;--panel:#161b22;--line:#2a3240;--txt:#e6edf3;--muted:#8b949e;--acc:#58a6ff;--ok:#3fb950;--warn:#d29922;--dim:#6e7681}
+body{background:var(--bg);color:var(--txt);font-family:'Segoe UI',system-ui,'Malgun Gothic',sans-serif;font-size:13.5px;line-height:1.55}
+header{display:flex;align-items:center;gap:10px;padding:10px 16px;border-bottom:1px solid var(--line);flex-wrap:wrap;position:sticky;top:0;background:var(--bg);z-index:5}
+h1{font-size:15px;margin-right:6px}
+select,button,input{background:var(--panel);border:1px solid var(--line);color:var(--txt);padding:5px 10px;border-radius:7px;font-size:12.5px;font-family:inherit}
+button{cursor:pointer} input{color-scheme:dark}
+.sub{color:var(--muted);font-size:12px}
+.wrap{max-width:1000px;margin:0 auto;padding:14px 16px 40px}
+.empty{color:var(--muted);text-align:center;padding:50px 10px}
+.legend{color:var(--muted);font-size:11.5px;margin:0 0 12px}
+.legend b{font-weight:600}
+.sess{border:1px solid var(--line);border-radius:10px;margin-bottom:12px;background:var(--panel);overflow:hidden}
+.sh{display:flex;gap:10px;align-items:baseline;flex-wrap:wrap;padding:10px 14px;cursor:pointer}
+.sh .ttl{font-weight:650;font-size:14px}
+.sh .meta{color:var(--muted);font-size:12px}
+.sh .stat{margin-left:auto;color:var(--muted);font-size:11.5px;white-space:nowrap}
+.steps{list-style:none;border-top:1px solid var(--line);padding:6px 0}
+.steps li{display:grid;grid-template-columns:34px 62px 1fr;gap:6px;padding:4px 14px;align-items:baseline}
+.steps li:hover{background:#1c2633}
+.n{color:var(--dim);font-size:11.5px;text-align:right}
+.tm{color:var(--muted);font-size:11.5px;font-variant-numeric:tabular-nums}
+.k{display:inline-block;min-width:44px;font-size:11px;font-weight:700;padding:0 6px;border-radius:5px;margin-right:6px;text-align:center}
+.k-click{background:rgba(88,166,255,.15);color:var(--acc)}
+.k-input{background:rgba(63,185,80,.15);color:var(--ok)}
+.k-type{background:rgba(210,153,34,.15);color:var(--warn)}
+.k-focus{background:rgba(139,148,158,.15);color:var(--muted)}
+.k-screen{background:rgba(163,113,247,.15);color:#a371f7}
+.lbl{font-weight:600}
+.val{font-family:ui-monospace,Consolas,monospace;font-size:12.5px;background:#0d1117;border-radius:4px;padding:0 5px}
+.conf{font-size:10.5px;margin-left:5px;padding:0 5px;border-radius:4px;border:1px solid var(--line)}
+.c-uia{color:var(--ok)} .c-vision{color:var(--warn)} .c-none{color:var(--dim)}
+.win{color:var(--dim);font-size:11px;margin-left:6px}
+.thumb{color:var(--acc);font-size:11px;margin-left:6px;cursor:zoom-in;text-decoration:underline}
+.more{display:block;margin:4px 14px 8px;color:var(--acc);background:none;border:none;padding:0;font-size:12px}
+#lb{position:fixed;inset:0;background:rgba(0,0,0,.85);display:none;align-items:center;justify-content:center;z-index:20;cursor:zoom-out}
+#lb img{max-width:95vw;max-height:92vh}
+@media (max-width:600px){ .steps li{grid-template-columns:24px 54px 1fr;padding:4px 8px} .sh .stat{margin-left:0} }
+</style>
+</head>
+<body>
+<header>
+  <h1>작업 흐름</h1>
+  <select id="user"><option value="">직원 선택</option></select>
+  <button id="prev">◀</button><input type="date" id="date"><button id="next">▶</button>
+  <button id="today">오늘</button>
+  <span class="sub" id="stat"></span>
+</header>
+<div class="wrap">
+  <p class="legend">클릭한 대상 이름: <b class="c-uia">정확</b> = 앱이 알려준 실제 버튼·칸 이름 · <b class="c-vision">추정</b> = 화면 분석 좌표로 맞춘 이름 · <b class="c-none">이름 없음</b> = 좌표만 기록됨(수집 확장 전)</p>
+  <div id="root"><div class="empty">직원을 선택하세요</div></div>
+</div>
+<div id="lb" onclick="this.style.display='none'"><img id="lbimg" alt=""></div>
+<script>
+const TK = localStorage.getItem('orbit_token') || '';
+const H = { headers: { Authorization: 'Bearer ' + TK } };
+const $ = (s) => document.querySelector(s);
+const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const kst = (iso) => new Date(iso).toLocaleTimeString('ko-KR', { timeZone: 'Asia/Seoul', hour12: false });
+const todayKst = () => new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 10);
+const KIND = { click: '클릭', input: '입력', type: '타이핑', focus: '선택', screen: '화면' };
+const CONF = { uia: '정확', vision: '추정', none: '이름 없음' };
+const SHOW = 40;
+
+$('#date').value = todayKst();
+
+async function loadUsers() {
+  const keep = $('#user').value;
+  const r = await fetch(`/api/timetable/day?date=${$('#date').value}`, H);
+  if (r.status === 403) { $('#root').innerHTML = '<div class="empty">관리자 토큰이 필요합니다</div>'; return; }
+  const d = await r.json().catch(() => ({ rows: [] }));
+  const sel = $('#user');
+  sel.innerHTML = '<option value="">직원 선택</option>' + (d.rows || [])
+    .sort((a, b) => (b.totalMin || 0) - (a.totalMin || 0))
+    .map((u) => `<option value="${esc(u.userId)}">${esc(u.name || u.userId.slice(0, 8))} (${u.totalMin || 0}분)</option>`).join('');
+  if (keep && [...sel.options].some((o) => o.value === keep)) sel.value = keep;
+  else if (sel.options.length > 1) sel.selectedIndex = 1;
+  load();
+}
+
+function stepHtml(s, i) {
+  let body = '';
+  if (s.kind === 'click') {
+    body = s.label ? `<span class="lbl">[${esc(s.label)}]</span>${s.ctl ? ` <span class="win">${esc(s.ctl)}</span>` : ''}` : `<span class="win">(${s.x}, ${s.y})</span>`;
+    body += `<span class="conf c-${s.conf}">${CONF[s.conf] || ''}</span>${s.count > 1 ? ` <span class="win">×${s.count}</span>` : ''}`;
+  } else if (s.kind === 'input') {
+    body = `<span class="lbl">[${esc(s.label)}]</span> = <span class="val">${esc(s.value)}</span>`;
+  } else if (s.kind === 'focus') {
+    body = `<span class="lbl">[${esc(s.label)}]</span>`;
+  } else if (s.kind === 'type') {
+    body = `<span class="val">${esc(s.text)}</span>`;
+  } else if (s.kind === 'screen') {
+    body = `${esc(s.screen)}${s.activity ? ` — <span class="sub">${esc(s.activity)}</span>` : ''}` +
+      (s.thumbnailUrl ? `<span class="thumb" data-src="${esc(s.thumbnailUrl)}">이미지</span>` : '');
+  }
+  const win = s.kind !== 'screen' && s.win ? `<span class="win">${esc(s.win)}</span>` : '';
+  return `<li><span class="n">${i + 1}</span><span class="tm">${kst(s.t)}</span><span><span class="k k-${s.kind}">${KIND[s.kind]}</span>${body}${win}</span></li>`;
+}
+
+function render(d) {
+  const ss = d.sessions || [];
+  const c = d.counts || {};
+  $('#stat').textContent = `세션 ${ss.length}개 · 원천: 입력묶음 ${c.chunks || 0} · 칸/버튼 기록 ${c.uiaSteps || 0} · 화면분석 ${c.screens || 0}`;
+  if (!ss.length) { $('#root').innerHTML = `<div class="empty">${esc(d.date)} 기록된 작업 흐름이 없습니다</div>`; return; }
+  $('#root').innerHTML = ss.slice().reverse().map((s, si) => {
+    const st = s.stats || {};
+    const dur = s.durationSec >= 60 ? Math.round(s.durationSec / 60) + '분' : s.durationSec + '초';
+    const all = s.steps.map(stepHtml);
+    return `<div class="sess">
+      <div class="sh" data-i="${si}"><span class="ttl">${esc(s.title)}</span>
+        <span class="meta">${kst(s.start)}–${kst(s.end)} · ${dur} · ${esc((s.apps || []).join(', '))}</span>
+        <span class="stat">클릭 ${st.clicks} (이름 ${st.labeled}) · 입력칸 ${st.inputs} · 타이핑 ${st.typing} · 화면 ${st.screens}</span></div>
+      <ol class="steps">${all.slice(0, SHOW).join('')}</ol>
+      ${all.length > SHOW ? `<button class="more" data-rest="${esc(JSON.stringify(all.slice(SHOW)))}">나머지 ${all.length - SHOW}단계 더 보기</button>` : ''}
+    </div>`;
+  }).join('');
+}
+
+async function load() {
+  const uid = $('#user').value; if (!uid) return;
+  $('#root').innerHTML = '<div class="empty">불러오는 중…</div>';
+  try {
+    const r = await fetch(`/api/work-flow/day?userId=${encodeURIComponent(uid)}&date=${$('#date').value}`, H);
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || r.status);
+    render(d);
+  } catch (e) { $('#root').innerHTML = `<div class="empty">불러오기 실패: ${esc(e.message || e)}</div>`; }
+}
+
+$('#root').addEventListener('click', (e) => {
+  const t = e.target;
+  if (t.classList.contains('thumb')) { $('#lbimg').src = t.dataset.src; $('#lb').style.display = 'flex'; }
+  if (t.classList.contains('more')) { t.previousElementSibling.insertAdjacentHTML('beforeend', JSON.parse(t.dataset.rest).join('')); t.remove(); }
+});
+function shift(n) { const d = new Date($('#date').value + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() + n); $('#date').value = d.toISOString().slice(0, 10); loadUsers(); }
+$('#prev').onclick = () => shift(-1);
+$('#next').onclick = () => shift(1);
+$('#today').onclick = () => { $('#date').value = todayKst(); loadUsers(); };
+$('#date').onchange = loadUsers;
+$('#user').onchange = load;
+loadUsers();
+</script>
+</body>
+</html>
