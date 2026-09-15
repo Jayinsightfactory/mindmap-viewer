@@ -14,15 +14,19 @@ const { groupEventsByPurpose } = require('../src/purpose-engine');
 module.exports = function createPurposesRouter({ getAllEvents, getEventsBySession, getSessions, getEventsForUser, getSessionsForUser, resolveUserId }) {
   const router = Router();
 
-  // 사용자별 세션 조회 헬퍼
-  function _getSes(req) {
+  // 사용자별 세션 조회 헬퍼 — getSessionsForUser는 async(Promise)라 반드시 await한다.
+  // (await 없이 Promise를 넘겨 sessions.slice가 500 나던 버그 수정 2026-09-15)
+  async function _getSes(req) {
     const uid = resolveUserId ? resolveUserId(req) : 'local';
-    return (getSessionsForUser && uid !== 'local') ? getSessionsForUser(uid) : (typeof getSessions === 'function' ? getSessions() : []);
+    const raw = (getSessionsForUser && uid !== 'local')
+      ? await getSessionsForUser(uid)
+      : (typeof getSessions === 'function' ? await Promise.resolve(getSessions()) : []);
+    return Array.isArray(raw) ? raw : []; // 어떤 경로든 배열 보장
   }
 
   // ── 목적 타임라인 ────────────────────────────────────────────────────────────
   // GET /api/purposes/timeline?session_id=xxx&limit=50
-  router.get('/purposes/timeline', (req, res) => {
+  router.get('/purposes/timeline', async (req, res) => {
     try {
       const limit     = Math.min(parseInt(req.query.limit) || 50, 200);
       const sessionId = req.query.session_id;
@@ -35,7 +39,7 @@ module.exports = function createPurposesRouter({ getAllEvents, getEventsBySessio
         purposes = groupEventsByPurpose(events, { limit });
       } else {
         // 전체: 사용자별 세션으로 분리 처리 후 합산
-        const sessions = _getSes(req);
+        const sessions = await _getSes(req);
         const perSess  = sessions.slice(0, 10).map(sess => {
           try {
             const evs = typeof getEventsBySession === 'function'
@@ -57,9 +61,9 @@ module.exports = function createPurposesRouter({ getAllEvents, getEventsBySessio
 
   // ── 세션별 목적 요약 ─────────────────────────────────────────────────────────
   // GET /api/purposes/sessions
-  router.get('/purposes/sessions', (req, res) => {
+  router.get('/purposes/sessions', async (req, res) => {
     try {
-      const sessions = _getSes(req);
+      const sessions = await _getSes(req);
 
       const result = sessions.slice(0, 30).map(sess => {
         let events = [];
