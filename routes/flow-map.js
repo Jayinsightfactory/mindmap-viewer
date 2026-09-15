@@ -21,8 +21,6 @@ const express = require('express');
 const { smartQwertyToHangul: qwertyToHangul } = require('../src/hangul'); // [2026-08-10] 입력값 한글 역변환 → [2026-09-15] 한/영 자동판별
 const { _clusterMouseClicks } = require('../src/work-learner'); // 마우스 클릭 핫스팟(자동화 좌표)
 
-const MASTER_TOKEN = 'orbit_967930333cab4ff63bc0bcae68c4779e3307d77095375f0d';
-
 function tryObj(x) { if (!x) return {}; if (typeof x === 'object') return x; try { return JSON.parse(x); } catch { return {}; } }
 function userOfAct(actId) { const p = String(actId || '').split(':'); return p[1] || ''; } // act:{userId}:{sec}
 
@@ -69,7 +67,7 @@ function createFlowMapRouter(deps = {}) {
   async function auth(req) {
     const raw = (req.headers.authorization || '').replace(/^Bearer\s+/i, '').trim() || req.query.token || '';
     if (!raw) return null;
-    if (raw === MASTER_TOKEN || isAdminToken(raw)) {
+    if (require('../config/environment').isMasterToken(raw) || isAdminToken(raw)) {
       return String(req.query.tenant || 'WS-NENOVA-2026').slice(0, 60);
     }
     const { verifyTokenAsync } = require('../src/auth');

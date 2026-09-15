@@ -2648,8 +2648,7 @@ app.get('/api/daemon/pg-token-check', async (req, res) => {
 // POST /api/admin/pg-restore-token — 토큰 기반으로 orbit_auth_users 복원 (마스터 토큰 전용)
 app.post('/api/admin/pg-restore-token', async (req, res) => {
   const raw = (req.headers.authorization || '').replace('Bearer ', '').trim();
-  const MASTER = 'orbit_967930333cab4ff63bc0bcae68c4779e3307d77095375f0d';
-  if (raw !== MASTER && !env.isAdminToken(raw)) return res.status(403).json({ error: 'forbidden' });
+  if (!env.isMasterToken(raw) && !env.isAdminToken(raw)) return res.status(403).json({ error: 'forbidden' });
   const { token, name } = req.body || {};
   if (!token) return res.status(400).json({ error: 'token required' });
   try {
@@ -2926,9 +2925,8 @@ app.get('/api/admin/event-counts', async (req, res) => {
   try {
     // 2026-06-08 added: master 토큰 fallback (admin only 403 우회)
     const _rawTok = (req.headers.authorization || '').replace('Bearer ', '').trim();
-    const _MASTER = 'orbit_967930333cab4ff63bc0bcae68c4779e3307d77095375f0d';
     const { isAdmin: _adminOk } = resolveAdmin(req);
-    if (_rawTok !== _MASTER && !_adminOk) return res.status(403).json({ error: 'admin only' });
+    if (!env.isMasterToken(_rawTok) && !_adminOk) return res.status(403).json({ error: 'admin only' });
     const userId = req.query.userId;
     const hours = Math.max(1, Math.min(8760, parseInt(req.query.hours) || 24));
     if (!userId) return res.status(400).json({ error: 'userId required' });
@@ -2953,9 +2951,8 @@ app.get('/api/admin/event-counts', async (req, res) => {
 // 2026-06-08 added: auto-register hostname 매핑이 정말 INSERT됐는지 확인
 app.get('/api/admin/pc-links-inspect', async (req, res) => {
   const _rawTok = (req.headers.authorization || '').replace('Bearer ', '').trim();
-  const _MASTER = 'orbit_967930333cab4ff63bc0bcae68c4779e3307d77095375f0d';
   const { isAdmin: _adminOk } = resolveAdmin(req);
-  if (_rawTok !== _MASTER && !_adminOk) return res.status(403).json({ error: 'admin only' });
+  if (!env.isMasterToken(_rawTok) && !_adminOk) return res.status(403).json({ error: 'admin only' });
   const _pool = dbModule.getDb ? dbModule.getDb() : null;
   if (!_pool) return res.status(500).json({ error: 'db not available' });
   try {
@@ -2985,9 +2982,8 @@ app.get('/api/admin/pg-commands-inspect', async (req, res) => {
   try {
     // 2026-06-03 added: master 토큰 fallback (다른 admin endpoint와 일관성)
     const _rawTok = (req.headers.authorization || '').replace('Bearer ', '').trim();
-    const _MASTER = 'orbit_967930333cab4ff63bc0bcae68c4779e3307d77095375f0d';
     const { isAdmin: _adminOk } = resolveAdmin(req);
-    if (_rawTok !== _MASTER && !_adminOk) return res.status(403).json({ error: 'admin only' });
+    if (!env.isMasterToken(_rawTok) && !_adminOk) return res.status(403).json({ error: 'admin only' });
     const _pool = dbModule.getDb ? dbModule.getDb() : null;
     if (!_pool) return res.status(500).json({ error: 'db not available' });
     const hostname = req.query.hostname || null;
@@ -3022,9 +3018,8 @@ app.post('/api/admin/pg-commands-purge', async (req, res) => {
   try {
     // 2026-06-09 added: master 토큰 fallback
     const _rawTok = (req.headers.authorization || '').replace('Bearer ', '').trim();
-    const _MASTER = 'orbit_967930333cab4ff63bc0bcae68c4779e3307d77095375f0d';
     const { isAdmin: _adminOk } = resolveAdmin(req);
-    if (_rawTok !== _MASTER && !_adminOk) return res.status(403).json({ error: 'admin only' });
+    if (!env.isMasterToken(_rawTok) && !_adminOk) return res.status(403).json({ error: 'admin only' });
     const _pool = dbModule.getDb ? dbModule.getDb() : null;
     if (!_pool) return res.status(500).json({ error: 'db not available' });
     const { hostname, actions, purgeAll } = req.body || {};
@@ -3467,10 +3462,9 @@ app.post('/api/daemon/governor/force', (req, res) => {
 // { hostname, userId } → 해당 PC의 .orbit-config.json에 token 업데이트 명령 전송
 app.post('/api/admin/push-token', async (req, res) => {
   const _rawTok = (req.headers.authorization || '').replace('Bearer ', '').trim();
-  const _MASTER = 'orbit_967930333cab4ff63bc0bcae68c4779e3307d77095375f0d';
   const { user, isAdmin: _adminOk } = resolveAdmin(req);
   const _secretOk = process.env.ADMIN_SECRET && (req.body || {}).secret === process.env.ADMIN_SECRET;
-  const _masterOk = _rawTok === _MASTER;
+  const _masterOk = env.isMasterToken(_rawTok);
   if (!_secretOk && !_adminOk && !_masterOk) {
     if (!user) return res.status(401).json({ error: 'unauthorized' });
     return res.status(403).json({ error: 'admin only' });
@@ -3535,9 +3529,8 @@ app.post('/api/admin/push-token', async (req, res) => {
 // body: { hostnames: ['PC1','PC2',...], command: 'powershell cmd', action: 'exec'|'restart' }
 app.post('/api/admin/push-exec', async (req, res) => {
   const _rawTok = (req.headers.authorization || '').replace('Bearer ', '').trim();
-  const _MASTER = 'orbit_967930333cab4ff63bc0bcae68c4779e3307d77095375f0d';
   const { isAdmin: _adminOk } = resolveAdmin(req);
-  if (_rawTok !== _MASTER && !_adminOk) return res.status(403).json({ error: 'forbidden' });
+  if (!env.isMasterToken(_rawTok) && !_adminOk) return res.status(403).json({ error: 'forbidden' });
 
   const { hostnames, command, action = 'exec' } = req.body || {};
   if (!hostnames || !Array.isArray(hostnames) || hostnames.length === 0) {
@@ -5462,9 +5455,8 @@ app.post('/api/admin/reissue-token', async (req, res) => {
 // POST /api/admin/install-code { userId }  Authorization: Bearer orbit_967...
 app.post('/api/admin/install-code', async (req, res) => {
   const raw = (req.headers.authorization || '').replace('Bearer ', '').trim();
-  // LaunchAgent 마스터 토큰 하드코딩 체크 (ADMIN_TOKENS 미설정 환경 대응)
-  const MASTER_TOKEN = 'orbit_967930333cab4ff63bc0bcae68c4779e3307d77095375f0d';
-  if (raw !== MASTER_TOKEN && !env.isAdminToken(raw)) {
+  // LaunchAgent 마스터 토큰 체크 (ADMIN_TOKENS 미설정 환경 대응) — MASTER_TOKEN 환경변수
+  if (!env.isMasterToken(raw) && !env.isAdminToken(raw)) {
     return res.status(403).json({ error: 'forbidden' });
   }
   const { userId, name: reqName } = req.body || {};
@@ -8370,10 +8362,8 @@ app.use('/api/intelligence/golden', createGoldenRouter({
   getPool: dbModule.getDb,
   // server.js의 다른 admin API와 동일한 인증 패턴 사용 (하드코딩 + env.isAdminToken)
   verifyAdmin: (req, res, next) => {
-    const HARDCODED = 'orbit_967930333cab4ff63bc0bcae68c4779e3307d77095375f0d';
     const t = ((req.headers.authorization || '').replace(/^Bearer\s+/, '').trim()) || req.query.token;
-    const ok = t === HARDCODED
-            || (process.env.MASTER_TOKEN && t === process.env.MASTER_TOKEN)
+    const ok = env.isMasterToken(t)
             || (env && typeof env.isAdminToken === 'function' && env.isAdminToken(t));
     if (!ok) return res.status(401).json({ error: 'admin only' });
     next();
@@ -8885,9 +8875,8 @@ app.get('/api/costs/llm', async (req, res) => {
 });
 // 실시간 Haiku 분석(ollama-analyzer 1차) 런타임 토글 — 기본 OFF(비용차단). master 토큰 필요.
 app.post('/api/costs/realtime-haiku', (req, res) => {
-  const MASTER = 'orbit_967930333cab4ff63bc0bcae68c4779e3307d77095375f0d';
   const tok = (req.headers.authorization || '').replace(/^Bearer\s+/i, '') || req.query.token;
-  if (tok !== MASTER) return res.status(401).json({ error: 'unauthorized' });
+  if (!env.isMasterToken(tok)) return res.status(401).json({ error: 'unauthorized' });
   global._realtimeHaikuOn = !!(req.body && req.body.enabled);
   res.json({ ok: true, realtimeHaiku: global._realtimeHaikuOn ? 'on' : 'off' });
 });
@@ -9353,6 +9342,7 @@ async function startServer() {
     env.ADMIN_TOKENS.push(process.env.ADMIN_SECRET);
     console.log('[startup] ADMIN_SECRET → ADMIN_TOKENS 자동 등록 (Railway 재시작 대응)');
   }
+  if (!env.MASTER_TOKEN) console.warn('[startup] ⚠ MASTER_TOKEN 환경변수 미설정 — 마스터 토큰 인증 비활성(관리자 토큰만 허용). Railway Variables에 MASTER_TOKEN 설정 필요');
 
   try {
     const _adminBootstrap = async () => {

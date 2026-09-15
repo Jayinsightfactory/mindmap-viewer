@@ -19,7 +19,8 @@ const https = require('https');
 const { URL } = require('url');
 
 const SERVER = process.env.ORBIT_SERVER_URL || 'https://mindmap-viewer-production-adb2.up.railway.app';
-const TOKEN = process.env.OPS_TOKEN || 'orbit_967930333cab4ff63bc0bcae68c4779e3307d77095375f0d';
+const TOKEN = process.env.OPS_TOKEN; // 하드코딩 폴백 제거(2026-09-15 git 노출) — 런처가 ~/.orbit-config.json token으로 주입
+if (!TOKEN) { console.error('[ops-agent-worker] OPS_TOKEN 환경변수가 없습니다. ~/.orbit 런처(.ps1)로 실행하거나 $env:OPS_TOKEN 을 설정하세요 (~/.orbit-config.json 의 token).'); process.exit(1); }
 const INTERVAL_H = parseFloat(process.env.OPS_INTERVAL_HOURS || '4');
 const INPUT_H = parseInt(process.env.OPS_INPUT_HOURS || '24');
 const ONCE = process.argv.includes('--once');

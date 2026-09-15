@@ -15,7 +15,8 @@ const fs = require('fs'); const path = require('path');
 const https = require('https'); const { URL } = require('url');
 
 const SERVER = process.env.ORBIT_SERVER_URL || 'https://mindmap-viewer-production-adb2.up.railway.app';
-const TOKEN = process.env.OPS_TOKEN || 'orbit_967930333cab4ff63bc0bcae68c4779e3307d77095375f0d';
+const TOKEN = process.env.OPS_TOKEN; // 하드코딩 폴백 제거(2026-09-15 git 노출) — 런처가 ~/.orbit-config.json token으로 주입
+if (!TOKEN) { console.error('[deep-dive] OPS_TOKEN 환경변수가 없습니다. ~/.orbit 런처(.ps1)로 실행하거나 $env:OPS_TOKEN 을 설정하세요 (~/.orbit-config.json 의 token).'); process.exit(1); }
 const USER = process.argv.includes('--user') ? process.argv[process.argv.indexOf('--user') + 1] : '';
 const ALL = process.argv.includes('--all'); // 전 직원 순회(새 사용자 자동 포함)
 const HOURS = parseInt(process.env.DEEP_HOURS || '336');

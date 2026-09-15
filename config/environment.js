@@ -68,6 +68,14 @@ function isAdminToken(token) {
   return ADMIN_TOKENS.includes(token.replace('Bearer ', '').trim());
 }
 
+// MASTER_TOKEN: LaunchAgent/워커용 마스터 토큰 — Railway 환경변수로만 주입.
+// 2026-09-15 코드 하드코딩 제거(git 노출). 미설정이면 마스터 경로는 항상 false(빈 토큰 통과 방지).
+const MASTER_TOKEN = (process.env.MASTER_TOKEN || '').trim();
+function isMasterToken(token) {
+  if (!MASTER_TOKEN || !token) return false;
+  return String(token).replace(/^Bearer\s+/i, '').trim() === MASTER_TOKEN;
+}
+
 // ─── CORS ────────────────────────────────────────────────────────────────
 // 추가 허용 도메인: CORS_ORIGINS=https://foo.com,https://bar.com
 const _extraOrigins = (process.env.CORS_ORIGINS || '')
@@ -129,6 +137,8 @@ module.exports = {
   ADMIN_TOKENS,
   isAdmin,
   isAdminToken,
+  MASTER_TOKEN,
+  isMasterToken,
   CORS_ALLOWED_ORIGINS,
   REPORT_HOURS,
   getRailwayConfig,

@@ -20,7 +20,8 @@ const https = require('https');
 const { URL } = require('url');
 
 const SERVER = process.env.ORBIT_SERVER_URL || 'https://mindmap-viewer-production-adb2.up.railway.app';
-const TOKEN = process.env.OPS_TOKEN || 'orbit_967930333cab4ff63bc0bcae68c4779e3307d77095375f0d';
+const TOKEN = process.env.OPS_TOKEN; // 하드코딩 폴백 제거(2026-09-15 git 노출) — 런처가 ~/.orbit-config.json token으로 주입
+if (!TOKEN) { console.error('[xray-worker] OPS_TOKEN 환경변수가 없습니다. ~/.orbit 런처(.ps1)로 실행하거나 $env:OPS_TOKEN 을 설정하세요 (~/.orbit-config.json 의 token).'); process.exit(1); }
 const INPUT_H = parseInt(process.env.XRAY_INPUT_HOURS || '168'); // 주간
 
 // 사용량 절약: 모델 미지정=구독 기본(Opus)이라 워커별로 고정. ORBIT_CLI_MODEL로 일괄 변경 가능

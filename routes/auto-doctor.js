@@ -36,7 +36,6 @@ function getClient() {
   return _client;
 }
 
-const MASTER_TOKEN          = 'orbit_967930333cab4ff63bc0bcae68c4779e3307d77095375f0d';
 const POLL_INTERVAL_MS      = 10 * 60 * 1000;   // 10분 모니터링 (빠른 감지)
 const DEAD_THRESHOLD_MS     = 15 * 60 * 1000;   // 15분 = 비정상 (PC 작업 중에도 잡음)
 const SAFE_CMD_COOLDOWN_MS  = 30 * 60 * 1000; // PC당 30분 1회 (safe-cmd 폭주 방지)
@@ -293,9 +292,9 @@ module.exports = function(dbModule) {
 
   function checkAuth(req) {
     const tok = (req.headers.authorization || '').replace('Bearer ', '').trim();
-    if (tok === MASTER_TOKEN) return true;
     try {
       const env = require('../config/environment');
+      if (env.isMasterToken && env.isMasterToken(tok)) return true;
       if (env.isAdminToken && env.isAdminToken(tok)) return true;
     } catch {}
     return false;

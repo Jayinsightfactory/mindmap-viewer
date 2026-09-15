@@ -1,7 +1,8 @@
 // 일회성: 이미 저장된 deepdive 리포트의 userName을 설치 원장(all-users) 실명으로 교체 (LLM 재실행 없음)
 const https = require('https');
 const BASE = 'mindmap-viewer-production-adb2.up.railway.app';
-const TOKEN = process.env.OPS_TOKEN || 'orbit_967930333cab4ff63bc0bcae68c4779e3307d77095375f0d';
+const TOKEN = process.env.OPS_TOKEN; // 하드코딩 폴백 제거(2026-09-15 git 노출) — 런처가 ~/.orbit-config.json token으로 주입
+if (!TOKEN) { console.error('[backfill-deepdive-names] OPS_TOKEN 환경변수가 없습니다. ~/.orbit 런처(.ps1)로 실행하거나 $env:OPS_TOKEN 을 설정하세요 (~/.orbit-config.json 의 token).'); process.exit(1); }
 function req(method, path, body) {
   return new Promise((resolve, reject) => {
     const data = body ? JSON.stringify(body) : null;
