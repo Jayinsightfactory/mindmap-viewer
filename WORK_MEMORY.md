@@ -1762,3 +1762,14 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 - 다른 저장소 스윕(probe, 일부 타임아웃): nenova-erp-ui·nenovakakao·talkhub·talkhub-mobile·.orbit에서 발견 0. .claude/file-history 편집 백업에만 있음
 - ★덤 발견(수정 안 함, 별도 작업 칩 생성): 토큰 없이 200 = /api/kakao/messages(실제 카톡 원문)·/api/admin/all-users·/api/admin/kakao-intel·/api/learning/logs·/api/roi/automation-potential. /api/admin/ecount-receivables는 'orbit_' 접두사만 검사(가짜 토큰도 200)
 - 회전 절차(권장): 새 값 `'orbit_'+randomBytes(24).hex`(src/auth.js:126 형식) → Railway Variables MASTER_TOKEN 교체(재배포). 코드 수정 불필요, 워커는 cfg token 사용이라 영향 없음. 사용자 토큰 발급/검증=src/auth.js issueApiToken(214)/verifyTokenAsync(653), 관리자 토큰 목록=config/environment.js ADMIN_TOKENS + server.js 기동 부트스트랩(ADMIN_SECRET·PG 관리자 토큰 등록)
+
+## 2026-09-15 (5) 작업 흐름 뷰 — 클릭→클릭→입력 순서 재구성 (a8b1af1·64c79e2 배포)
+검색어: 작업 흐름, work-flow, 클릭 순서, 주문등록 흐름, mousePositions, work.step, uia-recorder, 세션 분리, 문서 전환
+- 요구: "주문등록이면 어디클릭 어디클릭 어디입력했는지 흐름이 있어야 예측 가능"
+- ★핵심 발견: 클릭은 독립 이벤트로 저장 안 됨. **keyboard.chunk.mousePositions[]에 {x,y,t,app,win} 최근 50개**로 실려 있음(실측 80묶음 중 78개 보유, chunk당 ~14클릭). work.step(uia-recorder)=포커스/입력 컨트롤 name·controlType·value(현재 excel/word만, nenova는 값 못읽음). 둘 다 이미 수집 중 → 새 수집 없이 조립
+- 구현: routes/work-flow.js buildFlow(순수함수, export)—4원천 시간순 병합. 클릭 라벨: 클릭 후 2초내 UIA포커스=정확, Vision clickXY 40px근접=추정, 없으면 좌표만. GET /api/work-flow/day?userId&date, isAdminReq 관리자전용. public/work-flow.html + my-work.html 첫 탭
+- ★세션 분리 함정: 5분무활동+앱전환90초만으론 하루종일 엑셀=1세션(설연주 1500단계 뭉침, 최대간격 153초). **창 제목(문서)=작업단위**로 추가 경계(새 문서 5단계+ 지속시 분리, 카톡 잠깐확인은 안끊음). 설연주 1→23세션(출고관리/라움발주서/지출내역/견적서 등)으로 정상 분리
+- 실측 라벨률: 엑셀 셀입력(A1 DataItem)·저장버튼 등은 UIA로 이름·값 정확히 붙음. 그러나 리본/도구 클릭 대다수는 좌표만(설연주 732클릭 중 이름 19, 강현우 589중 10). **한계=nenova앱·브라우저·카톡 클릭은 버튼이름 0**(uia-recorder 대상이 excel/word/ppt/hwp+nenova창뿐, nenova는 값 못읽음)
+- 덤 수정: screen-input f.value→f.currentValue(값 표시 복구), work-detail에 activity 표시
+- 다음 수(미착수, 예측품질 직결): ①uia-recorder를 클릭 시점 hit-test로 확장(좌표밑 요소이름)—현재 250ms 포커스폴링이라 버튼'눌림' 못잡음 ②nenova ValuePattern 대체(DevExpress 값 읽기) ③Vision 프롬프트에 앞뒤 캡처·entities(거래처·품목·수량·차수)·nextLikely 추가. 상세 조사결과는 이 세션 위쪽
+- 보안 별건: bin/deep-dive.js 등 하드코딩 orbit_ 마스터토큰 → 별도 세션(e55bae3에서 제거)
