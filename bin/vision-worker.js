@@ -104,6 +104,19 @@ function _perceptualHash(base64) {
   } catch { return null; }
 }
 const _dupCache = new Map(); // key(userId|app) → 최근 N개 지각해시(ring)
+// [맥락 융합] userId → 직전 분석 요약. 다음 분석 프롬프트에 [직전 화면]으로 제공(10분 이내만).
+const _lastByUser = new Map(); // userId → {screen, activity, ts}
+const _PREV_SUMMARY_WINDOW_MS = 10 * 60 * 1000;
+function _getPrevSummary(userId) {
+  if (!userId) return null;
+  const prev = _lastByUser.get(userId);
+  if (!prev || (Date.now() - prev.ts) > _PREV_SUMMARY_WINDOW_MS) return null;
+  return `${prev.screen || ''} / ${prev.activity || ''}`;
+}
+function _notePrevSummary(userId, screen, activity) {
+  if (!userId) return;
+  _lastByUser.set(userId, { screen, activity, ts: Date.now() });
+}
 const DEDUP_ON = process.env.VISION_DEDUP !== 'off';
 const DEDUP_MAXDIST = parseInt(process.env.VISION_DEDUP_DIST) || 5; // 해밍거리 ≤5 = 사실상 동일화면
 const DEDUP_RECENT = parseInt(process.env.VISION_DEDUP_RECENT) || 12; // [B] 직전 1개 대신 최근 N개와 비교(비연속 중복도 컷)
@@ -268,7 +281,13 @@ function _buildPrompt(ctx) {
   if (clicks.length) {
     clickBlock = `\n[실제 클릭 좌표] 이 스크린샷 직전 사용자가 클릭한 픽셀 좌표들이다(시간순). 이미지는 주 모니터(primary)만 담으므로 이미지 경계 밖 좌표는 다른 모니터라 무시하라. 이미지 안쪽 좌표는 그 위치의 필드/버튼을 특정하는 근거로 써라:\n${clicks.map((c,i)=>`  ${i+1}. (${c.x}, ${c.y})`).join('\n')}\n각 field가 위 클릭 중 하나와 겹치면 그 field에 "clickXY":[x,y] 를 넣어라(겹치는 게 확실할 때만, 아니면 생략).\n`;
   }
-  return `스크린샷을 정밀 분석해주세요. 호스트: ${ctx.hostname}${clickBlock}
+  // [맥락 블록] 창 제목·직전 화면·타이핑 내용 — 캡처를 고립시키지 않고 예측 재료로 제공.
+  // 셋 다 없으면 아무것도 추가하지 않는다(빈 캡처 안전).
+  let contextBlock = '';
+  if (ctx.windowTitle) contextBlock += `\n[창 제목] ${ctx.windowTitle}\n`;
+  if (ctx.prevSummary) contextBlock += `\n[직전 화면] 방금 전 이 사용자가 보던 화면: ${ctx.prevSummary}\n지금 화면이 그로부터 무엇이 바뀌었는지 changeFromPrev에 적어라.\n`;
+  if (ctx.typedContext) contextBlock += `\n[이 무렵 타이핑한 내용] ${ctx.typedContext}\n`;
+  return `스크린샷을 정밀 분석해주세요. 호스트: ${ctx.hostname}${clickBlock}${contextBlock}
 다음 JSON 형식으로만 응답 (마크다운 없이 순수 JSON):
 {
   "app": "실제 프로그램명",
@@ -276,6 +295,17 @@ function _buildPrompt(ctx) {
   "screenKey": "같은 화면이면 항상 똑같이 나오는 식별자 — 아래 규칙을 반드시 지켜라",
   "activity": "사용자가 지금 하는 작업 1줄 (구체적으로)",
   "workCategory": "전산처리|문서작업|커뮤니케이션|파일관리|웹검색|기타",
+
+  "entities": {
+    "customers": ["화면에 실제로 보이는 거래처명"],
+    "products": ["화면에 실제로 보이는 품목명"],
+    "quantities": [{"item": "품목", "qty": 숫자, "unit": "박스|단|송이 등"}],
+    "orderCycle": "차수(예: 37-2차, 없으면 null)",
+    "amounts": [화면에 보이는 금액 숫자들]
+  },
+  "actionDone": "이 화면에서 방금 완료된 동작 (예: 저장, 전송, 조회, 없으면 null)",
+  "changeFromPrev": "직전 화면 대비 바뀐 점 1줄 ([직전 화면]이 주어졌을 때만, 없으면 null)",
+  "nextLikely": "이 작업 흐름상 사용자가 다음에 할 가능성이 높은 동작 1줄",
 
   "fields": [
     {
@@ -309,6 +339,9 @@ function _buildPrompt(ctx) {
   "padPossible": true/false,
   "scriptType": "PAD|pyautogui|clipboard|none"
 }
+
+[entities 규칙 — 반드시 지켜라]
+entities(거래처·품목·수량·차수·금액)는 화면에 실제로 보이는 것만 적어라. 안 보이면 빈 배열/null로 둬라. **추측·창작 금지** — 이 4개는 nenova 업무의 핵심 키라 허위 값이 들어가면 잘못된 업무 프로파일링으로 이어진다.
 
 [screenKey 규칙 — 반드시 지켜라]
 목적: 같은 화면을 다시 보면 반드시 같은 문자열이 나와야 한다. 이게 흔들리면 "이 사람이 어떤 화면을 반복하는가"를 영영 알 수 없다.
@@ -420,7 +453,7 @@ async function visionApi(base64, ctx, model) {
   const prompt = _buildPrompt(ctx);
   return new Promise((resolve, reject) => {
     const body = JSON.stringify({
-      model: (model && (API_MODEL_ID[model] || model)) || process.env.VISION_API_MODEL || 'claude-sonnet-4-20250514', max_tokens: 1024,
+      model: (model && (API_MODEL_ID[model] || model)) || process.env.VISION_API_MODEL || 'claude-sonnet-4-20250514', max_tokens: 1536,
       messages: [{ role:'user', content:[
         { type:'image', source:{ type:'base64', media_type:'image/png', data:base64 } },
         { type:'text', text:prompt },
@@ -753,10 +786,12 @@ async function processServerQueue() {
         const result = await visionAnalyze(item.imageBase64, {
           hostname: item.hostname, name: item.app || 'capture', windowTitle: item.windowTitle || '',
           recentClicks: item.recentClicks,  // [골:실행좌표 융합] 서버 큐가 첨부한 직전 클릭들
+          userId: item.userId, prevSummary: _getPrevSummary(item.userId || item.hostname),
         });
         if (!result) continue;
 
         console.log(`  → ${result.app}: ${(result.activity || '').substring(0, 50)}`);
+        _notePrevSummary(item.userId || item.hostname, result.screen, result.activity);
 
         // screen.analyzed 이벤트로 서버에 전송 (분석 결과 전체 포함)
         const payload = JSON.stringify({ events: [{
@@ -850,9 +885,11 @@ async function processLocalDir() {
         const result = await visionAnalyze(base64, {
           hostname: host, name: 'capture', windowTitle: '', trigger: c.trigger,
           forceModel: LOCAL_FORCE_MODEL,
+          userId: LOCAL_USER, prevSummary: _getPrevSummary(LOCAL_USER || host),
         });
         if (!result) { console.warn(`  ✗ 분석 실패 — 다음 스캔 재시도: ${c.f}`); continue; }
         console.log(`  → ${result.app || '?'}: ${(result.activity || '').substring(0, 50)}`);
+        _notePrevSummary(LOCAL_USER || host, result.screen, result.activity);
         const payload = JSON.stringify({ events: [{
           id: `vision-local-${c.epoch}`, type: 'screen.analyzed', source: 'vision-local-worker',
           sessionId: `local-${host}-${Math.floor(c.epoch / 1800000)}`, // 30분 버킷 = 세션 형성 도움
@@ -925,9 +962,11 @@ async function processSpool() {
         const result = await visionAnalyze(full.imageBase64, {
           hostname: full.hostname, name: full.app || 'capture', windowTitle: full.windowTitle || '', trigger: full.trigger,
           recentClicks: full.recentClicks,  // [골:실행좌표 융합/A3] 서버가 붙인 캡처 직전 클릭 → clickXY 특정
+          userId: full.userId || it.userId, prevSummary: _getPrevSummary(full.userId || it.userId || full.hostname),
         });
         if (!result) { console.warn(`  ✗ 분석 실패 — 다음 폴 재시도: ${it.file}`); continue; } // 삭제 안 함(재시도)
         console.log(`  → ${result.app || '?'}: ${(result.activity || '').substring(0, 50)}`);
+        _notePrevSummary(full.userId || it.userId || full.hostname, result.screen, result.activity);
         const payload = JSON.stringify({ events: [{
           id: `vision-spool-${it.userId}-${it.file.replace(/\.json$/, '')}`, type: 'screen.analyzed', source: 'vision-spool-worker',
           sessionId: `spool-${full.hostname || it.userId}-${Math.floor(new Date(full.ts || Date.now()).getTime() / 1800000)}`,

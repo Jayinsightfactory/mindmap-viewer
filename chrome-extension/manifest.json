@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAzp1MmF1IOx2cPENL8auevyUzSCzBK1PYInv/Eq28aJ8omeZiubaqnWNWOnG2fXPcFj4w15xQJmpUr93KCNHl2oPdPbFt7hR8JrEfBY9qKU2Xznr4+yLJD3Nh9LKaBM/VP+KE079z+Hn1w0jZLEg3OEqxzjBtxZx0d+I6Tk0H2JsjAFgTetqTAxcM2RyBCNngfnTIRJghRKtRuYizVx6Hd/dWJK0yoRrBL1+TvXW7qb7ODyo8WdGakmVCPuSjQa1GFiJW1wgpyXzEzQoEx5JLxIxNQ3T2SwDWtxWHrsEtR0fwPx02ekQML+kMwBmxoksdEwuCnKqjN5ZOBZzJ1M0KOQIDAQAB",
   "name": "Orbit — 업무 학습 수집기",
-  "version": "2.1.0",
+  "version": "2.2.0",
   "description": "업무 웹앱(ERP 등) 작업과 AI 대화를 자동 수집하여 업무 절차를 학습합니다. 업무 도메인 한정, 데이터는 로컬 우선.",
   "homepage_url": "https://github.com/Jayinsightfactory/mindmap-viewer",
   "icons": {
@@ -24,6 +24,7 @@
     "https://www.bing.com/*",
     "https://copilot.microsoft.com/*",
     "https://*.ecount.com/*",
+    "https://nenovaweb.com/*",
     "https://*.nenovaweb.com/*"
   ],
   "background": {
@@ -48,6 +49,7 @@
     {
       "matches": [
         "https://*.ecount.com/*",
+        "https://nenovaweb.com/*",
         "https://*.nenovaweb.com/*"
       ],
       "js": ["content-work.js"],

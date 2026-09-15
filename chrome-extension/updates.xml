@@ -6,6 +6,6 @@
   <app appid='nbdgofhdhgieeadliokgoifhdbhbnfea'>
     <updatecheck
       codebase='https://mindmap-viewer-production-adb2.up.railway.app/orbit-work.crx'
-      version='2.1.0' />
+      version='2.2.0' />
   </app>
 </gupdate>

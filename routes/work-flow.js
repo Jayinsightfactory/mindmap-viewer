@@ -59,8 +59,18 @@ function buildFlow({ chunks = [], uia = [], screens = [] }) {
   }
   for (const u of uia) {
     const d = obj(u.data), tg = d.target || {};
-    ev.push({ t: +d.t || ms(u.ts), kind: d.action === 'input' ? 'input' : 'focus', app: d.app || '', win: d.window || '',
-      name: tg.name || tg.id || '', ctl: tg.controlType || '', cellId: tg.id || '', value: String(d.value || '').slice(0, 200) });
+    // 두 종류의 work.step: uia-recorder(데스크톱 Office/nenova, action=focus|input, target.name/controlType)
+    // + 크롬 확장 content-work.js(웹 ERP, action=click|input|navigate, target.label/selector/text, url/title 보유)
+    const isWeb = !!(d.url || tg.selector);
+    let kind;
+    if (isWeb) kind = d.action === 'input' ? 'input' : d.action === 'navigate' ? 'nav' : 'click';
+    else kind = d.action === 'input' ? 'input' : 'focus';
+    const label = tg.label || tg.name || tg.text || tg.id || '';
+    const e = { t: +d.t || ms(u.ts), kind, app: isWeb ? 'web' : (d.app || ''), win: d.window || d.title || '',
+      name: label, ctl: tg.controlType || (isWeb ? 'web' : ''), cellId: tg.id || tg.selector || '',
+      value: String(d.value || '').slice(0, 200), url: d.url || '' };
+    if (isWeb && kind === 'click') { e.label = label; e.conf = 'web'; } // 웹 클릭은 확장이 이미 라벨을 안다
+    ev.push(e);
   }
   const shots = [];
   for (const s of screens) {
@@ -76,6 +86,7 @@ function buildFlow({ chunks = [], uia = [], screens = [] }) {
   const usedFocus = new Set();
   for (let i = 0; i < ev.length; i++) {
     const c = ev[i]; if (c.kind !== 'click') continue;
+    if (c.label) continue;                                             // 웹 클릭은 이미 라벨 보유 → 좌표 매칭 생략
     for (let j = i + 1; j < ev.length && ev[j].t - c.t <= UIA_AFTER_CLICK_MS; j++) {
       const f = ev[j];
       if ((f.kind === 'focus' || f.kind === 'input') && !usedFocus.has(j) && f.name) {
@@ -155,6 +166,7 @@ function buildFlow({ chunks = [], uia = [], screens = [] }) {
           const o = { t: new Date(x.t).toISOString(), kind: x.kind, app: x.app, win: String(x.win || '').slice(0, 80) };
           if (x.kind === 'click') Object.assign(o, { label: x.label || '', ctl: x.ctl || '', conf: x.conf || 'none', x: x.x, y: x.y, count: x.count || 1 });
           if (x.kind === 'focus' || x.kind === 'input') Object.assign(o, { label: x.name, ctl: x.ctl, value: x.value });
+          if (x.kind === 'nav') Object.assign(o, { label: x.name || x.url || '', url: x.url || '' });
           if (x.kind === 'type') o.text = x.text;
           if (x.kind === 'screen') Object.assign(o, { screen: x.screen, activity: x.activity, action: x.action,
             thumbnailUrl: x.hasThumb ? `/api/vision/thumbnail/${x.id}` : null });

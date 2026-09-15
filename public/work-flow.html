@@ -36,7 +36,8 @@ button{cursor:pointer} input{color-scheme:dark}
 .lbl{font-weight:600}
 .val{font-family:ui-monospace,Consolas,monospace;font-size:12.5px;background:#0d1117;border-radius:4px;padding:0 5px}
 .conf{font-size:10.5px;margin-left:5px;padding:0 5px;border-radius:4px;border:1px solid var(--line)}
-.c-uia{color:var(--ok)} .c-vision{color:var(--warn)} .c-none{color:var(--dim)}
+.c-uia{color:var(--ok)} .c-vision{color:var(--warn)} .c-web{color:var(--acc)} .c-none{color:var(--dim)}
+.k-nav{background:rgba(88,166,255,.1);color:var(--acc)}
 .win{color:var(--dim);font-size:11px;margin-left:6px}
 .thumb{color:var(--acc);font-size:11px;margin-left:6px;cursor:zoom-in;text-decoration:underline}
 .more{display:block;margin:4px 14px 8px;color:var(--acc);background:none;border:none;padding:0;font-size:12px}
@@ -65,8 +66,8 @@ const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const kst = (iso) => new Date(iso).toLocaleTimeString('ko-KR', { timeZone: 'Asia/Seoul', hour12: false });
 const todayKst = () => new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 10);
-const KIND = { click: '클릭', input: '입력', type: '타이핑', focus: '선택', screen: '화면' };
-const CONF = { uia: '정확', vision: '추정', none: '이름 없음' };
+const KIND = { click: '클릭', input: '입력', type: '타이핑', focus: '선택', screen: '화면', nav: '이동' };
+const CONF = { uia: '정확', vision: '추정', web: '웹', none: '이름 없음' };
 const SHOW = 40;
 
 $('#date').value = todayKst();
@@ -96,6 +97,8 @@ function stepHtml(s, i) {
     body = `<span class="lbl">[${esc(s.label)}]</span>`;
   } else if (s.kind === 'type') {
     body = `<span class="val">${esc(s.text)}</span>`;
+  } else if (s.kind === 'nav') {
+    body = `<span class="win">→ ${esc(s.label || s.url)}</span>`;
   } else if (s.kind === 'screen') {
     body = `${esc(s.screen)}${s.activity ? ` — <span class="sub">${esc(s.activity)}</span>` : ''}` +
       (s.thumbnailUrl ? `<span class="thumb" data-src="${esc(s.thumbnailUrl)}">이미지</span>` : '');
