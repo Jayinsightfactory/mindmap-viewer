@@ -1733,3 +1733,17 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 - 조치: `railway service source connect --repo Jayinsightfactory/mindmap-viewer --branch main --service mindmap-viewer` (CLI 5.45.5). 직후 GitHub 기준 첫 배포 c37bbb5d SUCCESS(commit 5aee4b3d)
 - 진단법: `railway status --json` → serviceInstances[].source.repo 확인. deployment list --json 의 meta.repo/commitHash 비어있으면 CLI 업로드
 - 추정 경위(미검증): MOYI 쪽 railway 명령을 이 서비스에 링크된 상태에서 실행하며 source가 바뀐 것으로 보임. railway 명령은 폴더별 link 확인 후 실행할 것
+
+## 2026-09-15 (4) 타이핑 원문 한글자모 깨짐 수정 — smartQwertyToHangul (c75557e 자동배포)
+검색어: 글씨 깨짐, 한글 자모, qwertyToHangul, smartQwertyToHangul, 스페인어, 영어 입력, IME, 한영, inputText, currentValue
+- 증상: 작업상세 "이 화면에서 타이핑한 원문"에 'ㄴ두 ㅣㅁ ㅓㅕㅜㅅㅁ' → 실제 'sen la junta'(보고타 WhatsApp 스페인어)
+- ★원인: 데몬은 IME 상태 모름 → inputText는 QWERTY 원본 그대로 저장(DB 온전). **조회 시 qwertyToHangul 무조건 적용**이 범인(server.js:1930·4819, flow-map.js:516, work-learner.js 자체복사본). IME/한영키 기록 코드 전무
+- 수정: src/hangul.js smartQwertyToHangul. 호출부는 import alias(server·flow-map), work-learner 복사본은 공용판 위임. public/work-logs.html 클라이언트 토글은 **미적용(잔여)**
+- ★검증 과정의 교훈(기각안 보존):
+  · v1 "문장 과반 깨짐이면 전체 영문" → 실데이터 1,457건에 돌리니 **멀쩡한 한글 130건 소실**(오타·백스페이스 흔적 '조잔ㄹ치로구나' 때문). 합성 테스트 26/26 통과였음 → 합성 테스트만 믿지 말 것
+  · v3 "앞뒤 오타 붙은 한글 보호"를 단어단위로 → 'ㅁ야챠ㅐㅜㄷㄴ'(adiciones)도 같은 모양이라 스페인어 재파손. **단어 하나로는 구분 불가, 문장 맥락(온전한 한글 단어 존재)으로만 켜야 함**
+  · 회귀 측정도 틀렸었음: '뎅디'(delphi) 같은 영단어 파편을 한글로 셈 → 코퍼스 사전 + 전수 눈검사로 확정
+- 최종: 383건 교정 / 진짜 한글 회귀 3건(0.2%, '농장명+구매' 무공백 & 문장에 한글단서 없음). 프로덕션 72h 입력 1,071개 중 낱모음 잔존 82 = 한글 오타흔적 50 + 1~2글자 판별불가 32
+- 덤 버그: screen-input이 f.value만 읽음 ↔ vision-worker는 currentValue로 저장 → "화면 속 항목/값"에 값이 한 번도 안 나왔음. 수정 후 필드 2,006개 중 1,478개 값 표시. work-detail에 activity 문장 표시 추가
+- 근본해결(미착수): 데몬이 IME 한/영 상태를 입력과 함께 기록(uia-recorder.ps1 등) → 추정 불필요
+- 참고: 자동배포 재연결 후 docs-only push도 재배포(502 수십초) 유발 — Railway watchPatterns로 *.md 제외 검토 필요
