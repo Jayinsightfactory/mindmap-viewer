@@ -1747,3 +1747,18 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 - 덤 버그: screen-input이 f.value만 읽음 ↔ vision-worker는 currentValue로 저장 → "화면 속 항목/값"에 값이 한 번도 안 나왔음. 수정 후 필드 2,006개 중 1,478개 값 표시. work-detail에 activity 문장 표시 추가
 - 근본해결(미착수): 데몬이 IME 한/영 상태를 입력과 함께 기록(uia-recorder.ps1 등) → 추정 불필요
 - 참고: 자동배포 재연결 후 docs-only push도 재배포(502 수십초) 유발 — Railway watchPatterns로 *.md 제외 검토 필요
+
+## 2026-09-15 (5) 하드코딩 Orbit 마스터 토큰 제거 → 환경변수화 (e55bae3, 배포 SUCCESS)
+검색어: 하드코딩 토큰, OPS_TOKEN, MASTER_TOKEN, isMasterToken, orbit_9679, 토큰 노출, 토큰 회전, rotate, 공개 저장소, 런처 OPS_TOKEN
+- 요청: bin/deep-dive.js의 `process.env.OPS_TOKEN || 'orbit_…'` 폴백 제거 + 전 저장소 스윕 + 런처 점검 + 회전은 하지 말고 보고
+- 스윕 결과(orbit_[0-9a-f]{20,}): 마스터 토큰(orbit_967930…5f0d) = bin 7곳(deep-dive·intent-annotator·ops-agent-worker·backfill-deepdive-names·orderflow-agent·owner-agent·xray-worker) + **서버 인증 비교 12곳**(server.js 10: pg-restore-token·admin 5곳·push-token·push-exec·LaunchAgent·golden verifyAdmin·costs/realtime-haiku / routes/flow-map.js auth / routes/auto-doctor.js checkAuth). 별도 WORK-SUMMARY-2026-03-06.txt에 옛 토큰 orbit_1f9f…ac56(프로덕션 401=무효 확인, 파일은 그대로 둠)
+- ★저장소가 **PUBLIC**이고 마스터 토큰은 2026-04-17(458c5ab)부터 히스토리에 있음 → 회전 필요(미실행, 사용자 결정)
+- 수정: config/environment.js `MASTER_TOKEN`(process.env)+`isMasterToken()`(미설정이면 항상 false = 빈 토큰 통과 방지). 서버 12곳 전부 이 함수로 교체, 기동 시 미설정 경고. 워커는 OPS_TOKEN 없으면 메시지 출력 후 exit 1
+- 사전확인: Railway `MASTER_TOKEN` 변수 값 == 기존 리터럴(해시비교, 값 미출력) → 배포 후 동작 불변. ~/.orbit-config.json token(마스터와 다른 admin 토큰)이 워커 호출 GET 엔드포인트 12개에서 마스터와 같은 응답 확인
+- ★런처(저장소 밖, ~/.orbit): 전부 폴백 의존이었음 → 5개에 한 줄 추가(`$c.token`을 `$env:OPS_TOKEN`으로). deepdive-all(OrbitDeepDiveWeekly)·intent-daily(OrbitIntentDaily)·owner-agent(OrbitOwnerDaily)·xray-weekly(OrbitXrayWeekly)·ops-agent-start(시작프로그램 OrbitOpsAgent.lnk + quota-release 재개). orderflow-agent·backfill은 수동 실행이라 런처 없음. 백업=세션 scratchpad launcher-backup
+  · 함정: deepdive-all·owner-agent는 **줄끝 LF/CRLF 섞임** → 첫 삽입이 node 실행줄 뒤로 들어감 → 백업 복원 후 줄 단위로 재삽입. 원본과 삽입 1줄 외 동일함 검증
+- 검증: node --check 11개 통과 / OPS_TOKEN 비우고 실행 → exit 1+메시지 / PowerShell 5.1로 런처 라인 실행 → duty-input 200 / 배포 1d71e5ee SUCCESS 후(uptime 56) duty-input·golden/stats: master=200 cfg=200 bogus=401 none=401
+- 실행 중이던 ops-agent-worker(PID 30712)는 구코드가 메모리에 떠 있어 영향 없음. 재시작하면 패치된 런처로 뜸
+- 다른 저장소 스윕(probe, 일부 타임아웃): nenova-erp-ui·nenovakakao·talkhub·talkhub-mobile·.orbit에서 발견 0. .claude/file-history 편집 백업에만 있음
+- ★덤 발견(수정 안 함, 별도 작업 칩 생성): 토큰 없이 200 = /api/kakao/messages(실제 카톡 원문)·/api/admin/all-users·/api/admin/kakao-intel·/api/learning/logs·/api/roi/automation-potential. /api/admin/ecount-receivables는 'orbit_' 접두사만 검사(가짜 토큰도 200)
+- 회전 절차(권장): 새 값 `'orbit_'+randomBytes(24).hex`(src/auth.js:126 형식) → Railway Variables MASTER_TOKEN 교체(재배포). 코드 수정 불필요, 워커는 cfg token 사용이라 영향 없음. 사용자 토큰 발급/검증=src/auth.js issueApiToken(214)/verifyTokenAsync(653), 관리자 토큰 목록=config/environment.js ADMIN_TOKENS + server.js 기동 부트스트랩(ADMIN_SECRET·PG 관리자 토큰 등록)
