@@ -1773,3 +1773,16 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 - 덤 수정: screen-input f.value→f.currentValue(값 표시 복구), work-detail에 activity 표시
 - 다음 수(미착수, 예측품질 직결): ①uia-recorder를 클릭 시점 hit-test로 확장(좌표밑 요소이름)—현재 250ms 포커스폴링이라 버튼'눌림' 못잡음 ②nenova ValuePattern 대체(DevExpress 값 읽기) ③Vision 프롬프트에 앞뒤 캡처·entities(거래처·품목·수량·차수)·nextLikely 추가. 상세 조사결과는 이 세션 위쪽
 - 보안 별건: bin/deep-dive.js 등 하드코딩 orbit_ 마스터토큰 → 별도 세션(e55bae3에서 제거)
+
+## 2026-09-15 (6) 데이터 쓸모화 — 앱별 UIA 가독성 실측 + 전략 재설정 (조사, 코드변경 없음)
+검색어: UIA 히트테스트, FromPoint, nenova DevExpress, 크롬확장, content-work.js, web work-step, 클릭 라벨, 데이터 쓸모
+- 질문: "실제 데이터 쓸모있게 하려면? 코드범위 넓어도 필요하면 함"
+- 클릭 분포 실측(chunk200·클릭2548): excel 47.5% / 앱빈값 27.8% / 카톡 12.9% / explorer 10.8%. UIA(work.step)는 excel/word/ppt만 커버
+- ★owner PC UIA FromPoint 히트테스트(scratchpad nenova-hittest.ps1·nenova2.ps1):
+  · 웹ERP(Chrome '붙여넣기 주문등록'): 5210요소·4750이름, FromPoint가 '①영업방 원문·물량표연결'·'영업방 대화분류' 반환 = **완벽**
+  · nenova.exe(복원 후): descendants75(Pane66), 이름은 상단탭뿐, **FromPoint 0/9** = 그리드·필드 못읽음 = **죽은길**
+  · 카톡: 요소4개(자체렌더) = 불가
+- ★전략 재설정: "uia-recorder를 nenova.exe로 확장" 폐기(히트테스트0 증명). 주문등록=웹에서 일어나고 웹은 완벽히 읽히는데 **프로덕션 web work.step 0건**(전부 excel). chrome-extension/content-work.js는 만들어져 있으나 미작동
+- 미작동 원인 후보(미확정): ①manifest 매치 `*.nenovaweb.com`은 apex `nenovaweb.com` 안걸림 ②orbit_token 미설정 시 무전송(background.js chrome.storage) ③확장 미설치. browser.activity도 0건이라 ②③ 유력
+- 3대 지렛대(impact×feasibility): ①웹확장 실작동(주문등록 클릭→필드=값, 직원PC 바이너리 변경0, 확장만) ②Vision 프롬프트에 앞뒤맥락+entities(거래처·품목·수량·차수)+nextLikely(카톡·nenova.exe는 Vision만이 리더) ③work-flow가 웹step+uia+클릭+vision 통합(뼈대 완성)
+- 다음: 사용자에게 지렛대①부터 착수 여부 확인. 상세 메모리=orbit-app-readability-uia-hittest.md
