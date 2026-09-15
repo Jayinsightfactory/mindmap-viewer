@@ -1693,3 +1693,13 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 - ★기각: haiku 하위에이전트가 "vision을 OCR로 대체" 제안 → OCR 선별(VISION_OCR_TRIAGE)은 이미 있고 기본 off. 근거 약해 채택 안 함
 - 하위세션 고정: ~/.claude/agents/probe-runner.md(haiku, 읽기전용 측정), code-worker.md(sonnet, 승인된 수정 구현)
 - ★발견: CLI OAuth 만료("OAuth session expired and could not be refreshed") → 현재 워커 전부 실패 중. 사장님 claude 재로그인 필요. --model 실동작 미검증(로그인 후 확인)
+
+## 2026-09-15 DESKTOP-T09911T(강현우) 원격 update 명령 시험 — 권한 통과·수신 확인
+검색어: daemon/command, force-update, pg-commands-inspect, 권한 403, orbit-config token, T09911T, 업데이트 명령
+- 목적: 새 세션에서 원격 update 명령이 (1) 권한에 막히는지 (2) 대상 PC에 닿는지 실측
+- 사용 경로: `POST /api/daemon/command` per-host + `~/.orbit-config.json`의 token(orbit_d2e5…, admin 이메일 발급분). DATA_CHECK §0 그대로
+- 결과: **HTTP 200 `{"ok":true,"queued":"DESKTOP-T09911T"}`** — 403 없음, 권한 문제 없음
+- 수신 확인: 전송 전 pg-commands-inspect = capture-config 1건 pending(9/14 14:00, 하루 묵음) → 전송 후 ~2분 내 **pending 0** (묵은 capture-config는 POST 시 우선순위 purge, update는 데몬 1분 폴링이 소비)
+- ★실행 증거는 없음(정상): T09911T codeVersion=88f9f78b = repo HEAD 88f9f78 → git pull no-op → `update_skip`은 daemon-updater.js:162에서 **보고 제외 설계**(update_start/skip 노이즈 차단). update_success/fail만 서버 기록됨
+- 부수 확인: daemon-health state ok, uptime 4805s(재시작 없음), 모듈 mouse/screen/keyboard 전부 running. 이벤트는 guardian-alive 하트비트 1~2분 간격 정상. pc-list 상 hostname 대소문자 분열 없음(DESKTOP-T09911T 단일, user_id MNMRX6SR07F5FF7C0C)
+- 남은 리스크: "명령 실행됨"을 서버에서 확인하려면 `restart`/`gitpull-worker`처럼 command_executed를 보고하는 액션이어야 함. 이미 최신 버전인 PC에 update를 쏘면 소비만 보이고 실행은 영원히 무증거 → 진단 시 오판 주의
