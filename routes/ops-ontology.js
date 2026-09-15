@@ -72,13 +72,19 @@ const conf = (n) => (n >= 3 ? 1.0 : n === 2 ? 0.67 : 0.34);
 const DEFAULT_WORKSPACE_ID = 'WS-NENOVA-2026';
 
 // ── 승격: events → Action(unified_events) + ops_relation (멱등) ───────────────
-async function promote(pool, hours) {
-  const since = new Date(Date.now() - (hours || 24) * 3600 * 1000).toISOString();
+async function promote(pool, hours, opts = {}) {
+  // 시간창: [now-sinceHours, now-untilHours). 기본은 최근 hours시간(untilHours=0).
+  // 대량 백필을 48h씩 잘라 안전하게 돌리기 위해 상한(untilHours)을 노출한다(메모리 OOM 방지).
+  const now = Date.now();
+  const sinceHours = opts.sinceHours != null ? opts.sinceHours : (hours || 24);
+  const untilHours = opts.untilHours || 0;
+  const since = new Date(now - sinceHours * 3600 * 1000).toISOString();
+  const until = new Date(now - untilHours * 3600 * 1000).toISOString();
   const { rows } = await pool.query(
     `SELECT id, type, user_id, timestamp, data_json FROM events
-     WHERE type = ANY($1) AND timestamp >= $2 AND user_id NOT IN ('local','system') AND user_id IS NOT NULL
+     WHERE type = ANY($1) AND timestamp >= $2 AND timestamp < $3 AND user_id NOT IN ('local','system') AND user_id IS NOT NULL
      ORDER BY user_id, timestamp ASC`,
-    [PROMOTE_TYPES, since]
+    [PROMOTE_TYPES, since, until]
   );
   // 사용자별 실제 워크스페이스(테넌트) — workspace_members 실멤버십에서 도출, 없으면 기본 테넌트
   const { rows: wsRows } = await pool.query(`SELECT user_id, workspace_id FROM workspace_members WHERE status='active'`).catch(() => ({ rows: [] }));
@@ -171,7 +177,7 @@ async function promote(pool, hours) {
     }
     prevAct = { u: a.u, isKakao, actId, endMs: a.end };
   }
-  return { actions: nAct, relations: nRel, sourceEvents: rows.length, windowHours: hours || 24 };
+  return { actions: nAct, relations: nRel, sourceEvents: rows.length, windowHours: hours || 24, since, until };
 }
 
 // ── 자동 cron: 주기적으로 최근 구간을 멱등 승격 (온톨로지 상시 최신) ──────────────
@@ -222,7 +228,11 @@ function createOpsOntologyRouter(deps = {}) {
       const p = pool(); if (!p) return res.status(500).json({ error: 'db not available' });
       await ensureOpsTables(p);
       const hours = Math.min(parseInt(req.query.hours) || 24, 720);
-      const r = await promote(p, hours);
+      // 대량 백필용 시간창(선택): sinceHours~untilHours 구간만 승격. 미지정이면 최근 hours시간.
+      const opts = {};
+      if (req.query.sinceHours != null) opts.sinceHours = Math.min(parseInt(req.query.sinceHours) || 0, 8760);
+      if (req.query.untilHours != null) opts.untilHours = Math.max(parseInt(req.query.untilHours) || 0, 0);
+      const r = await promote(p, hours, opts);
       const e = await enrichHandoff(p, hours); // Action → 거래처/핸드오프/ERP 관계 보강
       const k = await syncKakaoToOntology(p, _fetchKakaoSheetData).catch(err => ({ error: err.message })); // 카톡 시트 연결
       res.json({ ok: true, ...r, ...e, kakao: k });
