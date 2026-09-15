@@ -1786,3 +1786,13 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 - 미작동 원인 후보(미확정): ①manifest 매치 `*.nenovaweb.com`은 apex `nenovaweb.com` 안걸림 ②orbit_token 미설정 시 무전송(background.js chrome.storage) ③확장 미설치. browser.activity도 0건이라 ②③ 유력
 - 3대 지렛대(impact×feasibility): ①웹확장 실작동(주문등록 클릭→필드=값, 직원PC 바이너리 변경0, 확장만) ②Vision 프롬프트에 앞뒤맥락+entities(거래처·품목·수량·차수)+nextLikely(카톡·nenova.exe는 Vision만이 리더) ③work-flow가 웹step+uia+클릭+vision 통합(뼈대 완성)
 - 다음: 사용자에게 지렛대①부터 착수 여부 확인. 상세 메모리=orbit-app-readability-uia-hittest.md
+
+## 2026-09-15 (7) 병행: 레버①웹ERP수집 활성화 + 레버②Vision맥락·엔티티 (d947709 배포)
+검색어: 크롬확장, apex 매치, content-work.js, orbit-work.crx, updates.xml, 재패킹, web work.step, Vision 엔티티, prevSummary, 작업흐름 웹
+- 레버① 근본원인: chrome-extension/manifest.json이 `*.nenovaweb.com`만 매치 → **apex `https://nenovaweb.com`(실제 ERP) 안 걸림**. 그래서 웹 work.step 0건이었음(확장·토큰·배포는 멀쩡, install.ps1이 ExtensionInstallForcelist+managed policy로 토큰 자동주입)
+  · 수정: apex 매치 추가(host_permissions+content_scripts), v2.1.0→2.2.0. crx 재패킹=`chrome.exe --pack-extension=chrome-extension --pack-extension-key=chrome-extension.pem`(pem이 ID nbdgofhdhgieeadliokgoifhdbhbnfea 고정). public/orbit-work.crx 교체(=/orbit-work.crx 서빙), updates.xml version 2.2.0
+  · ★배포경로 지도: updates.xml(/chrome-extension/updates.xml) → codebase /orbit-work.crx(=public/orbit-work.crx). 서버 static /chrome-extension + public. 프로덕션 서빙 crx 2.2.0·apex매치 True 검증
+  · work-flow.js/html: 웹 step(action=click|input|navigate, target.label/selector, url) 렌더 추가. 웹 클릭은 확장이 라벨 보유→좌표매칭 생략. 합성테스트: 클릭[거래처선택]→입력[수량]=40→클릭[저장] 라벨 2/2
+- 레버② bin/vision-worker.js: _buildPrompt에 [창제목]·[직전화면]·[타이핑] 맥락 블록, 스키마에 entities(거래처·품목·수량·차수·금액)·actionDone·changeFromPrev·nextLikely. '보이는것만 추측금지' 명시. _lastByUser로 직전요약 스레딩(큐/스풀/로컬). max_tokens 1024→1536. typedContext는 vision item에 원문필드 없어 미연결(hook만 열어둠)
+- ★남은 검증(미검증): 직원 크롬이 강제설치 확장을 **자동갱신**해야 웹 step 유입 시작(Chrome 업데이트주기=수시간/재시작). owner 크롬 재시작은 사장님 작업중이라 안 함. 첫 web work.step(source=ext-work) 도착을 백그라운드 워처로 감시중. 데스크톱 nenova.exe는 UIA 0/9라 영영 좌표만 → Vision(레버②)이 그쪽 유일 리더
+- 다음: 웹 step 유입 확인되면 work-flow에서 '주문등록' 실제 흐름 확인. Vision 엔티티는 다음 분석분부터 채워짐(과거분 소급 안 됨)
