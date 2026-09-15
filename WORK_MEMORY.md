@@ -1703,3 +1703,14 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 - ★실행 증거는 없음(정상): T09911T codeVersion=88f9f78b = repo HEAD 88f9f78 → git pull no-op → `update_skip`은 daemon-updater.js:162에서 **보고 제외 설계**(update_start/skip 노이즈 차단). update_success/fail만 서버 기록됨
 - 부수 확인: daemon-health state ok, uptime 4805s(재시작 없음), 모듈 mouse/screen/keyboard 전부 running. 이벤트는 guardian-alive 하트비트 1~2분 간격 정상. pc-list 상 hostname 대소문자 분열 없음(DESKTOP-T09911T 단일, user_id MNMRX6SR07F5FF7C0C)
 - 남은 리스크: "명령 실행됨"을 서버에서 확인하려면 `restart`/`gitpull-worker`처럼 command_executed를 보고하는 액션이어야 함. 이미 최신 버전인 PC에 update를 쏘면 소비만 보이고 실행은 영원히 무증거 → 진단 시 오판 주의
+
+## 2026-09-15 작업데이터 통합 페이지 my-work.html — 흩어진 11개 화면을 탭 하나로 (9f6add2 배포)
+검색어: my-work, 통합 페이지, 내 작업 데이터, 중복 메뉴, work-timetable, cctv, 고아 페이지, iframe 탭
+- 요청: "통합페이지 — 내 작업데이터에서 모든 페이지 하나로 묶어줘. 기존 중복되는 메뉴페이지 정리"
+- 만든 것: public/my-work.html — 지연로딩 iframe 탭 11개(시간표·화면타임라인·작업상세·목적타임라인·세밀분석·작업로그·작업분석·프로세스마이닝·전산·발주검증·X-ray). 같은 오리진이라 localStorage orbit_token 공유 → 기존 페이지 무수정(재작성 0)
+- ★중복 실측 결론: **기능 중복으로 지울 페이지 없음**. 60개 페이지 쌍별 API 집합 비교에서 자카드 0.7 이상 쌍 0개. "같은 API 하나 부름=중복"은 근거 부족(하위에이전트 오판, 배포 전 my-work를 404 죽은페이지로 보고하기도)
+- 진짜 중복 = 메뉴 반복: mindmap↔orbit-hub 56%, mindmap↔automation-flow 62%, orbit-hub↔automation-flow 57% (링크집합 겹침). 작업데이터 11종을 메뉴마다 2~6개씩만 제각각 링크 → 입구마다 다른 목록이 보였던 원인
+- 메뉴 정리(실행): admin-analysis·orbit-hub·automation-flow에 '내 작업 데이터' 단일 진입점 추가. **페이지 삭제는 안 함**(CLAUDE.md 규칙3). 메뉴 3개 통합 여부는 사용자 결정 대기
+- ★배포: GitHub 자동배포 끊겨 있었음(직전 SUCCESS 2026-09-11). push만으론 404 → `railway up --detach` 수동 배포 필요. 404→502(교체순간)→200(10:15:03), 배포 a95832d5 SUCCESS
+- 검증: 프로덕션 실데이터 확인 — 시간표 히트맵(직원별 시간대), 화면타임라인(캡처 카드), 전산(총 상품수 3,371·거래처 688). iframe 3개 contentDocument 직접 읽어 확증
+- ★함정: iframe 탭 스크린샷을 3초 만에 찍으면 수치가 '-'로 보임(로딩 전). 빈 화면 판정 전 contentDocument.innerText로 재확인할 것
