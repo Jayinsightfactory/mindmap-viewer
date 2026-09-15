@@ -1724,3 +1724,12 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 - 9/11 16:13(37a9218) 이후 미반영 5커밋 = docs2 + bin워커 모델고정 + quota-guard + screen-capture. server.js/routes가 이들 require 0건 → **Railway 서버 영향 없음**(PC쪽은 데몬 git pull로 반영, T09911T 88f9f78b)
 - ★남은 문제: GitHub→Railway 자동배포 연결 끊김 지속. push 후 반드시 `railway up --detach` (대시보드 연동 설정은 사용자 몫, 미변경)
 - 메뉴 추가/변경 시: 각 HTML 말고 public/js/site-nav.js 의 MENU 배열만 수정할 것
+
+## 2026-09-15 (3) Railway 자동배포 끊김 원인=엉뚱한 저장소(talkhub) 연결 → 재연결
+검색어: 자동배포 끊김, railway source, service source connect, talkhub, 자동배포 안됨, push 했는데 404
+- 증상: 9/11 이후 GitHub main push가 프로덕션에 반영 안 됨(수동 `railway up`만 반영)
+- ★원인: mindmap-viewer 서비스(tranquil-analysis)의 source.repo = **Jayinsightfactory/talkhub**(MOYI 저장소). 끊긴 게 아니라 다른 저장소를 보고 있었음. talkhub push가 Orbit 서버를 덮을 수 있는 지뢰였음
+- 피해 확인: 최근 배포 15건 전부 reason=deploy·repo 없음(=CLI 수동 업로드). talkhub 코드가 배포된 적은 없음
+- 조치: `railway service source connect --repo Jayinsightfactory/mindmap-viewer --branch main --service mindmap-viewer` (CLI 5.45.5). 직후 GitHub 기준 첫 배포 c37bbb5d SUCCESS(commit 5aee4b3d)
+- 진단법: `railway status --json` → serviceInstances[].source.repo 확인. deployment list --json 의 meta.repo/commitHash 비어있으면 CLI 업로드
+- 추정 경위(미검증): MOYI 쪽 railway 명령을 이 서비스에 링크된 상태에서 실행하며 source가 바뀐 것으로 보임. railway 명령은 폴더별 link 확인 후 실행할 것
