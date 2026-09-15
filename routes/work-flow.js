@@ -30,6 +30,7 @@ const APP_SWITCH_GAP_MS = 90 * 1000;       // 앱이 바뀌고 90초 넘게 비�
 const UIA_AFTER_CLICK_MS = 2000;           // 클릭 후 이 안에 온 UIA 포커스 = 그 클릭의 대상
 const VISION_WINDOW_MS = 3 * 60 * 1000;    // Vision 필드 좌표를 찾을 화면 분석 시간창
 const VISION_RADIUS_PX = 40;               // vision-worker는 받은 클릭 좌표를 그대로 clickXY로 옮겨 적는다
+const DOC_STICK = 5;                       // 새 문서에서 활동 5단계 이상 이어져야 문서 전환으로 인정
 
 function parseXY(v) {
   if (Array.isArray(v)) { const x = +v[0], y = +v[1]; return Number.isFinite(x) && Number.isFinite(y) ? [x, y] : null; }
@@ -110,18 +111,29 @@ function buildFlow({ chunks = [], uia = [], screens = [] }) {
     steps.push({ ...e });
   });
 
-  // 세션 나누기
+  // 세션 나누기 — 경계: ①5분 무활동 ②앱 전환+90초 ③문서(창 제목) 전환이 DOC_STICK 단계 이상 이어질 때.
+  // 실측(설연주 9/15): 하루 종일 엑셀·최대간격 153초라 ①②만으론 1,500단계가 세션 1개로 뭉침.
+  // 창 제목이 곧 작업 단위('라움 발주서'→'7월 지출사용내역'). 카톡 잠깐 확인 후 복귀 같은 짧은 전환은 ③에 안 걸림.
+  const docOf = (s) => (s.kind === 'screen' ? '' : String(s.win || s.app || '').replace(/\s+-\s+(Excel|Word|PowerPoint|Chrome|Google Chrome|Microsoft Edge)$/i, '').trim());
+  const sticks = (i, doc) => {                                        // i부터 DOC_STICK개 활동 단계가 같은 문서인가
+    let n = 0;
+    for (let j = i; j < steps.length && n < DOC_STICK; j++) { const d = docOf(steps[j]); if (!d) continue; if (d !== doc) return false; n++; }
+    return n >= DOC_STICK;
+  };
   const sessions = [];
   let cur = null;
-  for (const s of steps) {
+  steps.forEach((s, i) => {
     const gap = cur ? s.t - cur.end : Infinity;
     const appChanged = cur && s.app && cur.lastApp && appKey(s.app) !== appKey(cur.lastApp);
-    if (!cur || gap > SESSION_GAP_MS || (appChanged && gap > APP_SWITCH_GAP_MS)) {
+    const doc = docOf(s);
+    const docChanged = cur && doc && cur.doc && doc !== cur.doc && sticks(i, doc);
+    if (!cur || gap > SESSION_GAP_MS || (appChanged && gap > APP_SWITCH_GAP_MS) || docChanged) {
       if (cur) sessions.push(cur);
-      cur = { start: s.t, end: s.t, steps: [], lastApp: '' };
+      cur = { start: s.t, end: s.t, steps: [], lastApp: '', doc: '' };
     }
     cur.steps.push(s); cur.end = s.tEnd || s.t; if (s.app) cur.lastApp = s.app;
-  }
+    if (doc && (!cur.doc || sticks(i, doc))) cur.doc = doc;           // 세션의 대표 문서 = 자리잡은 문서
+  });
   if (cur) sessions.push(cur);
 
   const top = (arr) => { const m = {}; for (const v of arr) if (v) m[v] = (m[v] || 0) + 1; return Object.entries(m).sort((a, b) => b[1] - a[1])[0]?.[0] || ''; };
@@ -134,7 +146,8 @@ function buildFlow({ chunks = [], uia = [], screens = [] }) {
       return {
         start: new Date(s.start).toISOString(), end: new Date(s.end).toISOString(),
         durationSec: Math.round((s.end - s.start) / 1000),
-        title: top(sc.map((x) => x.action)) || top(sc.map((x) => x.activity)) || top(act.map((x) => x.win)) || top(act.map((x) => x.app)) || '작업',
+        // 제목: 전산 동작 > 문서명 > 화면분석 한 줄 (문서명이 화면분석 요약보다 작업 단위를 더 정확히 가리킴)
+        title: top(sc.map((x) => x.action)) || s.doc || top(sc.map((x) => x.activity)) || top(act.map((x) => x.app)) || '작업',
         apps: [...new Set(act.map((x) => x.app).filter(Boolean))].slice(0, 5),
         stats: { clicks: clicks.length, labeled: clicks.filter((x) => x.label).length,
           inputs: act.filter((x) => x.kind === 'input').length, typing: act.filter((x) => x.kind === 'type').length, screens: sc.length },
