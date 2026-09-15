@@ -1714,3 +1714,13 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 - ★배포: GitHub 자동배포 끊겨 있었음(직전 SUCCESS 2026-09-11). push만으론 404 → `railway up --detach` 수동 배포 필요. 404→502(교체순간)→200(10:15:03), 배포 a95832d5 SUCCESS
 - 검증: 프로덕션 실데이터 확인 — 시간표 히트맵(직원별 시간대), 화면타임라인(캡처 카드), 전산(총 상품수 3,371·거래처 688). iframe 3개 contentDocument 직접 읽어 확증
 - ★함정: iframe 탭 스크린샷을 3초 만에 찍으면 수치가 '-'로 보임(로딩 전). 빈 화면 판정 전 contentDocument.innerText로 재확인할 것
+
+## 2026-09-15 (2) 상단 메뉴 공통화 site-nav.js + 자동배포 끊김 영향 확인 (69a9460 배포)
+검색어: site-nav, data-site-nav, 메뉴 통합, 중복 메뉴, orbit-hub, automation-flow, mindmap, 자동배포 끊김, railway up
+- 요청: "확인해주고 합쳐줘" (9/11 이후 미반영 커밋 확인 + mindmap·orbit-hub·automation-flow 합치기)
+- ★내 이전 판단 정정: 세 페이지는 "합칠 메뉴"가 아니었음. mindmap.html=아키텍처 설명도(겹침으로 센 .html은 노드 설명 글자 sub:'orbit3d.html' — 부분문자열 측정 오판), automation-flow.html=113KB 워크플로우 편집기(/api/automation/* 6개). 물리 병합 시 기능 소실 → 하지 않음
+- 실제로 합친 것 = 제각각이던 상단 메뉴: public/js/site-nav.js 한 파일(8개, 기존 링크 합집합이라 접근성 감소 0) + 컨테이너에 data-site-nav. 적용: orbit-hub·automation-flow·my-work. 각 페이지 기존 a 스타일 그대로
+- 검증: 로컬 iframe probe 3페이지 동일 메뉴(자기 제외 7개), 1400px 헤더81px·400px 헤더191px 가로넘침 없음. 프로덕션 배포 5d9b7215 SUCCESS 후 3페이지 probe 동일 + 메뉴 대상 8개 전부 200
+- 9/11 16:13(37a9218) 이후 미반영 5커밋 = docs2 + bin워커 모델고정 + quota-guard + screen-capture. server.js/routes가 이들 require 0건 → **Railway 서버 영향 없음**(PC쪽은 데몬 git pull로 반영, T09911T 88f9f78b)
+- ★남은 문제: GitHub→Railway 자동배포 연결 끊김 지속. push 후 반드시 `railway up --detach` (대시보드 연동 설정은 사용자 몫, 미변경)
+- 메뉴 추가/변경 시: 각 HTML 말고 public/js/site-nav.js 의 MENU 배열만 수정할 것
