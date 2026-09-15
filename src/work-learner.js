@@ -368,6 +368,7 @@ async function analyzeWorkspace(pool, memberIds) {
 // 두벌식 QWERTY→한글 (키훅이 IME 조합 전 물리키를 잡아서 — 자동화 후보 가독용)
 function qwertyToHangul(str){
   if(!str) return '';
+  try { return require('./hangul').smartQwertyToHangul(str); } catch {} // [2026-09-15] 한/영 자동판별 공용판 우선(영문 입력 자모깨짐 방지), 실패 시 아래 기존 구현
   const M={q:'ㅂ',w:'ㅈ',e:'ㄷ',r:'ㄱ',t:'ㅅ',y:'ㅛ',u:'ㅕ',i:'ㅑ',o:'ㅐ',p:'ㅔ',a:'ㅁ',s:'ㄴ',d:'ㅇ',f:'ㄹ',g:'ㅎ',h:'ㅗ',j:'ㅓ',k:'ㅏ',l:'ㅣ',z:'ㅋ',x:'ㅌ',c:'ㅊ',v:'ㅍ',b:'ㅠ',n:'ㅜ',m:'ㅡ',Q:'ㅃ',W:'ㅉ',E:'ㄸ',R:'ㄲ',T:'ㅆ',O:'ㅒ',P:'ㅖ'};
   const CHO='ㄱㄲㄴㄷㄸㄹㅁㅂㅃㅅㅆㅇㅈㅉㅊㅋㅌㅍㅎ';
   const JUNG='ㅏㅐㅑㅒㅓㅔㅕㅖㅗㅘㅙㅚㅛㅜㅝㅞㅟㅠㅡㅢㅣ';

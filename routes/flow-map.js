@@ -18,7 +18,7 @@
  */
 
 const express = require('express');
-const { qwertyToHangul } = require('../src/hangul'); // [2026-08-10] 입력값 한글 역변환
+const { smartQwertyToHangul: qwertyToHangul } = require('../src/hangul'); // [2026-08-10] 입력값 한글 역변환 → [2026-09-15] 한/영 자동판별
 const { _clusterMouseClicks } = require('../src/work-learner'); // 마우스 클릭 핫스팟(자동화 좌표)
 
 const MASTER_TOKEN = 'orbit_967930333cab4ff63bc0bcae68c4779e3307d77095375f0d';

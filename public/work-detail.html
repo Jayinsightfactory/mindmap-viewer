@@ -79,6 +79,7 @@ function render(){
       <div class="meta">
         <span class="app a-${ac}">${esc(s.app||'화면')}</span>
         <div class="screen">${esc(s.screen||'')}</div>
+        ${s.activity?`<div class="ts" style="color:inherit;opacity:.85">${esc(s.activity)}</div>`:''}
         <div class="ts">${esc(String(s.ts||'').slice(0,16).replace('T',' '))} ${s.clickCount?'· 클릭좌표 '+s.clickCount:''}</div>
         ${inputs?`<div class="blk"><div class="h">이 화면에서 타이핑한 원문</div>${inputs}</div>`:''}
         ${flds?`<div class="blk"><div class="h">화면 속 항목/값</div>${flds}</div>`:''}

@@ -144,7 +144,8 @@ const { generateReport, countLines, measureCyclomaticComplexity, findLongFunctio
 const { scanForLeaks }            = require('./src/security-scanner');
 const { buildReportData, renderMarkdown, renderSlackBlocks } = require('./src/report-generator');
 const { extractContext, renderContextMd, renderContextPrompt, saveContextFile } = require('./src/context-bridge');
-const { qwertyToHangul } = require('./src/hangul'); // inputText QWERTY→한글 (조회·분석 가독)
+// inputText QWERTY→한글 (조회·분석 가독). [2026-09-15] 한/영 자동판별판 — 영어·스페인어 입력이 자모로 깨지던 문제
+const { smartQwertyToHangul: qwertyToHangul } = require('./src/hangul');
 const { detectConflicts, checkNewEvent } = require('./src/conflict-detector');
 const { appendAuditLog, auditFromEvents, queryAuditLog, verifyIntegrity, renderAuditHtml } = require('./src/audit-log');
 const { detectShadowAI, checkEventForShadow, getApprovedSources, addApprovedSource, removeApprovedSource } = require('./src/shadow-ai-detector');
@@ -4819,7 +4820,7 @@ app.get('/api/vision/screen-input', async (req, res) => {
         .map(k => ({ ts: k.timestamp, ko: qwertyToHangul(k.input).slice(0, 120), raw: k.input.slice(0, 120), gapSec: Math.round((k.ms - s.ms) / 1000) }))
         .sort((a, b) => Math.abs(a.gapSec) - Math.abs(b.gapSec)).slice(0, 4);
       // 화면 속 필드(라벨·값·좌표) — vision이 추출했으면 "어느 칸에 무슨 값" 근거
-      const fields = Array.isArray(s.fields) ? s.fields.slice(0, 12).map(f => ({ label: f.label || f.name || '', value: f.value || '', clickXY: f.clickXY || null })) : [];
+      const fields = Array.isArray(s.fields) ? s.fields.slice(0, 12).map(f => ({ label: f.label || f.name || '', value: f.value || f.currentValue || '', clickXY: f.clickXY || null })) /* [2026-09-15] vision-worker는 currentValue로 저장 — value만 읽어 값이 한 번도 안 나왔음 */ : [];
       return {
         id: s.id, ts: s.timestamp, app: s.app || '', screen: s.screen || '', activity: s.activity || '',
         thumbnailUrl: s.has_thumb ? `/api/vision/thumbnail/${s.id}` : null, // 실제 화면 이미지
