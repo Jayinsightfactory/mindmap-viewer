@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="ko"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>네노바 업무 데이터 통합본</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+:root{--bg:#F6F5F1;--panel:#FFFFFF;--sunk:#EDEBE4;--ink:#22201C;--ink2:#5A564E;--ink3:#8A857B;--line:#DDD9CF;--acc:#7A4E1F;--warn:#B45309;--warn-soft:#FBEBD3;
+ --s0:#2F6FEB;--s1:#0E8C8C;--s2:#1E8E5A;--s3:#7C9A1E;--s4:#B8860B;--s5:#C2410C;--s6:#B91C6B;--s7:#7C3AED;--s8:#374151}
+:root:not([data-theme="light"]){@media (prefers-color-scheme:dark){--bg:#15130F;--panel:#1E1B16;--sunk:#0F0E0B;--ink:#EDE9E0;--ink2:#B9B3A6;--ink3:#847E72;--line:#332F27;--acc:#E0A96D;--warn:#F0B060;--warn-soft:#3A2A10;--s8:#9CA3AF}}
+:root[data-theme="dark"]{--bg:#15130F;--panel:#1E1B16;--sunk:#0F0E0B;--ink:#EDE9E0;--ink2:#B9B3A6;--ink3:#847E72;--line:#332F27;--acc:#E0A96D;--warn:#F0B060;--warn-soft:#3A2A10;--s8:#9CA3AF}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:"Noto Sans KR",system-ui,"Malgun Gothic",sans-serif;font-size:14px;line-height:1.55}
+.mono{font-family:"IBM Plex Mono",Consolas,monospace;font-size:12px}
+.app{display:grid;grid-template-columns:220px minmax(0,1fr)}
+@media(max-width:900px){.app{grid-template-columns:1fr}nav{position:static!important;height:auto!important;flex-direction:row!important;flex-wrap:wrap}}
+nav{position:sticky;top:0;height:100vh;overflow:auto;padding:20px 14px;border-right:1px solid var(--line);background:var(--panel);display:flex;flex-direction:column;gap:2px;font-size:12.5px}
+nav b{font-size:14px;margin-bottom:8px}
+nav a{color:var(--ink2);text-decoration:none;padding:4px 8px;border-radius:6px}
+nav a:hover,nav a:focus-visible{background:var(--sunk);color:var(--ink)}
+nav a.sub2{padding-left:20px;color:var(--ink3);font-size:12px}
+main{padding:26px 30px 100px;max-width:1240px}
+h1{font-size:24px;margin:0 0 4px;letter-spacing:-.01em}
+.lede{color:var(--ink2);max-width:80ch;margin:0 0 6px}
+.meta{color:var(--ink3);font-size:12px;margin:0 0 20px}
+h2{font-size:18px;margin:44px 0 6px;padding-top:14px;border-top:2px solid var(--ink);scroll-margin-top:12px}
+h3{font-size:15px;margin:26px 0 8px;scroll-margin-top:12px}
+h3 small,h2 small,h4 small{font-weight:400;color:var(--ink3);font-size:12px;margin-left:8px}
+h4{font-size:13px;margin:16px 0 6px;color:var(--ink2)}
+p{margin:0 0 10px;max-width:84ch}
+.wrap{overflow-x:auto}
+table{border-collapse:collapse;font-size:12.5px}
+th,td{border-bottom:1px solid var(--line);padding:5px 10px;text-align:right;font-variant-numeric:tabular-nums;vertical-align:top}
+th{color:var(--ink3);font-weight:500;white-space:nowrap}
+th:first-child,td:first-child,td.l,th.l{text-align:left}
+td.txt{text-align:left;max-width:520px;white-space:normal}
+.flow{display:flex;flex-wrap:wrap;gap:4px;align-items:center;margin:8px 0 14px;font-size:12px}
+.flow span{padding:3px 9px;border-radius:999px;color:#fff;white-space:nowrap}.flow em{font-style:normal;color:var(--ink3)}
+.dot{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:5px;vertical-align:0}
+.note{background:var(--warn-soft);color:var(--warn);border-radius:8px;padding:10px 14px;font-size:13px;margin:10px 0;max-width:90ch}
+.month{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:8px}
+.mc{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:9px 12px}
+.mc h5{margin:0 0 5px;font-size:12.5px}.mc h5 small{color:var(--ink3);font-weight:400}
+.stack{display:flex;height:12px;border-radius:4px;overflow:hidden;margin:3px 0 5px;background:var(--sunk)}.stack i{display:block;height:100%}
+.kv{display:flex;flex-wrap:wrap;gap:2px 10px;font-size:11.5px;color:var(--ink2)}.kv b{font-weight:500;color:var(--ink)}
+.ctry{display:inline-block;padding:0 6px;border-radius:3px;background:var(--sunk);font-size:10.5px;margin:1px 2px 1px 0}
+.grid{display:grid;grid-template-columns:46px repeat(7,minmax(56px,1fr));gap:2px;font-size:10.5px;min-width:500px;max-width:760px}
+.grid .h{color:var(--ink3);text-align:center}.grid .t{color:var(--ink3);text-align:right;padding-right:5px}
+.cell{height:18px;border-radius:3px;background:var(--sunk);display:flex;overflow:hidden}.cell i{display:block;height:100%}
+.day{display:grid;grid-template-columns:88px minmax(0,1fr);gap:8px;align-items:center;margin:0 0 2px;min-width:500px;max-width:760px}
+.day .d{font-size:11.5px;color:var(--ink2)}
+.bar{display:grid;grid-template-columns:repeat(15,1fr);gap:1px;height:15px}.bar span{border-radius:2px;background:var(--sunk);display:flex;overflow:hidden}.bar span i{display:block;height:100%}
+.person{background:transparent;margin:0 0 10px}
+details{border:1px solid var(--line);border-radius:8px;background:var(--panel);margin:0 0 6px}
+details>summary{cursor:pointer;padding:8px 12px;font-size:13px;list-style:none;display:flex;gap:8px;align-items:baseline;flex-wrap:wrap}
+details>summary::-webkit-details-marker{display:none}
+details>summary::before{content:"▸";color:var(--ink3)}details[open]>summary::before{content:"▾"}
+details .in{padding:2px 14px 12px 28px;font-size:13px}
+details ol{margin:4px 0 0;padding-left:18px}details li{margin:2px 0}
+.badge{font-size:10.5px;padding:1px 7px;border-radius:999px;background:var(--sunk);color:var(--ink2)}
+.badge.high{background:#E3F8EA;color:#1A7F3C}.badge.medium{background:#FFF4E0;color:#B25E00}.badge.low{background:var(--sunk)}
+a{color:var(--acc)}
+ul.links{padding-left:18px;margin:6px 0}ul.links li{margin:3px 0}
+.cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:4px 18px;font-size:12.5px}
+.cols div{display:flex;justify-content:space-between;gap:8px;border-bottom:1px dashed var(--line);padding:2px 0}
+</style></head><body>
+<div class="app">
+<nav id="nav"><b>통합본 목차</b></nav>
+<main id="main"></main>
+</div>
+<script>
+(async function(){
+const tok = localStorage.getItem('orbit_token') || localStorage.getItem('orbitToken') || '';
+const main0 = document.getElementById('main');
+let D;
+try { const r = await fetch('/api/flow/work-unified', { headers: { Authorization: 'Bearer ' + tok } }); const j = await r.json(); if (!r.ok || !j.data) { main0.innerHTML = '<h1>네노바 업무 데이터 통합본</h1><p class="lede">' + (r.status === 403 ? '관리자 전용 화면입니다.' : r.status === 401 ? '토큰이 없습니다. 내 작업 데이터 화면에서 토큰을 먼저 저장하세요.' : '아직 올라온 통합본이 없습니다.') + '</p>'; return; } D = j.data; document.title = '네노바 업무 데이터 통합본 · ' + String(j.ts).slice(0,10); } catch (e) { main0.innerHTML = '<p class="lede">불러오기 실패: ' + e.message + '</p>'; return; }
+const STAGES = ["발주","입고","분배","현장출고","견적서","거래처전달","입금","해외송금","이익"], ERP = ["발주","입고","분배","현장출고"];
+const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const color = (st) => 'var(--s' + Math.max(0, STAGES.indexOf(st)) + ')';
+const DAYS = ['일','월','화','수','목','금','토'], HRS = [...Array(15).keys()].map(x => x + 7);
+const sum = (m) => Object.values(m || {}).reduce((a, b) => a + b, 0);
+const seg = (m, max) => { const tot = sum(m); if (!tot) return ''; const op = max ? Math.max(.25, Math.min(1, tot / max)) : 1; return STAGES.filter(s => m[s]).map(s => "<i style='width:" + (100 * m[s] / tot) + "%;background:" + color(s) + ";opacity:" + op + "'></i>").join(''); };
+const tip = (m) => STAGES.filter(s => m[s]).map(s => s + ' ' + m[s]).join(' · ');
+const nav = document.getElementById('nav'); let h = '';
+const sec = (id, title, small) => { nav.insertAdjacentHTML('beforeend', "<a href='#" + id + "'>" + esc(title) + '</a>'); return "<h2 id='" + id + "'>" + esc(title) + (small ? '<small>' + esc(small) + '</small>' : '') + '</h2>'; };
+const months = [...new Set(D.people.flatMap(p => Object.keys(p.month)))].sort();
+
+h += '<h1>네노바 업무 데이터 통합본</h1><p class="lede">관측 기록과 전산 저장 기록으로 복원한 네노바의 업무 흐름·직원별 루틴·담당 농장·인수인계·업무 매뉴얼·화면 지도를 한 장에 모았습니다. 주어는 업무 절차이고 사람은 실행자입니다.</p><p class="meta">전산 기록 ' + D.period.from + ' ~ ' + D.period.to + ' · 화면 해독 ' + D.visPeriod.from + ' ~ ' + D.visPeriod.to + ' · 2026-09-17 기준 · AI 초안(직원 확인 전)</p>';
+
+// 1 사업 흐름
+h += sec('flow', '1. 사업 흐름 9단계', '사장님 정의');
+h += "<div class='flow'>" + STAGES.map((s, i) => "<span style='background:var(--s" + i + ")'>" + s + '</span>' + (i < 8 ? '<em>→</em>' : '')).join('') + '</div>';
+h += "<div class='wrap'><table><tr><th>단계</th><th class='l'>누가</th><th class='l'>무엇을</th><th class='l'>데이터 출처</th><th>기록 수</th></tr>" + [
+ ['발주','영업부','거래처 수요를 모아 주문등록 = 농장 발주','전산 OrderMaster (작성자·시각)', '1,594'],
+ ['입고','수입부','해외 농장 입고 등록 (농장·국가)','전산 WarehouseMaster (작성자·시각·농장)', '1,159'],
+ ['분배','영업지원','입고 물량을 거래처별 출고량으로 입력·수정','전산 ShipmentHistory 수정 이력 (변경자·시각)', '29,150'],
+ ['현장출고','현장','실물 출고 · 불량 확인 → 차수 확정','전산 ShipmentMaster isFix (확정자·시각)', '1,271'],
+ ['견적서','영업지원','출고된 값(분배) 기준으로 견적서 작성','전산 Estimate (시각만, 작성자 없음) + 화면 해독', '2,347'],
+ ['거래처전달','영업부','견적서·거래명세서를 거래처에 전달','화면 해독만 (전산 기록 없음)', '—'],
+ ['입금','경영지원','거래처 입금 확인 · 미수 · 세금계산서','화면 해독만 (입금 장부 0행)', '—'],
+ ['해외송금','경영지원·수입부','해외 농장 송금 (환율·지출결의)','화면 해독만 (송금 테이블 테스트 7건뿐)', '—'],
+ ['이익','경영','매출 − 매입 − 비용','화면 해독만', '—']].map(r => "<tr><td><i class='dot' style='background:" + color(r[0]) + "'></i>" + r[0] + "</td><td class='l'>" + r[1] + "</td><td class='txt'>" + r[2] + "</td><td class='txt'>" + r[3] + '</td><td>' + r[4] + '</td></tr>').join('') + '</table></div>';
+
+// 2 전산 기록 사람×단계
+h += sec('erp', '2. 전산 저장 기록 — 사람 × 단계', D.period.from + ' ~ ' + D.period.to);
+h += "<div class='wrap'><table><tr><th>실행자</th><th class='l'>부서</th>" + ERP.map(s => '<th>' + s + '</th>').join('') + '<th>합계</th>' + months.map(m => '<th>' + m.slice(5) + '월</th>').join('') + '</tr>';
+for (const p of D.people) { const tot = {}; for (const m of Object.values(p.month)) for (const [k, v] of Object.entries(m)) tot[k] = (tot[k] || 0) + v; if (!sum(tot)) continue;
+  h += "<tr><td><a href='#p-" + esc(p.name) + "'>" + esc(p.name) + "</a></td><td class='l'>" + esc(p.dept) + '</td>' + ERP.map(s => '<td>' + (tot[s] ? tot[s].toLocaleString() : '') + '</td>').join('') + '<td><b>' + sum(tot).toLocaleString() + '</b></td>' + months.map(m => '<td>' + (sum(p.month[m]) ? sum(p.month[m]).toLocaleString() : '') + '</td>').join('') + '</tr>'; }
+h += '</table></div>';
+h += "<p class='note'>분배 수정 이력에는 사람이 아닌 프로그램 계정도 있어 사람 집계에서 뺐습니다: " + Object.entries(D.scripts).map(([k, v]) => esc(k) + ' ' + v).join(' · ') + '. ' + esc(D.notes?.scriptNote || '') + '</p>';
+
+// 3 입고 국가·농장
+h += sec('farm', '3. 입고 담당 국가 · 농장', '농장 국가 = 그 농장이 입고한 품목의 국가 다수결 · 농장 ' + D.farmCountry.length + '곳 미상 0');
+for (const p of D.people.filter(p => Object.keys(p.country).length)) {
+  h += '<h3>' + esc(p.name) + ' <small>' + esc(p.dept) + "</small></h3><div class='wrap'><table><tr><th>국가</th>" + months.map(m => '<th>' + m.slice(5) + '월</th>').join('') + '<th>합계</th></tr>';
+  const cs = {}; for (const m of months) for (const [c, n] of Object.entries(p.country[m] || {})) cs[c] = (cs[c] || 0) + n;
+  for (const [c, t] of Object.entries(cs).sort((a, b) => b[1] - a[1])) h += '<tr><td>' + esc(c) + '</td>' + months.map(m => '<td>' + ((p.country[m] || {})[c] || '') + '</td>').join('') + '<td><b>' + t + '</b></td></tr>';
+  h += '</table></div>';
+  const fs2 = Object.entries(p.farms).map(([k, mm]) => [k, sum(mm), mm]).sort((a, b) => b[1] - a[1]);
+  if (fs2.length) { h += '<details><summary>농장별 입고 등록 ' + fs2.length + "곳 <span class='badge'>펼치기</span></summary><div class='in'><div class='wrap'><table><tr><th>농장</th><th class='l'>국가</th>" + months.map(m => '<th>' + m.slice(5) + '월</th>').join('') + '<th>합계</th></tr>' + fs2.map(([k, t, mm]) => { const [f, c] = k.split('|'); return '<tr><td>' + esc(f) + "</td><td class='l'>" + esc(c) + '</td>' + months.map(m => '<td>' + (mm[m] || '') + '</td>').join('') + '<td><b>' + t + '</b></td></tr>'; }).join('') + '</table></div></div></details>'; }
+}
+h += '<details><summary>농장 → 국가 전체 표 ' + D.farmCountry.length + "곳 <span class='badge'>펼치기</span></summary><div class='in'><div class='cols'>" + D.farmCountry.slice().sort((a, b) => String(a.country).localeCompare(b.country) || String(a.farm).localeCompare(b.farm)).map(f => '<div><span>' + esc(f.farm) + '</span><span>' + esc(f.country) + (f.basis !== 'farm master' ? ' <small style="color:var(--ink3)">추정</small>' : '') + '</span></div>').join('') + '</div></div></details>';
+
+// 4 직원별 루틴 (전원 펼침)
+h += sec('routine', '4. 직원별 업무 루틴', '월별 · 요일×시간 · 일별 · 차수 · 화면 해독');
+for (const p of D.people) {
+  nav.insertAdjacentHTML('beforeend', "<a class='sub2' href='#p-" + esc(p.name) + "'>" + esc(p.name) + '</a>');
+  h += "<section class='person'><h3 id='p-" + esc(p.name) + "'>" + esc(p.name) + ' <small>' + esc(p.dept) + ' · 전산 ' + p.total.toLocaleString() + '건' + (p.vis ? ' · 화면 ' + (p.vis.events || 0) + '건' : '') + '</small></h3>';
+  const ms = Object.keys(p.month).sort();
+  if (ms.length) { h += "<div class='month'>" + ms.map(mk => { const Mo = p.month[mk], C = p.country[mk] || {}; const cs = Object.entries(C).sort((a, b) => b[1] - a[1]).slice(0, 4); return "<div class='mc'><h5>" + mk.slice(5) + '월 <small>' + sum(Mo).toLocaleString() + "건</small></h5><div class='stack'>" + seg(Mo) + "</div><div class='kv'>" + STAGES.filter(s => Mo[s]).map(s => '<span>' + s + ' <b>' + Mo[s].toLocaleString() + '</b></span>').join('') + '</div>' + (cs.length ? "<div class='kv' style='margin-top:4px'>" + cs.map(([k, v]) => "<span class='ctry'>" + esc(k) + ' ' + v + '</span>').join('') + '</div>' : '') + '</div>'; }).join('') + '</div>'; }
+  const G = p.grid; if (Object.keys(G).length) { const max = Math.max(1, ...Object.values(G).map(sum));
+    h += "<h4>주간 루틴 <small>요일 × 시간 · 진할수록 많음</small></h4><div class='wrap'><div class='grid'><div></div>" + DAYS.map(d => "<div class='h'>" + d + '</div>').join('') + HRS.map(hr => "<div class='t'>" + String(hr).padStart(2, '0') + '시</div>' + [0,1,2,3,4,5,6].map(d => { const m = G[d + '|' + hr]; return m ? "<div class='cell' title='" + esc(DAYS[d] + ' ' + hr + '시 · ' + tip(m)) + "'>" + seg(m, max / 3) + '</div>' : "<div class='cell'></div>"; }).join('')).join('') + '</div></div>';
+    const wd = {}, hr2 = {}; for (const [k, m] of Object.entries(G)) { const [d, hh] = k.split('|'); wd[d] = (wd[d] || 0) + sum(m); hr2[hh] = (hr2[hh] || 0) + sum(m); }
+    h += "<p style='font-size:12.5px;color:var(--ink2);margin-top:6px'>가장 몰리는 요일: " + Object.entries(wd).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([d, v]) => DAYS[d] + ' ' + v.toLocaleString()).join(' · ') + ' / 시간: ' + Object.entries(hr2).sort((a, b) => b[1] - a[1]).slice(0, 4).map(([x, v]) => x + '시 ' + v.toLocaleString()).join(' · ') + '</p>'; }
+  const days = Object.keys(p.day).sort().slice(-14);
+  if (days.length) { h += '<details><summary>일별 루틴 최근 ' + days.length + "일 <span class='badge'>펼치기</span></summary><div class='in'><div class='wrap'>" + days.map(dt => { const dd = p.day[dt]; const w = DAYS[new Date(dt + 'T00:00:00').getDay()]; const dmax = Math.max(1, ...Object.values(dd).map(sum)); return "<div class='day'><div class='d'>" + dt.slice(5) + ' (' + w + ') ' + Object.values(dd).reduce((a, m) => a + sum(m), 0) + "건</div><div class='bar'>" + HRS.map(x => { const m = dd[x]; return m ? "<span title='" + esc(x + '시 · ' + tip(m)) + "'>" + seg(m, dmax) + '</span>' : '<span></span>'; }).join('') + '</div></div>'; }).join('') + '</div></div></details>'; }
+  const cyc = Object.keys(p.cycle).sort();
+  if (cyc.length) { const f = (t) => t ? t.slice(5, 10) + ' ' + DAYS[new Date(t.slice(0, 10) + 'T00:00:00').getDay()] + ' ' + t.slice(11, 16) : '';
+    h += '<details><summary>차수 루틴 ' + cyc.length + "개 차수 <span class='badge'>펼치기</span></summary><div class='in'><div class='wrap'><table><tr><th>차수</th>" + ERP.map(s => '<th>' + s + '</th>').join('') + "<th class='l'>처음 → 마지막 저장</th></tr>" + cyc.map(w => { const c = p.cycle[w]; const ts = Object.values(c).flatMap(x => [x.firstAt, x.lastAt]).filter(Boolean).sort(); return '<tr><td>' + esc(w) + '</td>' + ERP.map(s => '<td>' + (c[s] ? c[s].n.toLocaleString() : '') + '</td>').join('') + "<td class='l mono'>" + f(ts[0]) + ' → ' + f(ts[ts.length - 1]) + '</td></tr>'; }).join('') + '</table></div></div></details>'; }
+  if (p.vis) { const vs = p.vis.stages || {}; const tot = sum(vs);
+    h += "<h4>화면 해독 <small>" + (p.vis.events || 0) + "건 · 8~9월</small></h4><div class='kv' style='font-size:12.5px'>" + Object.entries(vs).sort((a, b) => b[1] - a[1]).map(([k, v]) => '<span>' + (STAGES.includes(k) ? "<i class='dot' style='background:" + color(k) + "'></i>" : '') + esc(k) + ' <b>' + v + '</b> (' + Math.round(100 * v / Math.max(1, tot)) + '%)</span>').join('') + '</div>';
+    const vc = Object.entries(p.vis.countries || {}).sort((a, b) => b[1] - a[1]).slice(0, 6); if (vc.length) h += "<div class='kv' style='margin-top:4px'>화면에 보인 국가: " + vc.map(([k, v]) => "<span class='ctry'>" + esc(k) + ' ' + v + '</span>').join('') + '</div>';
+    const smp = []; for (let d = 0; d < 7; d++) for (let x = 0; x < 24; x++) { const c = p.vis.weekly?.[d]?.[x]; if (c && c.sample && c.n >= 3 && STAGES.includes(c.top)) smp.push([c.n, DAYS[d] + ' ' + x + '시 · ' + c.top + ' — ' + c.sample]); }
+    smp.sort((a, b) => b[0] - a[0]); if (smp.length) h += '<details><summary>화면 해독 예시 ' + Math.min(8, smp.length) + "건 <span class='badge'>펼치기</span></summary><div class='in'><ol>" + smp.slice(0, 8).map(s => '<li>' + esc(s[1]) + '</li>').join('') + '</ol></div></details>'; }
+  h += '</section>';
+}
+
+// 5 인수인계
+h += sec('handoff', '5. 인수인계 (관측)', '직무 프로파일의 받는 곳 · 넘기는 곳');
+h += "<div class='wrap'><table><tr><th>실행자</th><th class='l'>받는 곳</th><th class='l'>넘기는 곳</th></tr>" + D.flow.map(f => '<tr><td>' + esc(f.name) + "</td><td class='txt'>" + f.receivesFrom.map(esc).join('<br>') + "</td><td class='txt'>" + f.handsTo.map(esc).join('<br>') + '</td></tr>').join('') + '</table></div>';
+
+// 6 매뉴얼
+h += sec('manual', '6. 업무 매뉴얼 초안 ' + D.manuals.length + '건', '네노바웹 /work/manuals 에 배포됨 · 직원 확인 전');
+const byOwner = {}; for (const m of D.manuals) (byOwner[m.dept + ' · ' + m.owner] = byOwner[m.dept + ' · ' + m.owner] || []).push(m);
+for (const [k, arr] of Object.entries(byOwner).sort()) { h += '<h3>' + esc(k) + ' <small>' + arr.length + '건</small></h3>' + arr.map(m => "<details><summary><b>" + esc(m.title) + "</b><span class='badge " + esc(m.confidence) + "'>" + esc(m.confidence) + "</span><span class='badge'>" + m.steps.length + "단계</span><span style='color:var(--ink3);font-size:12px'>" + esc((m.tools || []).slice(0, 3).join(' · ')) + "</span></summary><div class='in'>" + (m.summary ? '<p>' + esc(m.summary) + '</p>' : '') + '<ol>' + m.steps.map(s => '<li>' + esc(s) + '</li>').join('') + '</ol></div></details>').join(''); }
+
+// 7 페이지 지도
+h += sec('pages', '7. 화면 지도', '네노바웹 ' + D.inv.stats.pages + '페이지 · API ' + D.inv.stats.apis + ' · 테이블 ' + D.inv.stats.tables + ' / Orbit ' + D.orbit.pages + '화면');
+h += "<div class='wrap'><table><tr><th>메뉴 그룹</th><th>페이지</th><th class='l'>화면 (직접 부르는 API 수)</th></tr>" + D.inv.groups.map(g => '<tr><td>' + esc(g.group) + '</td><td>' + g.pages.length + "</td><td class='txt'>" + g.pages.map(p => esc(p.label || p.href) + ' <small style="color:var(--ink3)">' + p.apis + '</small>').join(' · ') + '</td></tr>').join('') + "<tr><td>메뉴 밖</td><td>" + D.inv.orphans.length + "</td><td class='txt mono'>" + D.inv.orphans.map(esc).join(' · ') + '</td></tr></table></div>';
+h += '<p style="margin-top:8px">가장 많이 쓰는 테이블: ' + D.inv.stats.topTables.map(t => esc(t[0]) + ' ' + t[1]).join(' · ') + '. Orbit 메뉴 등록 화면: ' + D.orbit.nav.map(esc).join(' · ') + '.</p>';
+
+// 8 데이터 출처·한계
+h += sec('limits', '8. 데이터 출처와 한계');
+h += "<div class='wrap'><table><tr><th>출처</th><th class='l'>무엇이 나오나</th><th class='l'>상태</th></tr>" + [
+ ['전산 DB', '발주·입고·분배·현장출고의 실행자·시각·차수·농장', '6월부터 전량. 견적은 작성자 없음, 전달·입금·송금·이익은 기록 없음'],
+ ['화면 캡처 + AI 해독', '어떤 프로그램에서 무슨 목적으로 어떤 결과물을 왜', '최근 90일 캡처 16,141장 중 해독 4,006장(25%). 나머지는 이미지가 버려져 복구 불가. 9/17부터 새 작업 구간은 보존 + 해독 항목에 사업단계·목적·결과물·농장 추가(효과 미검증)'],
+ ['직무 프로파일', '사람별 업무 4~9개, 절차 15~30단계, 받는 곳·넘기는 곳', '4시간마다 1명 갱신. 네노바웹 매뉴얼 초안 61건으로 공급'],
+ ['카톡 시트', '거래처·농장방 대화', '수집 중. 루틴 분석에는 아직 미연결'],
+ ['키보드·창 제목', '분 단위 프로그램 사용 시간표', '전량 저장됨. 루틴 분석에는 아직 미연결']].map(r => '<tr><td>' + r[0] + "</td><td class='txt'>" + r[1] + "</td><td class='txt'>" + r[2] + '</td></tr>').join('') + '</table></div>';
+h += "<h4>확인이 필요한 것</h4>" + (D.notes?.todo || '') + "";
+
+// 9 링크
+h += sec('links', '9. 만든 화면·도표 링크');
+h += "<ul class='links'>" + D.links.map(l => "<li><a href='" + esc(l[1]) + "' target='_blank' rel='noopener'>" + esc(l[0]) + '</a></li>').join('') + '</ul>';
+document.getElementById('main').innerHTML = h;
+})();
+</script>
+</body></html>

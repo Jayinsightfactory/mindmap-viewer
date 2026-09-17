@@ -599,6 +599,21 @@ function createFlowMapRouter(deps = {}) {
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
 
+  // [2026-09-17] 업무 데이터 통합본(전 직원 루틴·전산 기록·매뉴얼) — 관리자 전용.
+  // 직원 전원의 기록이 한 문서에 있으므로 워크스페이스 멤버 인증(auth)만으로는 열지 않는다(개인 화면은 본인만 원칙).
+  router.get('/work-unified', async (req, res) => {
+    try {
+      const raw = (req.headers.authorization || '').replace(/^Bearer\s+/i, '').trim();
+      if (!raw) return res.status(401).json({ error: 'unauthorized' });
+      if (!(require('../config/environment').isMasterToken(raw) || isAdminToken(raw))) return res.status(403).json({ error: 'admin only' });
+      const ws = String(req.query.tenant || 'WS-NENOVA-2026').slice(0, 60);
+      const p = pool(); if (!p) return res.status(500).json({ error: 'db not available' });
+      await ensureReportTable(p);
+      const { rows } = await p.query(`SELECT ts, report FROM orbit_ops_report WHERE workspace_id=$1 AND kind='work-unified' ORDER BY ts DESC LIMIT 1`, [ws]);
+      res.json({ ok: true, ts: rows[0]?.ts || null, data: rows[0]?.report || null });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
   // [2026-09-17] 직무 프로파일 → 네노바웹 '부서별 업무 매뉴얼' 공급용 정규화본.
   // LLM 원문은 confidence 척도(0~1 / 0~100 혼재)·person(원시ID) 등이 들쭉날쭉 → 여기서 한 번만 정리.
   // 업무 1건 = 매뉴얼 1건. 절차 2단계 미만·conf 0.3 미만은 초안 자격 없음(빈 매뉴얼 배포 방지).

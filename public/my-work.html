@@ -44,6 +44,7 @@ nav .sep{width:1px;height:18px;background:var(--line);margin:0 4px}
 <script>
 // 각 탭 = 기존 페이지를 그대로 iframe으로 띄운다 (같은 오리진이라 localStorage orbit_token 공유)
 const TABS = [
+  { id: 'unified',   label: '업무 통합본',        src: '/work-unified.html' },
   { id: 'flow',      label: '작업 흐름',          src: '/work-flow.html' },
   { id: 'timetable', label: '시간표 (일·주·월)', src: '/work-timetable.html' },
   { id: 'screens',   label: '화면 타임라인',      src: '/cctv.html' },
