@@ -1246,9 +1246,30 @@ function _visionQueuePush(item) {
   } else {
     q.push(item);
   }
-  while (q.length > _VISION_PER_USER_MAX) q.shift();
+  // [2026-09-17] 유실 차단: 실측 캡처 16,141 중 해독 4,006 — 나머지는 이 shift()로 이미지째 버려졌다
+  // (메모리 큐 6칸, 소비 < 유입). 밀려나는 항목을 버리지 않고 디스크 스풀(기존 /api/vision/spool 경로,
+  // 사용자당 300 상한·owner 스풀 워커가 소진)로 넘긴다. 전량은 quota가 감당 못 하므로 "새 작업 구간"만:
+  // 같은 사람의 직전 스풀과 앱·창제목이 다르거나 10분 이상 지났을 때만 남긴다(같은 화면 반복 컷).
+  while (q.length > _VISION_PER_USER_MAX) _visionSpoolEvicted(q.shift());
   global._visionImageQueue.push(item);
   while (global._visionImageQueue.length > _VISION_LEGACY_MAX) global._visionImageQueue.shift();
+}
+const _visionLastSpooled = new Map(); // userId → { key, at }
+function _visionSpoolEvicted(it) {
+  try {
+    if (!it || !it.imageBase64 || !it.userId || it.userId === 'unknown') return;
+    const key = `${String(it.app || '').toLowerCase()}|${String(it.windowTitle || '').slice(0, 40).toLowerCase()}`;
+    const at = new Date(it.ts || Date.now()).getTime();
+    const last = _visionLastSpooled.get(it.userId);
+    if (last && last.key === key && at - last.at < 10 * 60 * 1000) return; // 같은 구간 반복 — 버림
+    _visionLastSpooled.set(it.userId, { key, at });
+    const dir = _spoolUserDir(it.userId);
+    const files = fs.readdirSync(dir).filter(f => f.endsWith('.json')).sort();
+    while (files.length >= VISION_SPOOL_MAX_PER_USER) { try { fs.unlinkSync(path.join(dir, files.shift())); } catch { break; } }
+    const id = `screen-${at}-evicted`;
+    const meta = { app: it.app || '', windowTitle: it.windowTitle || '', hostname: it.hostname || '', userId: it.userId, ts: it.ts || new Date(at).toISOString(), trigger: 'queue_evicted', imageBase64: it.imageBase64 };
+    fs.writeFile(path.join(dir, `${id}.json`), JSON.stringify(meta), () => {}); // 비동기 — 수신 경로를 막지 않음
+  } catch (_) {}
 }
 function _visionQueueTotal() { let n = 0; for (const q of global._visionQueueByUser.values()) n += q.length; return n; }
 // 라운드로빈 추출: 사용자를 한 바퀴씩 돌며 각자 최신 항목부터(LIFO) 채움 — 특정 사용자 독점 방지
