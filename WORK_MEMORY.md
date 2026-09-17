@@ -1805,3 +1805,12 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 - 실행: [0~96h) 앞서 완료 + [96~720h)를 48h씩 13창 순차(창마다 /api/events/health 200 확인 후 진행). 508초, src 누적 279,905건 처리. work.action 294,876→296,747(+1,871, 대부분 재upsert=cron이 이미 최신 유지중이었음 확인). 자동화후보 3,383→3,896
 - ★함정(응답 오독 주의): 엔드포인트가 `res.json({...r, ...e})`인데 enrichHandoff(e)도 `actions` 키를 반환해 **promote(r)의 actions를 덮어씀** → 창마다 actions~10,867로 동일하게 보이는 건 enrichHandoff의 최근24h 수치(promote 실제 처리량 아님). 실제 처리량은 sourceEvents(src)와 work.action 총계 델타로 봐야 정확. (수정 후보: 엔드포인트에서 promote actions를 promotedActions로 별키 반환)
 - 검증: 주/월 시간표·회사흐름은 work.action 읽으니 즉시 반영(캐시45s). 시간별·일별·작업흐름은 원본 직접=상시 최신. Vision 화면해석은 owner PC CLI워커 별도경로(여기서 강제 불가)
+
+## 2026-09-17 — 관측데이터→직원 업무 매뉴얼 파이프라인 연결 (커밋 4205fed)
+검색어: duty-manuals, duty-profiles, 업무 매뉴얼, work-manuals, sync-orbit-manuals, 직무 프로파일, nenovaweb 매뉴얼
+- 요청: "데이터 들어온 것 기반 분석·결과 로직 디벨롭 시작". 규칙0 진단: 직무 프로파일(ops-agent-worker --duty, kind=duty:*)이 이미 11명분 업무 4~9개·절차 15~30단계를 4h 로테이션으로 생성 중이었음 → 재구현 안 하고 **정규화 출구만 신설**.
+- 신규: GET /api/flow/duty-manuals — conf 0~1/0~100 혼재 통일, person 원시ID→실명(없으면 null), 절차<2단계·conf<0.3 제외. 실측 11명(이름없음 2: MN0B1204·MN90A76B, 별칭 wbk 미해결).
+- nenovaweb(feat/work-manual, worktree nenova-erp-ui-wt-manual): scripts/sync-orbit-manuals.js → data/work-manuals/orbit-*.draft.json 46건(8명: 조현욱·가브리엘·박성수·임재용·설연주·강현우·강명훈·ㅋㅋ→조현욱). 직원 수정본(_state.json)은 초안 재생성에 안 덮임. 미배포(PR 대기).
+- 함정: 하위세션이 DB 직접조회 시 한글 mojibake 보고 → 콘솔 인코딩 문제, API로는 정상(한글 31자/깨짐 0). docs/MANUAL_PIPELINE_PROBE.md 의 "저장버그 의심"은 오진으로 기각.
+- 배포 직후 잠깐 502(재시작 창) → 동기화 스크립트가 0건으로 끝남. 재실행으로 해결. 사용량: LLM 추가호출 0.
+- 미해결: MN0B1204(조회용PC)·MN90A76B·wbk 실명 매핑, 4h 1명 로테이션이라 신선도 1~2일. 다음: duty 생성도 quota-guard 적용 여부 확인(ops runOnce만 체크함).
