@@ -1814,3 +1814,12 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 - 함정: 하위세션이 DB 직접조회 시 한글 mojibake 보고 → 콘솔 인코딩 문제, API로는 정상(한글 31자/깨짐 0). docs/MANUAL_PIPELINE_PROBE.md 의 "저장버그 의심"은 오진으로 기각.
 - 배포 직후 잠깐 502(재시작 창) → 동기화 스크립트가 0건으로 끝남. 재실행으로 해결. 사용량: LLM 추가호출 0.
 - 미해결: MN0B1204(조회용PC)·MN90A76B·wbk 실명 매핑, 4h 1명 로테이션이라 신선도 1~2일. 다음: duty 생성도 quota-guard 적용 여부 확인(ops runOnce만 체크함).
+
+## 2026-09-17(계속) — 캡처 유실 차단·해독 항목 확장·업무 통합본 탭 (7142f51, b4a50bb)
+검색어: vision 큐 shift 유실, queue_evicted 스풀, businessStage purpose outputArtifact farmCountry, work-unified, 업무 통합본, 사업 흐름 9단계, ShipmentHistory 분배
+- 사장님 정의 사업 흐름 9단계: 발주(주문등록)→입고→분배(출고량 입력·수정)→현장출고→견적서(출고값 기준)→거래처전달→입금→해외송금→영업이익. 모든 업무 분석의 기준 틀.
+- 실측: 최근 90일 캡처 16,141 중 해독 4,006. 원인=server.js 메모리 큐 사용자당 6칸 shift()로 이미지째 유실(DB엔 메타만). 과거분 복구 불가.
+- 수정: 밀려난 캡처를 기존 디스크 스풀로(trigger=queue_evicted, 같은 앱·창제목 10분 내 반복 컷, 사용자당 300 상한 그대로). vision 프롬프트에 businessStage·purpose·outputArtifact·farmCountry·receivedFrom·handedTo 추가(...result 로 그대로 저장됨). 스풀 워커 재시작(OrbitVisionSpool1800). 효과는 다음 업무일 확인 필요(미검증).
+- 전산 DB(읽기 전용, nenova-erp-ui 쪽 스크립트): 발주=OrderMaster.CreateID, 입고=WarehouseMaster.CreateID+FarmName, **분배=ShipmentHistory.ChangeID/ChangeDtm**(ShipmentDetail엔 작성자 컬럼 없음, ShipmentMaster 생성은 주문등록의 그림자라 분배 아님), 현장출고=isFix LastUpdate. 견적은 작성자 없음, 전달·입금·송금·이익은 DB 기록 없음→화면 해독으로만. 농장 국가=Product.CounName 다수결(144곳 미상 0). ChangeID에 스크립트 계정 섞임→사람 집계 제외.
+- 신규: GET /api/flow/work-unified(마스터/관리자 토큰만, 403/401 검증) + public/work-unified.html(데이터 없는 껍데기) + my-work.html 첫 탭 '업무 통합본'. 데이터는 POST /api/flow/ops-report kind=work-unified 로 올림(갱신=scratchpad upload-unified.js 방식 재실행).
+- 기각: 무료 OCR로 과거 백로그 대체(이미지 자체가 없음, Windows OCR 900px 축소본 인식 불안정). Archify architecture 자유배치로 9명 지도(교차 에러 과다→dataflow로).
