@@ -36,8 +36,12 @@ nav .sep{width:1px;height:18px;background:var(--line);margin:0 4px}
   <script src="/js/site-nav.js"></script>
 </header>
 <div id="tokenbar">
-  <span>관리자 토큰이 없습니다. 일부 탭이 비어 보입니다.</span>
-  <input id="tokin" placeholder="orbit_… 토큰 붙여넣기">
+  <span id="tokmsg">로그인이 필요합니다.</span>
+  <input id="lgemail" type="email" placeholder="이메일" autocomplete="username" style="width:200px">
+  <input id="lgpw" type="password" placeholder="비밀번호" autocomplete="current-password" style="width:150px">
+  <button id="lgbtn">로그인</button>
+  <span style="opacity:.6">또는</span>
+  <input id="tokin" placeholder="orbit_… 토큰 붙여넣기" style="width:220px">
   <button id="toksave">저장</button>
 </div>
 <div id="stage"><div id="empty">불러오는 중…</div></div>
@@ -105,6 +109,32 @@ document.getElementById('toksave').onclick = () => {
   localStorage.setItem('orbitToken', v); // cctv.html이 쓰는 옛 키도 함께 채운다
   location.reload();
 };
+
+// 이메일 로그인 → 토큰 저장. 비밀번호는 서버 /api/auth/login 으로만 보내고 저장하지 않는다.
+async function doLogin() {
+  const email = document.getElementById('lgemail').value.trim(), password = document.getElementById('lgpw').value;
+  const msg = document.getElementById('tokmsg');
+  if (!email || !password) { msg.textContent = '이메일과 비밀번호를 입력하세요.'; return; }
+  msg.textContent = '로그인 중…';
+  try {
+    const r = await fetch('/api/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, password }) });
+    const j = await r.json();
+    if (!r.ok || !j.token) { msg.textContent = '로그인 실패: ' + (j.error || r.status); return; }
+    localStorage.setItem('orbit_token', j.token); localStorage.setItem('orbitToken', j.token);
+    location.reload();
+  } catch (e) { msg.textContent = '로그인 실패: ' + e.message; }
+}
+document.getElementById('lgbtn').onclick = doLogin;
+document.getElementById('lgpw').addEventListener('keydown', (e) => { if (e.key === 'Enter') doLogin(); });
+// 헤더의 로그인/계정 전환 버튼 — 토큰이 있어도 다시 로그인할 수 있게
+(function () {
+  const hd = document.querySelector('header'); if (!hd) return;
+  const b = document.createElement('button'); b.id = 'acctbtn'; b.type = 'button';
+  b.textContent = localStorage.getItem('orbit_token') ? '계정 전환' : '로그인';
+  b.style.cssText = 'margin-left:auto;background:var(--panel);color:var(--txt);border:1px solid var(--line);border-radius:6px;padding:4px 12px;cursor:pointer;font-family:inherit;font-size:12px';
+  b.onclick = () => { const t = document.getElementById('tokenbar'); t.style.display = t.style.display === 'flex' ? 'none' : 'flex'; document.getElementById('lgemail').focus(); };
+  hd.appendChild(b);
+})();
 
 window.addEventListener('hashchange', () => { const h = location.hash.slice(1); if (h && h !== current) show(h); });
 show(location.hash.slice(1) || 'timetable');

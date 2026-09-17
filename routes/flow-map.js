@@ -605,7 +605,9 @@ function createFlowMapRouter(deps = {}) {
     try {
       const raw = (req.headers.authorization || '').replace(/^Bearer\s+/i, '').trim();
       if (!raw) return res.status(401).json({ error: 'unauthorized' });
-      if (!(require('../config/environment').isMasterToken(raw) || isAdminToken(raw))) return res.status(403).json({ error: 'admin only' });
+      // 마스터/관리자 토큰 또는 관리자 이메일로 로그인한 계정(isAdminReqAsync)
+      const okAdmin = require('../config/environment').isMasterToken(raw) || isAdminToken(raw) || (typeof deps.isAdminReq === 'function' && await deps.isAdminReq(req));
+      if (!okAdmin) return res.status(403).json({ error: 'admin only' });
       const ws = String(req.query.tenant || 'WS-NENOVA-2026').slice(0, 60);
       const p = pool(); if (!p) return res.status(500).json({ error: 'db not available' });
       await ensureReportTable(p);
