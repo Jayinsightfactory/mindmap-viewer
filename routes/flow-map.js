@@ -599,6 +599,46 @@ function createFlowMapRouter(deps = {}) {
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
 
+  // [2026-09-17] 직무 프로파일 → 네노바웹 '부서별 업무 매뉴얼' 공급용 정규화본.
+  // LLM 원문은 confidence 척도(0~1 / 0~100 혼재)·person(원시ID) 등이 들쭉날쭉 → 여기서 한 번만 정리.
+  // 업무 1건 = 매뉴얼 1건. 절차 2단계 미만·conf 0.3 미만은 초안 자격 없음(빈 매뉴얼 배포 방지).
+  router.get('/duty-manuals', async (req, res) => {
+    try {
+      const ws = await auth(req);
+      if (ws === 'NO_WORKSPACE') return res.status(403).json({ error: 'not_onboarded' });
+      if (!ws) return res.status(401).json({ error: 'unauthorized' });
+      const p = pool(); if (!p) return res.status(500).json({ error: 'db not available' });
+      await ensureReportTable(p);
+      const pm = await personMap(p, ws);
+      const { rows } = await p.query(
+        `SELECT DISTINCT ON (kind) kind, ts, report FROM orbit_ops_report
+          WHERE workspace_id=$1 AND kind LIKE 'duty:%' ORDER BY kind, ts DESC`, [ws]);
+      const minConf = Math.min(1, Math.max(0, Number(req.query.minConf) || 0.3));
+      const people = [];
+      for (const r of rows) {
+        const userId = r.kind.slice(5);
+        const rp = r.report || {};
+        let conf = Number(rp.confidence) || 0; if (conf > 1) conf = conf / 100;
+        const label = pm.get(userId)?.label || null; // 실명 없으면 null (원시ID를 이름처럼 내보내지 않음)
+        const duties = (Array.isArray(rp.duties) ? rp.duties : [])
+          .map((d, i) => ({
+            id: `${userId}:${i}`,
+            title: String(d.name || '').trim().slice(0, 80),
+            when: String(d.when || '').slice(0, 200),
+            steps: (Array.isArray(d.procedure) ? d.procedure : []).map(s => String(s).trim()).filter(Boolean).slice(0, 20),
+            tools: Array.isArray(d.tools) ? d.tools.map(String).slice(0, 8) : [],
+            frequency: String(d.frequency || '').slice(0, 80),
+            evidence: String(d.evidence || '').slice(0, 300),
+          }))
+          .filter(d => d.title && d.steps.length >= 2);
+        if (conf < minConf || !duties.length) continue;
+        people.push({ userId, name: label, confidence: +conf.toFixed(2), generatedAt: r.ts, days: rp.days || null,
+          roleSummary: String(rp.roleSummary || '').slice(0, 600), duties, gaps: (Array.isArray(rp.gaps) ? rp.gaps : []).map(String).slice(0, 10) });
+      }
+      res.json({ ok: true, minConf, count: people.length, people });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
   return router;
 }
 
