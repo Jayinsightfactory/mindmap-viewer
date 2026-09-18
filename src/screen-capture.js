@@ -8,7 +8,7 @@
  * - 자동화 가능 영역 감지 → 연속 캡처 + 상세 분석
  */
 
-const { execSync } = require('child_process');
+const { execSync, execFileSync } = require('child_process');
 const path = require('path');
 const fs   = require('fs');
 const os   = require('os');
@@ -837,8 +837,11 @@ function capture(trigger = 'manual') {
       try { execSync(`scrot "${filepath}"`, { timeout: 5000 }); }
       catch { execSync(`gnome-screenshot -f "${filepath}"`, { timeout: 5000 }); }
     } else if (process.platform === 'win32') {
-      const escaped  = filepath.replace(/\\/g, '\\\\');
-      const escapedQ = filepath.replace(/"/g, '\\"');
+      // [2026-09-18] 검은 cmd 창 깜빡임 제거: 캡처마다 execSync(문자열)은 cmd.exe /c 를 한 번 더 띄워
+      // conhost 창이 순간 깜빡인다(직원 PC 최다 불만). 인자 배열 형태(execFileSync)로 바꿔 cmd.exe 경유를
+      // 없앤다 — 파이썬/파워셸을 직접 실행하므로 windowsHide 로 창이 실제로 안 뜬다. 캡처 동작은 동일.
+      const escaped = filepath.replace(/\\/g, '\\\\');
+      const FILE_OPTS = { timeout: 8000, windowsHide: true, stdio: 'pipe' };
       let captured = false;
 
       const _py = _resolvePython();  // 스토어 껍데기 배제한 실제 python (PATH 밖이어도 탐색)
@@ -846,10 +849,7 @@ function capture(trigger = 'manual') {
       // 1순위: PIL ImageGrab.grab() — 검은화면 없음 (2026-04-강명훈 PC 확인)
       if (!captured && _py) {
         try {
-          execSync(
-            `"${_py}" -c "from PIL import ImageGrab; ImageGrab.grab().save('${escaped}')"`,
-            { timeout: 8000, windowsHide: true, stdio: 'pipe' }
-          );
+          execFileSync(_py, ['-c', `from PIL import ImageGrab; ImageGrab.grab().save('${escaped}')`], FILE_OPTS);
           if (fs.existsSync(filepath)) captured = true;
         } catch {}
       }
@@ -857,10 +857,7 @@ function capture(trigger = 'manual') {
       // 2순위: pyautogui.screenshot() 폴백
       if (!captured && _py) {
         try {
-          execSync(
-            `"${_py}" -c "import pyautogui; pyautogui.screenshot('${escaped}')"`,
-            { timeout: 8000, windowsHide: true, stdio: 'pipe' }
-          );
+          execFileSync(_py, ['-c', `import pyautogui; pyautogui.screenshot('${escaped}')`], FILE_OPTS);
           if (fs.existsSync(filepath)) captured = true;
         } catch {}
       }
@@ -870,10 +867,10 @@ function capture(trigger = 'manual') {
 
       // 3순위: PowerShell CopyFromScreen 최후수단 (검은화면 가능)
       if (!captured) {
-        execSync(
-          `powershell.exe -NoProfile -WindowStyle Hidden -NonInteractive -Command "Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.Screen]::PrimaryScreen | ForEach-Object { $bmp = New-Object System.Drawing.Bitmap($_.Bounds.Width, $_.Bounds.Height); $g = [System.Drawing.Graphics]::FromImage($bmp); $g.CopyFromScreen($_.Bounds.Location, [System.Drawing.Point]::Empty, $_.Bounds.Size); $bmp.Save('${escaped}') }"`,
-          { timeout: 10000, windowsHide: true, stdio: 'pipe' }
-        );
+        execFileSync('powershell.exe', [
+          '-NoProfile', '-WindowStyle', 'Hidden', '-NonInteractive', '-Command',
+          `Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.Screen]::PrimaryScreen | ForEach-Object { $bmp = New-Object System.Drawing.Bitmap($_.Bounds.Width, $_.Bounds.Height); $g = [System.Drawing.Graphics]::FromImage($bmp); $g.CopyFromScreen($_.Bounds.Location, [System.Drawing.Point]::Empty, $_.Bounds.Size); $bmp.Save('${escaped}') }`,
+        ], { timeout: 10000, windowsHide: true, stdio: 'pipe' });
       }
     } else { return null; }
 

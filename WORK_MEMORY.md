@@ -1847,3 +1847,12 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 - 조정(거버너): src/resource-governor.js에 RAM_TIER(low<=10GB/mid<=20GB/high, env ORBIT_RAM_LOW_GB·MID_GB로 튜닝). 저사양은 (1) RAM 임계 10%p 하향(조기 절약) (2) 최소 NORMAL 상한=IDLE 금지(가장 무거운 수집 프로파일 차단). _determineLevel에 floor 적용. getStatus에 ramTier·totalGB·floor.
 - 검증: node --check 3파일, tier 시뮬(저사양 유휴→NORMAL, 저사양 ram75→BUSY, 중간→IDLE, 고사양 cpu88→CRITICAL) 통과. 실제 직원 PC 반영은 데몬 배포(아침 부팅 시 코드 pull)+heartbeat 확인 필요=미검증.
 - 반영 절차: push→직원 PC가 아침에 pull→daemon-health로 totalMemMB·gov.ramTier 실측→필요시 ORBIT_RAM_LOW_GB 등 조정.
+
+## 2026-09-18 검은 cmd 창 깜빡임 제한 + 강제 업데이트
+- 검색어: windowsHide, execSync, conhost 깜빡임, cmd 창, screen-capture, execFileSync
+- 원인: 캡처마다 execSync(문자열)이 cmd.exe /c 를 한 번 더 띄워 conhost 창이 순간 깜빡임. 스크린샷이 가장 잦아 "계속 깜빡"의 주범.
+- 수정(screen-capture.js): 윈도우 스크린샷 3경로(PIL/pyautogui/PowerShell)를 execSync(문자열)→execFileSync(인자배열)로. cmd.exe 경유 제거, python/powershell 직접 실행+windowsHide → 창 안 뜸. 동작 동일.
+- 확인: 나머지 hot-path execSync(문자열)은 전부 mac/linux 경로(osascript/xdotool/pbpaste)라 윈도우 무관. 윈도우는 이미 win-shell(상주 숨김 PS) 사용(keyboard/clipboard/excel/bank-mode).
+- 남은 깜빡임(빈도 낮음): 데몬 재시작/업데이트 시 powershell spawn(-WindowStyle Hidden). "계속"이 아니라 가끔이라 수용.
+- 강제 업데이트: 사용자가 /api/daemon/force-update enabled:true 실행(200 확인). 유휴 시 각 PC 갱신. 끝나면 enabled:false 로 끌 것.
+- 검증: node --check screen-capture.js 통과. 실제 직원 PC 깜빡임 감소는 데몬 갱신 후 육안 확인=미검증.
