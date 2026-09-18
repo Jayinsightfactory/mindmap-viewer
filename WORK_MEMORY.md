@@ -1823,3 +1823,11 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 - 전산 DB(읽기 전용, nenova-erp-ui 쪽 스크립트): 발주=OrderMaster.CreateID, 입고=WarehouseMaster.CreateID+FarmName, **분배=ShipmentHistory.ChangeID/ChangeDtm**(ShipmentDetail엔 작성자 컬럼 없음, ShipmentMaster 생성은 주문등록의 그림자라 분배 아님), 현장출고=isFix LastUpdate. 견적은 작성자 없음, 전달·입금·송금·이익은 DB 기록 없음→화면 해독으로만. 농장 국가=Product.CounName 다수결(144곳 미상 0). ChangeID에 스크립트 계정 섞임→사람 집계 제외.
 - 신규: GET /api/flow/work-unified(마스터/관리자 토큰만, 403/401 검증) + public/work-unified.html(데이터 없는 껍데기) + my-work.html 첫 탭 '업무 통합본'. 데이터는 POST /api/flow/ops-report kind=work-unified 로 올림(갱신=scratchpad upload-unified.js 방식 재실행).
 - 기각: 무료 OCR로 과거 백로그 대체(이미지 자체가 없음, Windows OCR 900px 축소본 인식 불안정). Archify architecture 자유배치로 9명 지도(교차 에러 과다→dataflow로).
+
+## 2026-09-18 nenovaweb /my-work 임베드 + 기능 후보 페이지
+- 검색어: my-work, work-unified, frame-ancestors, X-Frame-Options, 기능 추가 후보, work-feature-proposals
+- 요청: 통합본을 nenovaweb에서 최신으로 보기 + 4명(설연주·강명훈·김원빈·아드리아나) 조사 결과를 캡처 근거와 함께 페이지로.
+- Orbit 변경(server.js): helmet frameguard:false + CSP `frame-ancestors 'self' nenovaweb.com www.nenovaweb.com localhost:3011`. 자동커밋이 보안완화로 차단 → 사용자 직접 commit/push 필요. push 전엔 nenovaweb 통합본 탭이 빈 화면(XFO SAMEORIGIN).
+- nenovaweb(feat/work-manual 워크트리): pages/my-work.js(nenovaSS3 404게이트, 탭3: Orbit work-unified iframe / 기능후보 / Orbit my-work), data/work-feature-proposals.json(스크래치 build-proposals.js가 unified-data.json에서 생성), Layout '연동' 메뉴, _app NO_LAYOUT. API 라우트 없음(계약가드 회피).
+- 검증: next build --webpack OK, /my-work 미로그인 404·관리자 200, 브라우저에서 후보표·근거 펼침 확인. 통합본 iframe 실표시는 Orbit push 후 미검증.
+- 기각: 서버측 ORBIT_TOKEN 프록시(prod env 추가 필요) → iframe+Orbit 자체 로그인으로 대체.

@@ -409,7 +409,13 @@ app.use(helmet({
   crossOriginEmbedderPolicy: false,
   crossOriginOpenerPolicy: false,
   crossOriginResourcePolicy: false,
+  frameguard: false, // X-Frame-Options 대신 아래 frame-ancestors 로 nenovaweb 임베드 허용
 }));
+// nenovaweb(/my-work)에서 Orbit 화면(work-unified 등)을 iframe으로 띄운다. 그 외 출처는 여전히 차단.
+app.use((req, res, next) => {
+  res.setHeader('Content-Security-Policy', "frame-ancestors 'self' https://nenovaweb.com https://www.nenovaweb.com http://localhost:3011");
+  next();
+});
 
 // Rate Limiting: API 남용 방지 (15분 당 최대 2000회)
 const _rlOpts = { validate: { xForwardedForHeader: false, trustProxy: false, ip: false } };
