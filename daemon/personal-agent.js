@@ -689,6 +689,9 @@ function _emitHeartbeat() {
     else if (states.every(s => s === 'paused')) overall = 'paused';
     else if (states.some(s => s !== 'ok' && s !== 'paused')) overall = 'degraded';
 
+    // PC별 사용량 실측용 텔레메트리 — 총/여유 RAM, 코어 수, 거버너 등급(관리자가 daemon-health로 확인)
+    let gov = null;
+    try { gov = resourceGovernor && resourceGovernor.getStatus ? resourceGovernor.getStatus() : null; } catch {}
     _reportEvent('daemon.heartbeat', {
       hostname: os.hostname(),
       platform: os.platform(),
@@ -696,7 +699,11 @@ function _emitHeartbeat() {
       uptime,
       state: overall,
       modules,
-      memMB: Math.round(process.memoryUsage().rss / 1024 / 1024),
+      memMB: Math.round(process.memoryUsage().rss / 1024 / 1024), // 오르빗 데몬 자신의 RSS
+      totalMemMB: Math.round(os.totalmem() / 1024 / 1024),         // PC 전체 RAM
+      freeMemMB: Math.round(os.freemem() / 1024 / 1024),           // 여유 RAM
+      cpuCount: os.cpus().length,
+      gov: gov ? { level: gov.level, cpu: gov.cpu, ram: gov.ram, ramTier: gov.ramTier, totalGB: gov.totalGB, floor: gov.floor, visionPaused: gov.visionPaused } : null,
       codeVersion: _getCodeVersion(), // git HEAD(8) — fleet 코드세대 가시화(누가 최신인지)
     });
   } catch (e) {

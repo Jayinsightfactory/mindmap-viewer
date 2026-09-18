@@ -1839,3 +1839,11 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 - routes/flow-map.js GET /api/flow/vision-quality?days=3 (관리자): 사람별 해독률·세부 채움률·메신저 비중·반복 비율. 조정 효과는 이 숫자로 확인.
 - 발견: 세부(필드값·표·품목·금액·완료/다음 동작)는 이미 events.data_json에 있었음. /api/learning/logs 기본 응답이 4필드만 내보내 얇아 보였던 것 → raw=1 사용. 로컬 워커가 구 프롬프트로 돌고 있어 재시작(단계·목적 필드는 9/18부터).
 - 함정: python 비-raw 문자열의 \b 가 백스페이스 바이트로 들어감 → 정규식 패치는 raw 문자열로.
+
+## 2026-09-18 PC별 사용량 실측 + RAM 등급별 거버너
+- 검색어: resource-governor, daemon.heartbeat, daemon-health, RAM_TIER, totalmem, PC별 설정
+- 요청: 직원 PC RAM 8~16GB 감안한 설정. 실측 후 조정.
+- 측정(텔레메트리): daemon/personal-agent.js heartbeat에 totalMemMB·freeMemMB·cpuCount·gov{level,cpu,ram,ramTier,totalGB,floor} 추가. server.js /api/admin/daemon-health가 그대로 노출. → PC별 총 RAM·현재 부하·거버너 등급을 관리자가 확인.
+- 조정(거버너): src/resource-governor.js에 RAM_TIER(low<=10GB/mid<=20GB/high, env ORBIT_RAM_LOW_GB·MID_GB로 튜닝). 저사양은 (1) RAM 임계 10%p 하향(조기 절약) (2) 최소 NORMAL 상한=IDLE 금지(가장 무거운 수집 프로파일 차단). _determineLevel에 floor 적용. getStatus에 ramTier·totalGB·floor.
+- 검증: node --check 3파일, tier 시뮬(저사양 유휴→NORMAL, 저사양 ram75→BUSY, 중간→IDLE, 고사양 cpu88→CRITICAL) 통과. 실제 직원 PC 반영은 데몬 배포(아침 부팅 시 코드 pull)+heartbeat 확인 필요=미검증.
+- 반영 절차: push→직원 PC가 아침에 pull→daemon-health로 totalMemMB·gov.ramTier 실측→필요시 ORBIT_RAM_LOW_GB 등 조정.

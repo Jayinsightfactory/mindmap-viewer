@@ -25,6 +25,18 @@ const EMA_ALPHA          = 0.3;         // EMA 가중치 (0~1, 높을수록 최�
 const HYSTERESIS_COUNT   = 3;           // 레벨 전환에 필요한 연속 횟수 (진동 방지)
 const LOG_MAX_ENTRIES    = 500;         // 로그 최대 보관 수
 
+// ── PC 메모리 등급 (직원 PC RAM 8~16GB 감안) ─────────────────────────────────
+// 같은 RAM % 라도 8GB PC에서 82%(=6.5GB)와 32GB PC에서 82%(=26GB)는 여유가 전혀 다르다.
+// → 총 RAM으로 등급을 나눠 (1) 저사양은 부하 레벨을 한 단계 올려 더 일찍 절약하고
+//   (2) 저사양은 가장 무거운 IDLE 프로파일을 못 쓰게 상한을 둔다. 임계는 env로 사후 튜닝 가능.
+const RAM_LOW_GB   = Number(process.env.ORBIT_RAM_LOW_GB)  || 10;  // 이하 = 저사양(8GB 계열)
+const RAM_MID_GB   = Number(process.env.ORBIT_RAM_MID_GB)  || 20;  // 이하 = 중간(16GB 계열)
+const TOTAL_GB     = os.totalmem() / 1024 / 1024 / 1024;
+const RAM_TIER     = TOTAL_GB <= RAM_LOW_GB ? 'low' : TOTAL_GB <= RAM_MID_GB ? 'mid' : 'high';
+const ORDER        = ['IDLE', 'NORMAL', 'BUSY', 'CRITICAL']; // 뒤로 갈수록 절약(가벼움)
+// 저사양은 IDLE(최다 수집) 금지 → 최소 NORMAL 부터. 중간은 IDLE 허용. 고사양은 제한 없음.
+const TIER_FLOOR   = { low: 'NORMAL', mid: 'IDLE', high: 'IDLE' };
+
 // ── 4단계 부하 레벨 (Windows 실사용 환경 기준) ───────────────────────────────
 // Windows는 평상시 60-80% RAM 사용이 정상 (브라우저, ERP, 카카오톡 등)
 const LEVELS = {
@@ -143,11 +155,14 @@ function _updateEma(cpu, ram) {
 
 // ── 부하 레벨 판정 ───────────────────────────────────────────────────────────
 function _determineLevel(cpu, ram) {
-  // CPU와 RAM 중 더 높은 등급 적용
+  // 저사양 PC는 RAM 임계를 10%p 내려 더 일찍 절약 레벨로 간다(8GB에서 82%↑는 이미 빠듯).
+  const shift = RAM_TIER === 'low' ? 10 : 0;
   const cpuLevel = cpu >= 85 ? 'CRITICAL' : cpu >= 65 ? 'BUSY' : cpu >= 35 ? 'NORMAL' : 'IDLE';
-  const ramLevel = ram >= 92 ? 'CRITICAL' : ram >= 82 ? 'BUSY' : ram >= 70 ? 'NORMAL' : 'IDLE';
-  const order = ['IDLE', 'NORMAL', 'BUSY', 'CRITICAL'];
-  return order[Math.max(order.indexOf(cpuLevel), order.indexOf(ramLevel))];
+  const ramLevel = ram >= 92 - shift ? 'CRITICAL' : ram >= 82 - shift ? 'BUSY' : ram >= 70 - shift ? 'NORMAL' : 'IDLE';
+  let idx = Math.max(ORDER.indexOf(cpuLevel), ORDER.indexOf(ramLevel));
+  // 등급 상한(저사양은 IDLE 금지): 절약 방향(뒤쪽)으로만 끌어올린다.
+  idx = Math.max(idx, ORDER.indexOf(TIER_FLOOR[RAM_TIER]));
+  return ORDER[idx];
 }
 
 // ── 세팅 파일 쓰기 ───────────────────────────────────────────────────────────
@@ -306,6 +321,9 @@ function getStatus() {
     ram: Math.round(_emaRam * 10) / 10,
     profiles: Object.keys(PROFILES),
     visionPaused: PROFILES[_currentLevel].visionPaused,
+    ramTier: RAM_TIER,                    // low(8GB계열)/mid(16GB)/high — 하트비트 텔레메트리용
+    totalGB: Math.round(TOTAL_GB * 10) / 10,
+    floor: TIER_FLOOR[RAM_TIER],          // 이 PC가 쓸 수 있는 가장 무거운(수집 많은) 레벨
   };
 }
 

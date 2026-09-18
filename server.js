@@ -2950,7 +2950,11 @@ app.get('/api/admin/daemon-health', async (req, res) => {
         hostname: data.hostname || null,
         pid:      data.pid || null,
         uptime:   data.uptime || null,
-        memMB:    data.memMB || null,
+        memMB:    data.memMB || null,          // 오르빗 데몬 RSS
+        totalMemMB: data.totalMemMB || null,   // PC 전체 RAM (8~16GB 등급 판정)
+        freeMemMB:  data.freeMemMB || null,
+        cpuCount:   data.cpuCount || null,
+        gov:        data.gov || null,          // 거버너 등급/부하/RAM tier (PC별 설정 실측)
         state:    verdict,
         codeVersion: data.codeVersion || null, // git HEAD(8) — 각 PC 코드세대(최신 여부)
         modules:  data.modules || {},
