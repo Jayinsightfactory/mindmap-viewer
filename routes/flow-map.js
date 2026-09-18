@@ -616,6 +616,46 @@ function createFlowMapRouter(deps = {}) {
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
 
+  // [2026-09-18] 해독 품질 계기판 — "의미 있는 데이터가 계속 나오는가"를 사람별로 수치로 본다(관리자 전용).
+  // 해독률(캡처 대비)·세부 채움률(품목/거래처/금액, 필드값, 표, 단계, 목적, 완료 동작)·메신저 비중·같은 화면 연속 비율.
+  // 큐 가치 선별(server.js _visionItemValue)·프롬프트를 조정한 뒤 효과를 이 숫자로 확인한다. 썸네일은 SQL에서 안 끌어온다.
+  router.get('/vision-quality', async (req, res) => {
+    try {
+      const raw = (req.headers.authorization || '').replace(/^Bearer\s+/i, '').trim();
+      if (!raw) return res.status(401).json({ error: 'unauthorized' });
+      const okAdmin = require('../config/environment').isMasterToken(raw) || isAdminToken(raw) || (typeof deps.isAdminReq === 'function' && await deps.isAdminReq(req));
+      if (!okAdmin) return res.status(403).json({ error: 'admin only' });
+      const days = Math.min(30, Math.max(1, parseInt(req.query.days, 10) || 3));
+      const p = pool(); if (!p) return res.status(500).json({ error: 'db not available' });
+      const MS = "(COALESCE(data_json->>'app','') || ' ' || COALESCE(data_json->>'screen','')) ~* 'kakao|카카오|whatsapp|weixin|wechat|위챗'";
+      const { rows } = await p.query(`
+        WITH a AS (
+          SELECT user_id, type, data_json, timestamp::timestamptz AS ts,
+                 LAG(COALESCE(data_json->>'screenKey', data_json->>'screen')) OVER (PARTITION BY user_id, type ORDER BY timestamp::timestamptz) AS prev_key
+            FROM events
+           WHERE type IN ('screen.capture','screen.analyzed') AND user_id IS NOT NULL AND user_id NOT IN ('local','system')
+             AND timestamp::timestamptz > NOW() - ($1 || ' days')::interval)
+        SELECT a.user_id, u.name,
+               COUNT(*) FILTER (WHERE type='screen.capture') AS captures,
+               COUNT(*) FILTER (WHERE type='screen.analyzed') AS analyzed,
+               COUNT(*) FILTER (WHERE type='screen.analyzed' AND (jsonb_array_length(COALESCE(data_json#>'{entities,products}','[]'::jsonb)) > 0 OR jsonb_array_length(COALESCE(data_json#>'{entities,customers}','[]'::jsonb)) > 0 OR jsonb_array_length(COALESCE(data_json#>'{entities,amounts}','[]'::jsonb)) > 0)) AS with_entities,
+               COUNT(*) FILTER (WHERE type='screen.analyzed' AND jsonb_path_exists(data_json, '$.fields[*] ? (@.currentValue != null && @.currentValue != "")')) AS with_field_values,
+               COUNT(*) FILTER (WHERE type='screen.analyzed' AND jsonb_array_length(COALESCE(data_json->'tables','[]'::jsonb)) > 0) AS with_tables,
+               COUNT(*) FILTER (WHERE type='screen.analyzed' AND COALESCE(data_json->>'businessStage','') <> '') AS with_stage,
+               COUNT(*) FILTER (WHERE type='screen.analyzed' AND COALESCE(data_json->>'purpose','') <> '') AS with_purpose,
+               COUNT(*) FILTER (WHERE type='screen.analyzed' AND COALESCE(data_json->>'actionDone','') <> '') AS with_done,
+               COUNT(*) FILTER (WHERE type='screen.analyzed' AND ${MS}) AS messenger,
+               COUNT(*) FILTER (WHERE type='screen.analyzed' AND prev_key IS NOT NULL AND prev_key = COALESCE(data_json->>'screenKey', data_json->>'screen')) AS same_screen_repeat
+          FROM a LEFT JOIN orbit_auth_users u ON u.id = a.user_id
+         GROUP BY a.user_id, u.name ORDER BY captures DESC`, [String(days)]);
+      const pct = (x, n) => (Number(n) ? Math.round(100 * Number(x) / Number(n)) : null);
+      res.json({ ok: true, days, people: rows.map((r) => ({
+        userId: r.user_id, name: r.name || r.user_id, captures: Number(r.captures), analyzed: Number(r.analyzed),
+        analyzedRate: pct(r.analyzed, r.captures), entities: pct(r.with_entities, r.analyzed), fieldValues: pct(r.with_field_values, r.analyzed), tables: pct(r.with_tables, r.analyzed),
+        stage: pct(r.with_stage, r.analyzed), purpose: pct(r.with_purpose, r.analyzed), actionDone: pct(r.with_done, r.analyzed), messenger: pct(r.messenger, r.analyzed), sameScreenRepeat: pct(r.same_screen_repeat, r.analyzed) })) });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
   // [2026-09-17] 직무 프로파일 → 네노바웹 '부서별 업무 매뉴얼' 공급용 정규화본.
   // LLM 원문은 confidence 척도(0~1 / 0~100 혼재)·person(원시ID) 등이 들쭉날쭉 → 여기서 한 번만 정리.
   // 업무 1건 = 매뉴얼 1건. 절차 2단계 미만·conf 0.3 미만은 초안 자격 없음(빈 매뉴얼 배포 방지).

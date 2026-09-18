@@ -1831,3 +1831,11 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 - nenovaweb(feat/work-manual 워크트리): pages/my-work.js(nenovaSS3 404게이트, 탭3: Orbit work-unified iframe / 기능후보 / Orbit my-work), data/work-feature-proposals.json(스크래치 build-proposals.js가 unified-data.json에서 생성), Layout '연동' 메뉴, _app NO_LAYOUT. API 라우트 없음(계약가드 회피).
 - 검증: next build --webpack OK, /my-work 미로그인 404·관리자 200, 브라우저에서 후보표·근거 펼침 확인. 통합본 iframe 실표시는 Orbit push 후 미검증.
 - 기각: 서버측 ORBIT_TOKEN 프록시(prod env 추가 필요) → iframe+Orbit 자체 로그인으로 대체.
+
+## 2026-09-18 해독 가치 선별 + 품질 계기판
+- 검색어: vision-quality, _visionItemValue, 가치 선별, 메신저 비중, 같은 화면 반복, 해독률, raw=1, 세부 필드
+- 실측(3일): 캡처 대비 해독 13~22%, 해독분의 60%+가 메신저(2명), 같은 화면 연속 33~45%. 해독 예산은 구독 quota라 못 늘림 → 남길 장면을 바꿈.
+- server.js _visionQueuePush: 같은 화면(앱+창제목) 10분까지 최신 1장으로 교체, 넘치면 가치 최저(메신저0/기타1/업무도구2, 입력직후+1)부터 스풀로, take도 가치 높은 것 먼저. 시뮬레이션으로 확인(엑셀 중복 병합·카톡 우선 방출·업무앱 우선 추출).
+- routes/flow-map.js GET /api/flow/vision-quality?days=3 (관리자): 사람별 해독률·세부 채움률·메신저 비중·반복 비율. 조정 효과는 이 숫자로 확인.
+- 발견: 세부(필드값·표·품목·금액·완료/다음 동작)는 이미 events.data_json에 있었음. /api/learning/logs 기본 응답이 4필드만 내보내 얇아 보였던 것 → raw=1 사용. 로컬 워커가 구 프롬프트로 돌고 있어 재시작(단계·목적 필드는 9/18부터).
+- 함정: python 비-raw 문자열의 \b 가 백스페이스 바이트로 들어감 → 정규식 패치는 raw 문자열로.

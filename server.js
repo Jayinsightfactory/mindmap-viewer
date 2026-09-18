@@ -1247,7 +1247,13 @@ function _visionQueuePush(item) {
   // 몇 초 간격이라 워커 트리아지(같은 화면 3분 컷)에서 1장만 살아남음 → 세션(10분내 3장+) 형성 불가.
   // 마지막 항목과 2분 미만 간격이면 교체(근접 중복 대체) — 큐 6칸이 ~12분+ 시간대를 커버하게 됨. 힙 예산 불변.
   const lastItem = q[q.length - 1];
-  if (lastItem && Math.abs(new Date(item.ts) - new Date(lastItem.ts)) < 120000) {
+  // [2026-09-18] 가치 선별: 실측(3일) 캡처의 13~22%만 해독되는데 그중 60%+가 메신저, 같은 화면 반복이 33~45%.
+  // 해독 예산(구독 quota)은 못 늘리므로 "어떤 장면을 남길지"를 바꾼다.
+  //  - 같은 화면(앱+창제목)이 이어지면 10분까지 최신 상태 1장으로 교체(반복 컷) — 화면이 바뀌면 2분 안이어도 둘 다 남김(전환이 의미 있는 순간).
+  //  - 넘칠 때는 가장 오래된 것이 아니라 가치가 가장 낮은 것(메신저·입력 없는 컷)부터 내보낸다. 메신저 대화는 kakao-intel 파이프라인이 따로 읽는다.
+  item._key = _visionScreenKey(item); item._val = _visionItemValue(item);
+  const gap = lastItem ? Math.abs(new Date(item.ts) - new Date(lastItem.ts)) : Infinity;
+  if (lastItem && ((lastItem._key === item._key && gap < 600000) || (gap < 120000 && item._val <= 1 && lastItem._val <= 1))) {
     q[q.length - 1] = item;
   } else {
     q.push(item);
@@ -1256,9 +1262,23 @@ function _visionQueuePush(item) {
   // (메모리 큐 6칸, 소비 < 유입). 밀려나는 항목을 버리지 않고 디스크 스풀(기존 /api/vision/spool 경로,
   // 사용자당 300 상한·owner 스풀 워커가 소진)로 넘긴다. 전량은 quota가 감당 못 하므로 "새 작업 구간"만:
   // 같은 사람의 직전 스풀과 앱·창제목이 다르거나 10분 이상 지났을 때만 남긴다(같은 화면 반복 컷).
-  while (q.length > _VISION_PER_USER_MAX) _visionSpoolEvicted(q.shift());
+  while (q.length > _VISION_PER_USER_MAX) {
+    let idx = 0; // 가치 최저(동률이면 가장 오래된 것)를 내보냄 — 방금 들어온 항목은 마지막 후보
+    for (let i = 1; i < q.length - 1; i++) if ((q[i]._val ?? 1) < (q[idx]._val ?? 1)) idx = i;
+    _visionSpoolEvicted(q.splice(idx, 1)[0]);
+  }
   global._visionImageQueue.push(item);
   while (global._visionImageQueue.length > _VISION_LEGACY_MAX) global._visionImageQueue.shift();
+}
+// 장면 가치: 업무 도구(전산·엑셀·시트·PDF·드라이브·메일 첨부) 2 / 그 외 1 / 메신저 0, 입력 직후(keyboard_flush) +1 — 입력값이 화면에 남은 상태라 필드값이 읽힌다.
+const _VISION_MSGR_RE = /kakao|카카오|whatsapp|weixin|wechat|위챗|telegram|slack|discord/i;
+const _VISION_WORK_RE = /excel|엑셀|nenova|네노바|erp|ecount|이카운트|sheets|스프레드시트|pdf|drive|드라이브|pivot|견적|발주|입고|출고|분배|invoice|packing/i;
+function _visionScreenKey(it) { return `${String(it.app || '').toLowerCase()}|${String(it.windowTitle || '').slice(0, 40).toLowerCase()}`; }
+function _visionItemValue(it) {
+  const t = `${it.app || ''} ${it.windowTitle || ''}`;
+  let v = _VISION_MSGR_RE.test(t) ? 0 : (_VISION_WORK_RE.test(t) ? 2 : 1);
+  if (it.trigger === 'keyboard_flush' && v > 0) v += 1;
+  return v;
 }
 const _visionLastSpooled = new Map(); // userId → { key, at }
 function _visionSpoolEvicted(it) {
@@ -1288,7 +1308,11 @@ function _visionQueueTake(n) {
     for (const uid of users) {
       if (taken.length >= n) break;
       const q = global._visionQueueByUser.get(uid);
-      if (q && q.length) { taken.push(q.pop()); progressed = true; }
+      if (q && q.length) {
+        let bi = q.length - 1; // 가치 최고(동률이면 최신)
+        for (let i = q.length - 2; i >= 0; i--) if ((q[i]._val ?? 1) > (q[bi]._val ?? 1)) bi = i;
+        taken.push(q.splice(bi, 1)[0]); progressed = true;
+      }
     }
   }
   for (const uid of users) if ((global._visionQueueByUser.get(uid) || []).length === 0) global._visionQueueByUser.delete(uid);
