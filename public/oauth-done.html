@@ -1,0 +1,20 @@
+<!DOCTYPE html><html lang="ko"><head><meta charset="utf-8"><title>로그인 완료</title>
+<style>body{font-family:'Segoe UI','Malgun Gothic',sans-serif;background:#0d1117;color:#e6edf3;display:flex;align-items:center;justify-content:center;height:100vh;margin:0}</style></head>
+<body><div id="m">로그인 처리 중…</div>
+<script>
+// Google 로그인 팝업의 도착지. 연 창(opener: my-work.html / work-unified.html — nenovaweb iframe 안이어도 됨)에 토큰을 넘기고 닫는다.
+// opener 가 없으면(직접 접속) 토큰을 저장하고 /my-work.html 로 간다.
+(function(){
+  var t = new URLSearchParams(location.search).get('oauth_token');
+  if (!t) { document.getElementById('m').textContent = '토큰이 없습니다. 다시 로그인하세요.'; return; }
+  history.replaceState(null, '', location.pathname);
+  if (window.opener && !window.opener.closed) {
+    try { window.opener.postMessage({ type: 'orbit-login', token: t }, location.origin); } catch (e) {}
+    document.getElementById('m').textContent = '로그인 완료. 이 창은 닫아도 됩니다.';
+    setTimeout(function(){ window.close(); }, 400);
+  } else {
+    localStorage.setItem('orbit_token', t); localStorage.setItem('orbitToken', t);
+    location.replace('/my-work.html');
+  }
+})();
+</script></body></html>

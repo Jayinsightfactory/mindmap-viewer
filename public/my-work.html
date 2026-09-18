@@ -40,6 +40,7 @@ nav .sep{width:1px;height:18px;background:var(--line);margin:0 4px}
   <input id="lgemail" type="email" placeholder="이메일" autocomplete="username" style="width:200px">
   <input id="lgpw" type="password" placeholder="비밀번호" autocomplete="current-password" style="width:150px">
   <button id="lgbtn">로그인</button>
+  <button id="lggoogle" type="button">Google로 로그인</button>
   <span style="opacity:.6">또는</span>
   <input id="tokin" placeholder="orbit_… 토큰 붙여넣기" style="width:220px">
   <button id="toksave">저장</button>
@@ -125,6 +126,15 @@ async function doLogin() {
   } catch (e) { msg.textContent = '로그인 실패: ' + e.message; }
 }
 document.getElementById('lgbtn').onclick = doLogin;
+// Google 계정(사장님 계정은 비밀번호 없이 Google 로 만들어짐) — 팝업 로그인 → /oauth-done.html 이 토큰을 postMessage 로 돌려준다.
+// nenovaweb iframe 안에서도 동작(팝업이 opener 인 이 창에 직접 전달하므로 저장소 분리 영향 없음).
+function googleLogin() { window.open('/api/auth/google?next=mywork', 'orbit_login', 'width=520,height=680'); }
+document.getElementById('lggoogle').onclick = googleLogin;
+window.addEventListener('message', (e) => {
+  if (e.origin !== location.origin || !e.data || e.data.type !== 'orbit-login' || !e.data.token) return;
+  localStorage.setItem('orbit_token', e.data.token); localStorage.setItem('orbitToken', e.data.token);
+  location.reload();
+});
 document.getElementById('lgpw').addEventListener('keydown', (e) => { if (e.key === 'Enter') doLogin(); });
 // 헤더의 로그인/계정 전환 버튼 — 토큰이 있어도 다시 로그인할 수 있게
 (function () {
