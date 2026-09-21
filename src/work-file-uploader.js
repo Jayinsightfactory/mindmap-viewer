@@ -28,7 +28,7 @@ let _cfg = null, _cfgAt = 0, _serverUrl = null, _token = null;
 const _seenSha = new Map();   // sha → at (7일 보관)
 const _lastAt = new Map();    // fullPath → 마지막 업로드 시도 시각(디바운스)
 let _timers = new Map();      // fullPath → setTimeout (저장 연타 흡수)
-let _stats = { considered: 0, uploaded: 0, skippedPersonal: 0, skippedNoSignal: 0, skippedDup: 0, failed: 0 };
+let _stats = { considered: 0, uploaded: 0, skippedPersonal: 0, skippedNoSignal: 0, skippedDup: 0, failed: 0, lastError: '', lastBackfill: null }; // heartbeat로 서버에 보고(PC별 원격 진단)
 const _retry = new Map();     // fullPath → { tries, evt } — 잠긴 파일·네트워크 실패는 5분 뒤 최대 3회 재시도
 const RETRY_MS = 5 * 60 * 1000, RETRY_MAX = 3;
 const BACKFILL_MARK = path.join(os.homedir(), '.orbit', 'drive-backfill-done.json'); // 기존 파일 일괄 업로드 1회 완료 표식
@@ -39,8 +39,8 @@ function init({ serverUrl, token }) {
   // 기존 파일 일괄 업로드는 PC당 1회 자동(서버에서 기능이 켜져 있을 때만). 완료 표식이 있으면 건너뛴다. 재실행은 서버 명령 drive-backfill.
   setTimeout(async () => {
     try { if (fs.existsSync(BACKFILL_MARK)) return; const cfg = await _config(); if (!cfg || !cfg.enabled) return;
-      const r = await backfill({}); if (r && r.ok) fs.writeFileSync(BACKFILL_MARK, JSON.stringify({ at: new Date().toISOString(), ...r, stats: undefined }));
-    } catch (e) { console.warn('[work-file-uploader] 자동 backfill 실패:', e.message); }
+      const r = await backfill({}); _stats.lastBackfill = { at: new Date().toISOString(), auto: true, ...r, stats: undefined }; if (r && r.ok) fs.writeFileSync(BACKFILL_MARK, JSON.stringify(_stats.lastBackfill));
+    } catch (e) { _stats.lastError = 'auto-backfill: ' + e.message; console.warn('[work-file-uploader] 자동 backfill 실패:', e.message); }
   }, 2 * 60 * 1000).unref?.();
 }
 
@@ -108,13 +108,13 @@ async function _upload(evt, tries = 0) {
       const c = j.classification || {};
       console.log(`[work-file-uploader] ${j.duplicate ? '중복' : '업로드'} ${evt.filename} → ${c.cycle || '-'} / ${c.stage || '-'}${c.sensitive ? ' 🔒' : ''}`);
     } else if (r.status >= 500 || r.status === 429) { _queueRetry(evt, tries, 'server ' + r.status); }
-    else { _stats.failed++; console.warn(`[work-file-uploader] 실패 ${r.status} ${evt.filename}: ${j.error || ''}`); } // 4xx는 재시도해도 같음
-  } catch (e) { _queueRetry(evt, tries, 'network'); }
+    else { _stats.failed++; _stats.lastError = `${r.status} ${j.error || ''}`.trim(); console.warn(`[work-file-uploader] 실패 ${r.status} ${evt.filename}: ${j.error || ''}`); } // 4xx는 재시도해도 같음
+  } catch (e) { _stats.lastError = 'network: ' + e.message; _queueRetry(evt, tries, 'network'); }
   // sha 캐시 7일 정리
   const cut = Date.now() - 7 * 86400e3; for (const [k, at] of _seenSha) if (at < cut) _seenSha.delete(k);
 }
 
-function getStats() { return { ..._stats, enabled: !!(_cfg && _cfg.enabled) }; }
+function getStats() { return { ..._stats, enabled: !!(_cfg && _cfg.enabled), cfgUser: _cfg ? (_cfg.userName || '') : '', retryQueue: _retry.size }; }
 
 // 기존 파일 일괄 업로드(backfill) — 서버 명령 'drive-backfill' 로 1회 실행. 감시 폴더 3곳을 하위 depth 단계까지 훑어
 // 같은 게이트(decide)를 통과하는 파일만, 최근 maxAgeDays 내 수정본만, 초당 1건 간격으로 올린다(서버·PC 부하 방지).
@@ -122,7 +122,7 @@ function getStats() { return { ..._stats, enabled: !!(_cfg && _cfg.enabled) }; }
 let _backfillRunning = false;
 async function backfill({ depth = 3, maxFiles = 1000, maxAgeDays = 548, dryRun = false } = {}) {
   if (_backfillRunning) return { ok: false, reason: 'already-running' };
-  const cfg = await _config(); if (!cfg || !cfg.enabled) return { ok: false, reason: 'not-enabled' };
+  const cfg = await _config(); if (!cfg || !cfg.enabled) { _stats.lastBackfill = { at: new Date().toISOString(), ok: false, reason: 'not-enabled' }; return { ok: false, reason: 'not-enabled' }; }
   _backfillRunning = true;
   const home = os.homedir(); const roots = ['Desktop', 'Documents', 'Downloads'].map((d) => path.join(home, d));
   const cut = Date.now() - maxAgeDays * 86400e3; const found = [];
@@ -152,6 +152,7 @@ async function backfill({ depth = 3, maxFiles = 1000, maxAgeDays = 548, dryRun =
   }
   _backfillRunning = false;
   const s = getStats();
+  _stats.lastBackfill = { at: new Date().toISOString(), ok: true, candidates: found.length, attempted: n };
   console.log(`[work-file-uploader] backfill 완료: 시도 ${n}, 누적 업로드 ${s.uploaded}, 중복 ${s.skippedDup}, 실패 ${s.failed}`);
   return { ok: true, candidates: found.length, attempted: n, stats: s };
 }

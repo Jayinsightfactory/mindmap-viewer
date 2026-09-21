@@ -2981,6 +2981,7 @@ app.get('/api/admin/daemon-health', async (req, res) => {
         freeMemMB:  data.freeMemMB || null,
         cpuCount:   data.cpuCount || null,
         gov:        data.gov || null,          // 거버너 등급/부하/RAM tier (PC별 설정 실측)
+        work:       data.work || null,         // 업무 드라이브 업로더 통계 (enabled/uploaded/skipped/lastError/lastBackfill)
         state:    verdict,
         codeVersion: data.codeVersion || null, // git HEAD(8) — 각 PC 코드세대(최신 여부)
         modules:  data.modules || {},
