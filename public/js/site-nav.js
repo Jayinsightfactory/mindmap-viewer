@@ -4,6 +4,7 @@
 (function () {
   var MENU = [
     ['/my-work.html', '내 작업 데이터'],
+    ['/work-daylog.html', '하루 일지'],
     ['/admin-analysis.html', '분석'],
     ['/nenova-dashboard.html', '전산'],
     ['/automation-flow.html', '자동화'],
