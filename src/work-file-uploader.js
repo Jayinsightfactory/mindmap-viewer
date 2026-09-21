@@ -48,9 +48,9 @@ async function _config() {
   if (!_serverUrl || !_token) return null;
   if (_cfg && Date.now() - _cfgAt < 10 * 60 * 1000) return _cfg;
   try {
-    const r = await fetch(`${_serverUrl}/api/daemon/nenova-ingest-config`, { headers: { Authorization: 'Bearer ' + _token }, signal: AbortSignal.timeout(8000) });
+    const r = await fetch(`${_serverUrl}/api/daemon/nenova-ingest-config`, { headers: { Authorization: 'Bearer ' + _token, 'X-Device-Id': os.hostname() }, signal: AbortSignal.timeout(8000) });
     const j = await r.json().catch(() => ({}));
-    _cfg = j && j.enabled ? j : { enabled: false };
+    _cfg = j && j.enabled ? j : { enabled: false, reason: (j && j.reason) || ('http ' + r.status) };
   } catch { _cfg = _cfg || { enabled: false }; }
   _cfgAt = Date.now();
   return _cfg;
@@ -114,7 +114,7 @@ async function _upload(evt, tries = 0) {
   const cut = Date.now() - 7 * 86400e3; for (const [k, at] of _seenSha) if (at < cut) _seenSha.delete(k);
 }
 
-function getStats() { return { ..._stats, enabled: !!(_cfg && _cfg.enabled), cfgUser: _cfg ? (_cfg.userName || '') : '', retryQueue: _retry.size }; }
+function getStats() { return { ..._stats, enabled: !!(_cfg && _cfg.enabled), cfgUser: _cfg ? (_cfg.userName || '') : '', cfgReason: _cfg ? (_cfg.reason || '') : 'not-fetched', retryQueue: _retry.size }; }
 
 // 기존 파일 일괄 업로드(backfill) — 서버 명령 'drive-backfill' 로 1회 실행. 감시 폴더 3곳을 하위 depth 단계까지 훑어
 // 같은 게이트(decide)를 통과하는 파일만, 최근 maxAgeDays 내 수정본만, 초당 1건 간격으로 올린다(서버·PC 부하 방지).

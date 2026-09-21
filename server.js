@@ -1110,9 +1110,19 @@ app.get('/api/daemon/nenova-ingest-config', async (req, res) => {
   let userId = '', userName = '';
   try {
     const pool = dbModule.getDb();
-    const { rows } = await pool.query('SELECT t.user_id, u.name FROM orbit_auth_tokens t LEFT JOIN orbit_auth_users u ON u.id = t.user_id WHERE t.token=$1', [raw]);
-    if (!rows.length) return res.status(403).json({ enabled: false, reason: 'unknown_token' });
-    userId = rows[0].user_id; userName = rows[0].name || '';
+    // 1) hostname → orbit_pc_links (admin이 등록한 PC 소유자 = 단일 진실, /api/hook과 같은 우선순위)
+    //    가브리엘 PC처럼 데몬 토큰이 임시(pc_HOSTNAME)라 orbit_auth_tokens에 없는 경우를 여기서 살린다 (2026-09-21)
+    const deviceId = decodeURIComponent(String(req.headers['x-device-id'] || ''));
+    if (deviceId) {
+      const { rows: pcl } = await pool.query('SELECT l.user_id, u.name FROM orbit_pc_links l LEFT JOIN orbit_auth_users u ON u.id = l.user_id WHERE l.hostname=$1 LIMIT 1', [deviceId]);
+      if (pcl.length && pcl[0].user_id) { userId = pcl[0].user_id; userName = pcl[0].name || ''; }
+    }
+    // 2) 토큰 → 사용자
+    if (!userId) {
+      const { rows } = await pool.query('SELECT t.user_id, u.name FROM orbit_auth_tokens t LEFT JOIN orbit_auth_users u ON u.id = t.user_id WHERE t.token=$1', [raw]);
+      if (!rows.length) return res.status(403).json({ enabled: false, reason: 'unknown_token' });
+      userId = rows[0].user_id; userName = rows[0].name || '';
+    }
   } catch (e) { return res.status(500).json({ enabled: false, reason: e.message }); }
   res.json({ enabled: true, url, token, userId, userName, maxMB: 25, pollMin: 10 });
 });
