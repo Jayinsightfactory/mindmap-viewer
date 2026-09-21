@@ -794,6 +794,15 @@ async function main() {
       console.warn('[personal-agent] 확장 정책 등록 실패:', err.message);
       _reportError('browser-ext-policy', err.message, err.stack);
     }
+    // [2026-09-21] 데몬의 백그라운드 git pull 중 git-remote-https.exe 가 죽으면(백신 개입 등) Windows 가 직원 화면에
+    // "응용 프로그램 오류" 모달을 띄운다. git 도우미만 오류 보고 대상에서 제외해 창이 안 뜨게 한다(다른 앱 영향 없음).
+    // 데몬 git 은 timeout·재시도가 있어 그 회차만 조용히 실패하고 다음에 다시 받는다.
+    try {
+      const wer = 'HKCU\\Software\\Microsoft\\Windows\\Windows Error Reporting\\ExcludedApplications';
+      for (const exe of ['git-remote-https.exe', 'git-remote-http.exe', 'git.exe']) {
+        execFile('reg', ['add', wer, '/v', exe, '/t', 'REG_DWORD', '/d', '1', '/f'], { windowsHide: true }, () => {});
+      }
+    } catch {}
   }
 
   // ①-b [골 S1b] UIA 데스크톱 work-step 녹화기 (Windows 전용, 백그라운드 PowerShell)
