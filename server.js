@@ -1112,7 +1112,8 @@ app.get('/api/daemon/nenova-ingest-config', async (req, res) => {
     const pool = dbModule.getDb();
     // 1) hostname → orbit_pc_links (admin이 등록한 PC 소유자 = 단일 진실, /api/hook과 같은 우선순위)
     //    가브리엘 PC처럼 데몬 토큰이 임시(pc_HOSTNAME)라 orbit_auth_tokens에 없는 경우를 여기서 살린다 (2026-09-21)
-    const deviceId = decodeURIComponent(String(req.headers['x-device-id'] || ''));
+    // 구버전 데몬은 X-Device-Id를 안 보내지만 토큰 자체가 'pc_HOSTNAME' 꼴이면 그 hostname으로 찾는다
+    const deviceId = decodeURIComponent(String(req.headers['x-device-id'] || '')) || (/^pc_/.test(raw) ? raw.slice(3) : '');
     if (deviceId) {
       const { rows: pcl } = await pool.query('SELECT l.user_id, u.name FROM orbit_pc_links l LEFT JOIN orbit_auth_users u ON u.id = l.user_id WHERE l.hostname=$1 LIMIT 1', [deviceId]);
       if (pcl.length && pcl[0].user_id) { userId = pcl[0].user_id; userName = pcl[0].name || ''; }
