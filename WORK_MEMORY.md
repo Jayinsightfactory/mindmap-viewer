@@ -1874,3 +1874,12 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 - 활성화 절차(사용자): ① 네노바웹 .env.local ORBIT_DRIVE_INGEST_TOKEN=<랜덤> ② Railway NENOVA_INGEST_URL=https://nenovaweb.com, NENOVA_INGEST_TOKEN=<같은 값> ③ 데몬 재시작(force-update). 둘 다 없으면 아무 일도 안 일어남(안전).
 - 미검증: 실 직원 PC 업로드, MOYI 드라이브 백엔드 동기화(v2로 보류).
 - 2026-09-21 활성화 완료(사용자 대행): gh secret ORBIT_DRIVE_INGEST_TOKEN 설정 + deploy.yml 동기화 블록(PR #700 머지·배포, 503→401 확인) + railway variables NENOVA_INGEST_URL/TOKEN(mindmap-viewer, ingest-config enabled:true) + 8대 per-host restart(6대 9c385f0). 실서버 E2E: 업로더 단독 실행으로 owner PC 파일 → nenovaweb 도착(임재용/영업지원/발주) 확인 후 숨김. owner 데몬 자체는 당시 send_errors(socket hang up)·RSS 2.7GB 상태라 데몬 경유 검증은 못 함(기존 owner PC 과부하 이슈, 파이프라인 무관). 토큰 원본: scratchpad/.ingest-token(세션 한정).
+
+## 2026-09-21 (오후) 원격 명령 블랙홀 — guardian watchdog이 워커용 명령을 가로채 버림
+- 검색어: `daemon/commands`, `X-Device-Id`, `drive-backfill`, `guardian-exec`, `watchdog.log exec:`, `블랙홀`, `가브리엘 업로드 0건`
+- 증상: 가브리엘(DESKTOP-05VLRN1) 드라이브 업로드 0건, `drive-backfill` 명령 무응답, 조현욱 `update` 미반영(a2289c3 잔류), 자동 capture-config 12대분 미소비. 워커·서버 큐 자체는 표준 실행(`node -e require('./src/daemon-updater').start()`)으로 정상 확인.
+- 원인: `~/.orbit/watchdog.ps1`(guardian, 2분)과 daemon-updater(60초)가 **같은 큐** `GET /api/daemon/commands`를 폴링, 서버는 GET 시 큐 삭제. guardian은 exec/restart/update/reinstall/config만 처리하고 **모르는 action은 버림**. 실증: 본인 PC `watchdog.log` `[16:29:03] exec: …`(guardian이 먹음), daemon.log엔 흔적 없음.
+- 수정: `server.js` GET /api/daemon/commands — guardian(X-Device-Id 헤더)에겐 guardian 처리 action만 주고 나머지는 `global._daemonCommands[hostname]`에 남김 (041802f). 합성 호스트로 검증(guardian GET=[] / worker GET=drive-backfill). 조현욱 update 즉시 반영(uptime 리셋, 041802fb).
+- 관측성: 업로더 통계(enabled/uploaded/skipped*/failed/lastError/lastBackfill/retryQueue/cfgUser)를 heartbeat `work`→`/api/admin/daemon-health`로 보고 (3b5dacd). "업로드 0건" 진단은 이제 health 한 번으로.
+- 함정 메모: `/api/learning/logs?type=daemon.update`는 watchdog KST(+09:00) 타임스탬프가 UTC보다 뒤로 정렬돼 워커 보고(update_*/command_*)가 limit 밖으로 밀림 → 워커 보고 확인엔 쓰지 말 것. GET /api/daemon/commands를 진단용으로 부르면 큐를 먹는다(절대 금지, DATA_CHECK 39행).
+- 가브리엘 잔여: 명령 채널 복구 후에도 backfill 0건 → health `work` 통계로 원인(not-enabled / no-signal / 업로드 실패) 판정 예정.
