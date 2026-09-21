@@ -19,18 +19,30 @@ const crypto = require('crypto');
 
 const EXT_OK = /\.(xlsx|xlsm|xls|csv|pdf|docx|doc|hwp|pptx)$/i;
 const MIN_BYTES = 1024, MAX_BYTES = 25 * 1024 * 1024;
-const CYCLE_RE = /(?:^|[^\d])\d{2}\s*[-_]\s*0?\d(?!\d)|(?:^|[^\d])\d{2}0?\d(?=차|_|\s|\.)|(?:^|[^\d])\d{2}\s*차(?!수)/;
+const CYCLE_RE = /(?:^|[^\d])\d{2}\s*[-_]\s*0?\d(?!\d)|(?:^|[^\dA-Za-z])\d{2}0?\d(?=차|_|\s|\.)|(?:^|[^\d])\d{2}\s*차(?!수)/; // 영문 뒤 숫자(무작위 ID 'G547')는 차수 아님
 const WORK_RE = /발주|입고|출고|분배|원가|운임|견적|명세|결의|송금|외화|정산|매출|재고|물량|취합|인보이스|invoice|proforma|packing|order|pedido|awb|phyto|불량|quality|claim|클레임|holex|farm|농장|수국|장미|카네이션|알스트로|출고내역|거래명세|세금계산|면장|통관|도착원가|freight|arrival/i;
 const PERSONAL_RE = /계약|contrato|contract|이력서|resume|cv\b|급여|연봉|월급|개인|사진|photo|가족|병원|진단|처방|보험|여권|passport|주민|신분증|통장|카드명세|카드내역|대출|연말정산|세금신고|KakaoTalk_\d|screenshot|스크린샷|캡처|capture|메모\b|note\b|일기|편지/i;
-const JUNK_RE = /^[a-z]{6,}(\.\w+)?$|^new\s|^제목 없음|^무제|^untitled/i;
+const JUNK_RE = /^[a-z]{6,}(\.\w+)?$|^[A-Za-z0-9]{12,}\.\w+$|^new\s|^제목 없음|^무제|^untitled/i; // aaaaaa… / 무작위 ID(FL68KFM75D8G547) / 새 파일
 
 let _cfg = null, _cfgAt = 0, _serverUrl = null, _token = null;
 const _seenSha = new Map();   // sha → at (7일 보관)
 const _lastAt = new Map();    // fullPath → 마지막 업로드 시도 시각(디바운스)
 let _timers = new Map();      // fullPath → setTimeout (저장 연타 흡수)
 let _stats = { considered: 0, uploaded: 0, skippedPersonal: 0, skippedNoSignal: 0, skippedDup: 0, failed: 0 };
+const _retry = new Map();     // fullPath → { tries, evt } — 잠긴 파일·네트워크 실패는 5분 뒤 최대 3회 재시도
+const RETRY_MS = 5 * 60 * 1000, RETRY_MAX = 3;
+const BACKFILL_MARK = path.join(os.homedir(), '.orbit', 'drive-backfill-done.json'); // 기존 파일 일괄 업로드 1회 완료 표식
 
-function init({ serverUrl, token }) { _serverUrl = serverUrl; _token = token; }
+function init({ serverUrl, token }) {
+  _serverUrl = serverUrl; _token = token;
+  setInterval(() => { for (const [fp, r] of _retry) { _retry.delete(fp); _upload(r.evt, r.tries).catch(() => {}); } }, RETRY_MS).unref?.();
+  // 기존 파일 일괄 업로드는 PC당 1회 자동(서버에서 기능이 켜져 있을 때만). 완료 표식이 있으면 건너뛴다. 재실행은 서버 명령 drive-backfill.
+  setTimeout(async () => {
+    try { if (fs.existsSync(BACKFILL_MARK)) return; const cfg = await _config(); if (!cfg || !cfg.enabled) return;
+      const r = await backfill({}); if (r && r.ok) fs.writeFileSync(BACKFILL_MARK, JSON.stringify({ at: new Date().toISOString(), ...r, stats: undefined }));
+    } catch (e) { console.warn('[work-file-uploader] 자동 backfill 실패:', e.message); }
+  }, 2 * 60 * 1000).unref?.();
+}
 
 async function _config() {
   if (!_serverUrl || !_token) return null;
@@ -69,12 +81,13 @@ function onFileChange(evt) {
   } catch {}
 }
 
-async function _upload(evt) {
+const _queueRetry = (evt, tries, why) => { if (tries >= RETRY_MAX) { _stats.failed++; console.warn(`[work-file-uploader] 포기(${why}) ${evt.filename}`); return; } _retry.set(evt.fullPath, { tries: tries + 1, evt }); };
+async function _upload(evt, tries = 0) {
   const cfg = await _config(); if (!cfg || !cfg.enabled) return;
-  const last = _lastAt.get(evt.fullPath) || 0; if (Date.now() - last < 90 * 1000) return;
+  const last = _lastAt.get(evt.fullPath) || 0; if (tries === 0 && Date.now() - last < 90 * 1000) return;
   let st; try { st = fs.statSync(evt.fullPath); } catch { return; } // 삭제/이동됨
   if (!st.isFile() || st.size < MIN_BYTES || st.size > MAX_BYTES) return;
-  let buf; try { buf = fs.readFileSync(evt.fullPath); } catch { return; } // 엑셀이 잠근 중이면 다음 변경 때
+  let buf; try { buf = fs.readFileSync(evt.fullPath); } catch { return _queueRetry(evt, tries, 'locked'); } // 엑셀이 잠근 중 → 5분 뒤 재시도
   const sha = crypto.createHash('sha256').update(buf).digest('hex');
   if (_seenSha.has(sha)) { _stats.skippedDup++; return; }
   _lastAt.set(evt.fullPath, Date.now());
@@ -94,8 +107,9 @@ async function _upload(evt) {
       _seenSha.set(sha, Date.now()); _stats.uploaded++;
       const c = j.classification || {};
       console.log(`[work-file-uploader] ${j.duplicate ? '중복' : '업로드'} ${evt.filename} → ${c.cycle || '-'} / ${c.stage || '-'}${c.sensitive ? ' 🔒' : ''}`);
-    } else { _stats.failed++; console.warn(`[work-file-uploader] 실패 ${r.status} ${evt.filename}: ${j.error || ''}`); }
-  } catch (e) { _stats.failed++; console.warn('[work-file-uploader] 전송 오류:', e.message); }
+    } else if (r.status >= 500 || r.status === 429) { _queueRetry(evt, tries, 'server ' + r.status); }
+    else { _stats.failed++; console.warn(`[work-file-uploader] 실패 ${r.status} ${evt.filename}: ${j.error || ''}`); } // 4xx는 재시도해도 같음
+  } catch (e) { _queueRetry(evt, tries, 'network'); }
   // sha 캐시 7일 정리
   const cut = Date.now() - 7 * 86400e3; for (const [k, at] of _seenSha) if (at < cut) _seenSha.delete(k);
 }
