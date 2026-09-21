@@ -640,7 +640,7 @@ function createFlowMapRouter(deps = {}) {
                COUNT(*) FILTER (WHERE type='screen.analyzed') AS analyzed,
                COUNT(*) FILTER (WHERE type='screen.analyzed' AND (jsonb_array_length(COALESCE(data_json#>'{entities,products}','[]'::jsonb)) > 0 OR jsonb_array_length(COALESCE(data_json#>'{entities,customers}','[]'::jsonb)) > 0 OR jsonb_array_length(COALESCE(data_json#>'{entities,amounts}','[]'::jsonb)) > 0)) AS with_entities,
                COUNT(*) FILTER (WHERE type='screen.analyzed' AND jsonb_path_exists(data_json, '$.fields[*] ? (@.currentValue != null && @.currentValue != "")')) AS with_field_values,
-               COUNT(*) FILTER (WHERE type='screen.analyzed' AND jsonb_array_length(COALESCE(data_json->'tables','[]'::jsonb)) > 0) AS with_tables,
+               COUNT(*) FILTER (WHERE type='screen.analyzed' AND (CASE WHEN jsonb_typeof(COALESCE(data_json->'tables','[]'::jsonb))='array' THEN jsonb_array_length(COALESCE(data_json->'tables','[]'::jsonb)) ELSE 0 END) > 0) AS with_tables,
                COUNT(*) FILTER (WHERE type='screen.analyzed' AND COALESCE(data_json->>'businessStage','') <> '') AS with_stage,
                COUNT(*) FILTER (WHERE type='screen.analyzed' AND COALESCE(data_json->>'purpose','') <> '') AS with_purpose,
                COUNT(*) FILTER (WHERE type='screen.analyzed' AND COALESCE(data_json->>'actionDone','') <> '') AS with_done,
