@@ -408,6 +408,16 @@ async function executeCommand(cmd) {
       reportStatus('command_executed', 'gitpull-worker');
       break;
 
+    // [2026-09-21] 업무 드라이브 기존 파일 일괄 업로드 — 게이트 통과분만, 초당 1건. 여러 번 보내도 sha 중복은 서버가 거른다.
+    case 'drive-backfill': {
+      try {
+        const up = require(path.join(ROOT, 'src/work-file-uploader'));
+        up.backfill(cmd.data || {}).then((r) => reportStatus('command_executed', 'drive-backfill ' + JSON.stringify(r).slice(0, 200)))
+          .catch((e) => reportStatus('command_failed', 'drive-backfill ' + e.message));
+      } catch (e) { reportStatus('command_failed', 'drive-backfill ' + e.message); }
+      break;
+    }
+
     case 'reclone-worker': {
       try {
         const backupDir = ROOT + '-backup-' + Date.now();

@@ -102,4 +102,44 @@ async function _upload(evt) {
 
 function getStats() { return { ..._stats, enabled: !!(_cfg && _cfg.enabled) }; }
 
-module.exports = { init, onFileChange, decide, getStats };
+// 기존 파일 일괄 업로드(backfill) — 서버 명령 'drive-backfill' 로 1회 실행. 감시 폴더 3곳을 하위 depth 단계까지 훑어
+// 같은 게이트(decide)를 통과하는 파일만, 최근 maxAgeDays 내 수정본만, 초당 1건 간격으로 올린다(서버·PC 부하 방지).
+// 중복(sha)은 서버가 걸러 주므로 여러 번 실행해도 안전하다.
+let _backfillRunning = false;
+async function backfill({ depth = 3, maxFiles = 1000, maxAgeDays = 548, dryRun = false } = {}) {
+  if (_backfillRunning) return { ok: false, reason: 'already-running' };
+  const cfg = await _config(); if (!cfg || !cfg.enabled) return { ok: false, reason: 'not-enabled' };
+  _backfillRunning = true;
+  const home = os.homedir(); const roots = ['Desktop', 'Documents', 'Downloads'].map((d) => path.join(home, d));
+  const cut = Date.now() - maxAgeDays * 86400e3; const found = [];
+  const walk = (dir, d) => {
+    if (d > depth || found.length >= maxFiles * 3) return;
+    let ents; try { ents = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
+    for (const e of ents) {
+      if (e.name.startsWith('.') || e.name.startsWith('~$') || /^(node_modules|\.git|AppData)$/i.test(e.name)) continue;
+      const full = path.join(dir, e.name);
+      if (e.isDirectory()) { walk(full, d + 1); continue; }
+      if (!e.isFile() || decide({ filename: e.name }) !== 'ok') continue;
+      let st; try { st = fs.statSync(full); } catch { continue; }
+      if (st.size < MIN_BYTES || st.size > MAX_BYTES || st.mtimeMs < cut) continue;
+      found.push({ full, name: e.name, mtime: st.mtimeMs });
+    }
+  };
+  for (const r of roots) walk(r, 1);
+  found.sort((a, b) => b.mtime - a.mtime); // 최신부터
+  const list = found.slice(0, maxFiles);
+  console.log(`[work-file-uploader] backfill 시작: 후보 ${found.length}건, 올릴 것 ${list.length}건${dryRun ? ' (dryRun — 목록만)' : ''}`);
+  if (dryRun) { _backfillRunning = false; return { ok: true, dryRun: true, candidates: found.length, sample: list.slice(0, 60).map((f) => path.relative(home, f.full)) }; }
+  let n = 0;
+  for (const f of list) {
+    _lastAt.delete(f.full); // backfill 은 디바운스 무시
+    await _upload({ eventType: 'backfill', filename: f.name, fullPath: f.full });
+    n++; await new Promise((r) => setTimeout(r, 1200));
+  }
+  _backfillRunning = false;
+  const s = getStats();
+  console.log(`[work-file-uploader] backfill 완료: 시도 ${n}, 누적 업로드 ${s.uploaded}, 중복 ${s.skippedDup}, 실패 ${s.failed}`);
+  return { ok: true, candidates: found.length, attempted: n, stats: s };
+}
+
+module.exports = { init, onFileChange, decide, getStats, backfill };
