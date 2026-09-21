@@ -1873,3 +1873,4 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 - 네노바웹 측(feat/work-manual): lib/workDrive.js·/api/work/drive-ingest·/api/work/drive·/work/drive 페이지·계약·테스트. 로컬 E2E: 토큰401·분류·중복·v2·부서접근(사장7/수입부2)·페이지 칸반 확인.
 - 활성화 절차(사용자): ① 네노바웹 .env.local ORBIT_DRIVE_INGEST_TOKEN=<랜덤> ② Railway NENOVA_INGEST_URL=https://nenovaweb.com, NENOVA_INGEST_TOKEN=<같은 값> ③ 데몬 재시작(force-update). 둘 다 없으면 아무 일도 안 일어남(안전).
 - 미검증: 실 직원 PC 업로드, MOYI 드라이브 백엔드 동기화(v2로 보류).
+- 2026-09-21 활성화 완료(사용자 대행): gh secret ORBIT_DRIVE_INGEST_TOKEN 설정 + deploy.yml 동기화 블록(PR #700 머지·배포, 503→401 확인) + railway variables NENOVA_INGEST_URL/TOKEN(mindmap-viewer, ingest-config enabled:true) + 8대 per-host restart(6대 9c385f0). 실서버 E2E: 업로더 단독 실행으로 owner PC 파일 → nenovaweb 도착(임재용/영업지원/발주) 확인 후 숨김. owner 데몬 자체는 당시 send_errors(socket hang up)·RSS 2.7GB 상태라 데몬 경유 검증은 못 함(기존 owner PC 과부하 이슈, 파이프라인 무관). 토큰 원본: scratchpad/.ingest-token(세션 한정).
