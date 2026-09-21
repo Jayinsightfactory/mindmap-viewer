@@ -136,7 +136,8 @@ function blockText(b) {
   const it = b.items; const d0 = it[0];
   const fields = uniq(it.flatMap((d) => (Array.isArray(d.fields) ? d.fields : []).filter((f) => f && f.currentValue).map((f) => `${f.name}: ${f.currentValue}`))).slice(0, 6);
   const ent = it.reduce((m, d) => { const e = d.entities || {}; for (const k of ['products', 'customers', 'amounts', 'cycles', 'farms']) (e[k] || []).forEach((v) => (m[k] ||= new Set()).add(typeof v === 'string' ? v : JSON.stringify(v))); return m; }, {});
-  const entLine = Object.entries(ent).map(([k, s]) => ({ products: '품목', customers: '거래처', amounts: '금액', cycles: '차수', farms: '농장' }[k] + ' ' + [...s].slice(0, 6).join(', ')).join(' · ');
+  const ENT_KO = { products: '품목', customers: '거래처', amounts: '금액', cycles: '차수', farms: '농장' };
+  const entLine = Object.entries(ent).map(([k, s]) => ENT_KO[k] + ' ' + [...s].slice(0, 6).join(', ')).join(' · ');
   const tables = uniq(it.flatMap((d) => (Array.isArray(d.tables) ? d.tables : []).map((t) => t && t.name ? `${t.name}(${(t.rows || []).length}행)` : ''))).slice(0, 3);
   return {
     app: d0.app || '', screen: uniq(it.map((d) => d.screen)).join(' → '), stage: uniq(it.map((d) => d.businessStage))[0] || '',
