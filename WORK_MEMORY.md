@@ -1863,3 +1863,13 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 - 수정(src/resource-governor.js _determineLevel): (1) RAM 임계 하향(shift) 제거 (2) 저사양은 RAM 유래 레벨을 BUSY로 캡(RAM만으로 CRITICAL 안 감) — CPU 85%↑ 진짜 폭주일 때만 CRITICAL. IDLE 금지(NORMAL 하한)는 유지.
 - 검증: 시뮬 통과(강현우 RAM85%→BUSY, 유휴→NORMAL, CPU폭주→CRITICAL). 실 PC 반영은 데몬 갱신 후 캡처 회복 확인=미검증.
 - 실측 스냅샷(09-18~21): 잘됨=김원빈434/87·설연주373/83·임재용349/33·조현욱68/21. 중단(PC 꺼짐 의심)=강명훈·가브리엘 09-18 이후 없음. 원래 안됨=박성수4·정재훈0.
+
+## 2026-09-21 업무 드라이브 자동 업로드(데몬→네노바웹)
+- 검색어: work-file-uploader, nenova-ingest-config, drive-ingest, 업무 드라이브, 개인 파일 차단, 차수 분류
+- 설계: file-change-watcher(5초 폴링) → src/work-file-uploader.js(게이트) → POST {네노바웹}/api/work/drive-ingest(multipart, 토큰). 분류(차수·단계·부서·민감)는 네노바웹 lib/workDrive.js가 최종.
+- 게이트(개인 파일 원천 차단, 서버 미도달): 확장자 화이트리스트(xlsx/xls/csv/pdf/docx/hwp/pptx — 사진·영상·zip 제외) AND 1KB~25MB AND 업무 신호(차수 정규식 or 업무 키워드) AND 개인 키워드 없음(계약·contrato·이력서·급여·개인·사진·보험·여권·통장·KakaoTalk_…). 실측 파일명 18케이스 검증.
+- 설정: server.js GET /api/daemon/nenova-ingest-config — env NENOVA_INGEST_URL/NENOVA_INGEST_TOKEN 없으면 enabled:false(데몬 무동작). 데몬 토큰→userId·userName 같이 반환(부서 판정용).
+- 디바운스: 저장 후 8초 정적 → 업로드, 같은 파일 90초, sha256 7일 중복 차단.
+- 네노바웹 측(feat/work-manual): lib/workDrive.js·/api/work/drive-ingest·/api/work/drive·/work/drive 페이지·계약·테스트. 로컬 E2E: 토큰401·분류·중복·v2·부서접근(사장7/수입부2)·페이지 칸반 확인.
+- 활성화 절차(사용자): ① 네노바웹 .env.local ORBIT_DRIVE_INGEST_TOKEN=<랜덤> ② Railway NENOVA_INGEST_URL=https://nenovaweb.com, NENOVA_INGEST_TOKEN=<같은 값> ③ 데몬 재시작(force-update). 둘 다 없으면 아무 일도 안 일어남(안전).
+- 미검증: 실 직원 PC 업로드, MOYI 드라이브 백엔드 동기화(v2로 보류).

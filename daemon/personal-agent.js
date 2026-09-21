@@ -1031,10 +1031,19 @@ async function main() {
   } catch (err) {
     console.warn('[personal-agent] 발주서 수집기 시작 실패:', err.message);
   }
+  // ②-g'' 업무 파일 → 네노바웹 업무 드라이브 자동 업로드(개인 파일은 여기서 원천 차단). 서버 미설정이면 무동작.
+  let workFileUploader = null;
+  try {
+    workFileUploader = require(path.join(ROOT, 'src/work-file-uploader'));
+    workFileUploader.init({ serverUrl: REMOTE_URL, token: REMOTE_TOKEN });
+  } catch (err) {
+    console.warn('[personal-agent] 업무 드라이브 업로더 시작 실패:', err.message);
+  }
   try {
     fileChangeWatcher = require(path.join(ROOT, 'src/file-change-watcher'));
     fileChangeWatcher.start((evt) => {
       _reportEvent('file.change', { filename: evt.filename, dir: evt.dir, eventType: evt.eventType, isExcel: evt.isExcel });
+      try { workFileUploader?.onFileChange(evt); } catch {}
       // 알고리즘 B: 발주서 엑셀 파일 감지 → 별도 이벤트
       if (evt.isPurchaseOrder) {
         _reportEvent('purchase.order.detected', {

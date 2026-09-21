@@ -1098,6 +1098,25 @@ wss.on('connection', (ws, req) => {
 
 // ─── 데몬용 Drive 설정 배포 API (인증 필수) ──────────────────────────────────
 // 데몬이 캡처 → Google Drive 업로드에 필요한 서비스 계정 키 제공
+// [2026-09-21] 네노바웹 업무 드라이브 자동 업로드 설정 — 데몬(work-file-uploader)이 기동 시·10분마다 조회.
+// 토큰은 Railway env(NENOVA_INGEST_URL / NENOVA_INGEST_TOKEN)에만 있고 데몬 저장소엔 없다. 미설정이면 enabled:false → 데몬 무동작.
+// 데몬 토큰으로 사용자 이름을 같이 돌려줘 네노바웹이 "누가 올렸나 → 부서"를 판단할 수 있게 한다.
+app.get('/api/daemon/nenova-ingest-config', async (req, res) => {
+  const url = (process.env.NENOVA_INGEST_URL || '').replace(/\/$/, '');
+  const token = process.env.NENOVA_INGEST_TOKEN || '';
+  if (!url || !token) return res.json({ enabled: false, reason: 'not_configured' });
+  const raw = (req.headers.authorization || '').replace(/^Bearer\s+/i, '').trim();
+  if (!raw) return res.status(401).json({ enabled: false, reason: 'unauthorized' });
+  let userId = '', userName = '';
+  try {
+    const pool = dbModule.getDb();
+    const { rows } = await pool.query('SELECT t.user_id, u.name FROM orbit_auth_tokens t LEFT JOIN orbit_auth_users u ON u.id = t.user_id WHERE t.token=$1', [raw]);
+    if (!rows.length) return res.status(403).json({ enabled: false, reason: 'unknown_token' });
+    userId = rows[0].user_id; userName = rows[0].name || '';
+  } catch (e) { return res.status(500).json({ enabled: false, reason: e.message }); }
+  res.json({ enabled: true, url, token, userId, userName, maxMB: 25, pollMin: 10 });
+});
+
 app.get('/api/daemon/drive-config', (req, res) => {
   // [2026-06-17] Drive 전역 OFF — 서비스계정 quota 없어 403 무한재시도로 로그/자원 폭주.
   // 분석은 서버큐+CLI워커로 이전했으므로 Drive 업로드 불필요. enabled:false면 데몬이 uploader 미기동.
