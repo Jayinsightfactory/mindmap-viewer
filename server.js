@@ -2658,9 +2658,16 @@ app.get('/api/daemon/commands', async (req, res) => {
       }
     }
   } catch {}
-  const result = _sanitizeDaemonCommands([...cmds, ...allCmds, ...pgCmds]);
-  // 개별 hostname 명령은 가져가면 삭제
-  global._daemonCommands[hostname] = [];
+  // [2026-09-21] 워커(daemon-updater, 60s)와 guardian watchdog(2분)이 같은 큐를 폴링 → watchdog이 먼저 가져가면
+  // 모르는 action(drive-backfill·capture-config·gitpull-worker…)은 그냥 버려져 워커에 영영 안 닿음(가브리엘 backfill 실종).
+  // guardian은 X-Device-Id 헤더를 보냄(워커는 안 보냄) → guardian에겐 guardian이 처리하는 action만 주고 나머지는 큐에 남긴다.
+  const _isGuardian = !!req.get('X-Device-Id') && req.query.role !== 'worker';
+  const _GUARDIAN_ACTIONS = new Set(['exec', 'restart', 'update', 'reinstall', 'config']);
+  const merged = _sanitizeDaemonCommands([...cmds, ...allCmds, ...pgCmds]);
+  const result = _isGuardian ? merged.filter(c => _GUARDIAN_ACTIONS.has(c.action)) : merged;
+  const keep = _isGuardian ? merged.filter(c => !_GUARDIAN_ACTIONS.has(c.action)) : [];
+  // 개별 hostname 명령은 가져가면 삭제 (guardian이 못 다루는 건 워커용으로 남김)
+  global._daemonCommands[hostname] = keep;
   // ALL 명령은 5분 후 자동 만료 (삭제 안 함)
   global._daemonCommands['ALL'] = allCmds;
   res.json({ commands: result });
