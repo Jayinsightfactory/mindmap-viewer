@@ -155,10 +155,16 @@ function _updateEma(cpu, ram) {
 
 // ── 부하 레벨 판정 ───────────────────────────────────────────────────────────
 function _determineLevel(cpu, ram) {
-  // 저사양 PC는 RAM 임계를 10%p 내려 더 일찍 절약 레벨로 간다(8GB에서 82%↑는 이미 빠듯).
-  const shift = RAM_TIER === 'low' ? 10 : 0;
+  // [2026-09-21 수정] 이전 버전은 저사양 PC의 RAM 임계를 10%p 낮춰(92→82) Windows 평상시 80~90% RAM에서
+  // 상시 CRITICAL 로 고정 → visionPaused=true 로 데이터 수집이 사실상 멈췄다(강현우 6GB: 45캡처/해독 1).
+  // 저사양 PC는 "끄는" 게 아니라 "가볍게 계속" 수집해야 한다:
+  //   - RAM 임계 하향(shift) 제거 → 고사양과 같은 기준.
+  //   - RAM 만으로는 CRITICAL(분석 정지)까지 안 간다. 저사양은 RAM 유래 상한을 BUSY(가벼운 수집·분석 유지)로 캡.
+  //     진짜 위험한 CPU 폭주(85%↑)일 때만 CRITICAL 로 간다.
   const cpuLevel = cpu >= 85 ? 'CRITICAL' : cpu >= 65 ? 'BUSY' : cpu >= 35 ? 'NORMAL' : 'IDLE';
-  const ramLevel = ram >= 92 - shift ? 'CRITICAL' : ram >= 82 - shift ? 'BUSY' : ram >= 70 - shift ? 'NORMAL' : 'IDLE';
+  let ramLevel = ram >= 92 ? 'CRITICAL' : ram >= 82 ? 'BUSY' : ram >= 70 ? 'NORMAL' : 'IDLE';
+  // 저사양은 RAM 때문에 CRITICAL(분석 정지)로는 안 보낸다 — 최대 BUSY(수집 계속).
+  if (RAM_TIER === 'low' && ramLevel === 'CRITICAL') ramLevel = 'BUSY';
   let idx = Math.max(ORDER.indexOf(cpuLevel), ORDER.indexOf(ramLevel));
   // 등급 상한(저사양은 IDLE 금지): 절약 방향(뒤쪽)으로만 끌어올린다.
   idx = Math.max(idx, ORDER.indexOf(TIER_FLOOR[RAM_TIER]));

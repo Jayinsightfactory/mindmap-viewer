@@ -1856,3 +1856,10 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 - 남은 깜빡임(빈도 낮음): 데몬 재시작/업데이트 시 powershell spawn(-WindowStyle Hidden). "계속"이 아니라 가끔이라 수용.
 - 강제 업데이트: 사용자가 /api/daemon/force-update enabled:true 실행(200 확인). 유휴 시 각 PC 갱신. 끝나면 enabled:false 로 끌 것.
 - 검증: node --check screen-capture.js 통과. 실제 직원 PC 깜빡임 감소는 데몬 갱신 후 육안 확인=미검증.
+
+## 2026-09-21 저사양 절약 과다 → 데이터 수집 정지 수정
+- 검색어: resource-governor, _determineLevel, RAM_TIER, CRITICAL, visionPaused, 저사양 수집 정지
+- 증상: 6~8GB PC 데이터 급감(강현우 6GB 3일 45캡처/해독 1, 강명훈 8GB 09-18 이후 없음). 원인=ee0afb2에서 저사양 RAM 임계 -10%p → Windows 평상 80~90% RAM에서 상시 CRITICAL 고정 → visionPaused=true=분석 정지.
+- 수정(src/resource-governor.js _determineLevel): (1) RAM 임계 하향(shift) 제거 (2) 저사양은 RAM 유래 레벨을 BUSY로 캡(RAM만으로 CRITICAL 안 감) — CPU 85%↑ 진짜 폭주일 때만 CRITICAL. IDLE 금지(NORMAL 하한)는 유지.
+- 검증: 시뮬 통과(강현우 RAM85%→BUSY, 유휴→NORMAL, CPU폭주→CRITICAL). 실 PC 반영은 데몬 갱신 후 캡처 회복 확인=미검증.
+- 실측 스냅샷(09-18~21): 잘됨=김원빈434/87·설연주373/83·임재용349/33·조현욱68/21. 중단(PC 꺼짐 의심)=강명훈·가브리엘 09-18 이후 없음. 원래 안됨=박성수4·정재훈0.
