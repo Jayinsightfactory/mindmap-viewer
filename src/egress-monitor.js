@@ -6,7 +6,7 @@
  * 감지 경로(관리자 권한 불필요, 전부 폴링):
  *   copy      — 이동식 드라이브(USB/외장)·클라우드 동기화 폴더(OneDrive/Google Drive/Dropbox/네이버 MYBOX/iCloud)·카톡 받은파일 폴더에 새 파일 → sha256 → 서버가 드라이브 색인과 대조
  *   print     — Windows 인쇄 큐(Win32_PrintJob) 5초 폴링: 문서명·프린터·페이지 (PDF 프린터 포함)
- *   email     — Outlook 보낸편지함(COM) 60초 폴링: 첨부가 있는 보낸 메일의 수신자·제목·첨부명
+ *   email     — Outlook 보낸편지함(COM) 60초 폴링: 첨부가 있는 보낸 메일의 수신자·제목·첨부명 (Outlook이 이미 실행 중일 때만 GetActiveObject — 절대 새로 띄우지 않음)
  *   webupload — 파일 선택 대화상자("열기"/"Open") 뒤에 크롬/엣지 활성 + 파일명 캡션 (파일명만, 신뢰도 낮음)
  *   kakao     — 파일 선택 대화상자 뒤 카카오톡 활성 → 창 제목(방 이름) + 파일명
  * 못 잡는 것: 화면 촬영, 내용 복사-붙여넣기, 1:1 카톡의 상대 이름(창 제목에 없을 때).
@@ -84,7 +84,10 @@ async function pollPrint() {
 async function pollOutlook() {
   const since = _lastMailCheck || new Date(Date.now() - 6 * 3600e3); _lastMailCheck = new Date();
   const s = since.toISOString().replace('T', ' ').slice(0, 19);
-  const out = await ps(`try { $o = New-Object -ComObject Outlook.Application; $ns = $o.GetNamespace('MAPI'); $f = $ns.GetDefaultFolder(5); $items = $f.Items; $items.Sort('[SentOn]', $true); $items = $items.Restrict("[SentOn] >= '${s}'"); foreach ($m in $items) { if ($m.Attachments.Count -gt 0) { $a = @(); foreach ($x in $m.Attachments) { $a += $x.FileName }; Write-Output ($m.EntryID + '|' + $m.SentOn.ToString('s') + '|' + $m.To + '|' + $m.Subject + '|' + ($a -join ';')) } } } catch {}`, 30000);
+  // ⚠ New-Object -ComObject 는 Outlook을 '실행'시킨다(2026-09-22 직원 PC에서 Outlook이 저절로 켜지는 사고). 이미 떠 있는 Outlook에만 GetActiveObject로 붙고, 없으면 아무것도 안 한다.
+  const running = await ps("if (Get-Process -Name OUTLOOK -ErrorAction SilentlyContinue) { 'yes' } else { 'no' }", 8000);
+  if (!/yes/.test(running)) return;
+  const out = await ps(`try { $o = [System.Runtime.InteropServices.Marshal]::GetActiveObject('Outlook.Application'); $ns = $o.GetNamespace('MAPI'); $f = $ns.GetDefaultFolder(5); $items = $f.Items; $items.Sort('[SentOn]', $true); $items = $items.Restrict("[SentOn] >= '${s}'"); foreach ($m in $items) { if ($m.Attachments.Count -gt 0) { $a = @(); foreach ($x in $m.Attachments) { $a += $x.FileName }; Write-Output ($m.EntryID + '|' + $m.SentOn.ToString('s') + '|' + $m.To + '|' + $m.Subject + '|' + ($a -join ';')) } } } catch {}`, 30000);
   for (const l of out.split(/\r?\n/).map((x) => x.trim()).filter(Boolean)) {
     const [id, sentOn, to, subject, atts] = l.split('|'); if (!id || _seenMail.has(id)) continue; _seenMail.add(id);
     for (const fn of String(atts || '').split(';').filter(Boolean)) push({ kind: 'email', filename: fn, destKind: 'outlook', dest: String(to || '').slice(0, 200), detail: `제목 ${String(subject || '').slice(0, 80)}`, at: sentOn ? new Date(sentOn).toISOString() : undefined, dedupKey: `email|${id}|${fn}` });
