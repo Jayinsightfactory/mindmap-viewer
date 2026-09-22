@@ -1883,3 +1883,11 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 - 관측성: 업로더 통계(enabled/uploaded/skipped*/failed/lastError/lastBackfill/retryQueue/cfgUser)를 heartbeat `work`→`/api/admin/daemon-health`로 보고 (3b5dacd). "업로드 0건" 진단은 이제 health 한 번으로.
 - 함정 메모: `/api/learning/logs?type=daemon.update`는 watchdog KST(+09:00) 타임스탬프가 UTC보다 뒤로 정렬돼 워커 보고(update_*/command_*)가 limit 밖으로 밀림 → 워커 보고 확인엔 쓰지 말 것. GET /api/daemon/commands를 진단용으로 부르면 큐를 먹는다(절대 금지, DATA_CHECK 39행).
 - 가브리엘 잔여: 명령 채널 복구 후에도 backfill 0건 → health `work` 통계로 원인(not-enabled / no-signal / 업로드 실패) 판정 예정.
+
+## 2026-09-22 가브리엘 PC 업로드 복구·원본 파일 조사·ETA 자동인식 (검색어: 가브리엘 413 nginx drive-ingest, Modelo AWB 시트, lista 클레임, not-fetched)
+- **413 원인**: nginx 기본 1MB 본문 한도. nenovaweb `scripts/ensure-pnl-upload-nginx.mjs` 관리경로에 `/api/work/drive-ingest` 32m 추가(#745 배포). 2.5MB POST→401(인증)로 통과 확인. 가브리엘 PC(DESKTOP-05VLRN1)에 `drive-backfill` 명령 → 741→770+ 상승, 실패 증가 0.
+- **health work `cfgReason:not-fetched`**(정재훈·박성수·설연주·강명훈) = 고장 아님. 설정을 파일이벤트/backfill 때만 lazy 조회했고 마커 있으면 조회 자체를 안 함 → 시작 시 무조건 조회하게 수정(85f3657). 아침 부팅 시 반영.
+- **가브리엘 파일 600건 구성**: Modelo AWB 운임시트 64(`33-02_Apollo_AWB_006-45462001.xlsx`, Grower/Weekend/AWB/Date + 운송료·GW·CW 행 → 입고관리 Packing 업로드용 = 운임 pseudo-product의 출처), AWB PDF 78, 인보이스 엑셀(`NN-NN_국가_농장_인보이스번호.xlsx` 규칙 다수), lista 클레임 3(`nenova_26-1_lista.xlsx`: Lote/Farm/Variedad/Cantidad/Unidad/거래처/Observación — 영업 불량차감을 농장용 스페인어 리스트로 변환한 것), 운임계산기 6(`22차 콜롬비아 AWB운임비.xlsx` 백상창고비/선율 비율분배 = 통관비 이중소스 메모의 원본).
+- **HTML 체크리스트·WhatsApp 비행일정은 드라이브에 없음**: 데몬 확장자 화이트리스트(xlsx/pdf/docx…)에 html 없음. 편명·도착시각은 WhatsApp에만 → 수기 필드로만 수용.
+- **ETA 보드 자동 인식**(nenovaweb #747): 드라이브 AWB 파일명 → 차수·포워더·AWB·항공사(IATA 접두 006 Delta/160 Cathay/157 Qatar/180 KE/217 TG/235 TK; 865·992 미확인) 제안 카드, 등록/무시, 항공사·편명 필드.
+- 다음 후보: ① lista 클레임 리스트를 WebSalesDefectDeduction에서 자동 생성(가브리엘 수작업 제거) ② 농장명 별칭 사전 ③ 운임계산기(백상/선율) 웹화 — 통관비 이중소스 결정 필요.
