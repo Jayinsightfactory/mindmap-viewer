@@ -38,7 +38,7 @@ function init({ serverUrl, token }) {
   setInterval(() => { for (const [fp, r] of _retry) { _retry.delete(fp); _upload(r.evt, r.tries).catch(() => {}); } }, RETRY_MS).unref?.();
   // 기존 파일 일괄 업로드는 PC당 1회 자동(서버에서 기능이 켜져 있을 때만). 완료 표식이 있으면 건너뛴다. 재실행은 서버 명령 drive-backfill.
   setTimeout(async () => {
-    try { if (fs.existsSync(BACKFILL_MARK)) return; const cfg = await _config(); if (!cfg || !cfg.enabled) return;
+    try { const cfg = await _config(); if (fs.existsSync(BACKFILL_MARK)) return; if (!cfg || !cfg.enabled) return; // 설정은 마커와 무관하게 먼저 받는다(health 통계가 'not-fetched'로 진단을 가리지 않게)
       const r = await backfill({}); _stats.lastBackfill = { at: new Date().toISOString(), auto: true, ...r, stats: undefined }; if (r && r.ok) fs.writeFileSync(BACKFILL_MARK, JSON.stringify(_stats.lastBackfill));
     } catch (e) { _stats.lastError = 'auto-backfill: ' + e.message; console.warn('[work-file-uploader] 자동 backfill 실패:', e.message); }
   }, 2 * 60 * 1000).unref?.();
