@@ -1893,3 +1893,9 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 - 다음 후보: ① lista 클레임 리스트를 WebSalesDefectDeduction에서 자동 생성(가브리엘 수작업 제거) ② 농장명 별칭 사전 ③ 운임계산기(백상/선율) 웹화 — 통관비 이중소스 결정 필요.
 - (같은 날 후속) 후보 3건 배포 완료(nenovaweb #749·#750·#751): 농장 별칭 사전(`data/farm-aliases.json`, 제안 25그룹 실측: EZ/EZ Flower/EZ Flowers, VERDNATURA S.A.S/SAS/…, Colibri/Colibri Flowers) · lista 클레임 엑셀(37차 95행·21농장 실측) · `/import/freight-calc` AWB 운임 계산기(38-02 AWB 5건 자동집계, 저장 없음). 함정 2: **AWB 컬럼 = WarehouseMaster.OrderNo**(AWB 컬럼 없음→500), **불량차감 OrderWeek = 대차수('38')**(세부차수로 조회하면 0행). ETA 제안 57건은 전부 원장에 이미 있어 중복제외 후 0 = 정상(과거 선적).
 - (후속 2) nenovaweb #752·#753: AWB 운임 계산기 [저장] → `data/awb-freight-calc.json`(AWB별·이력) → 정산 탭 농장 행 '국내비용(계산기)'(백상+선율 KRW, 별칭 대표명 합산; 실측 15농장). 도착원가(WebArrivalCostLine)에는 안 씀(통관비 정본 미확정). lista Variedad 가브리엘식(ProdName='카네이션'+ColorName='novia' 구조 → 'novia').
+
+## 2026-09-22 유출 이력(egress ledger) — 업무 드라이브 보안 컨트롤 (검색어: egress, 유출, 인쇄, Outlook, USB, 보안 이력, drive-egress)
+- 사장 정의: 막을 수 없으니 **어디로 나갔는지 히스토리**만 남긴다(차단·알림 없음, 관리자만 열람).
+- 데몬 `src/egress-monitor.js`: copy(USB/네트워크 드라이브·OneDrive/GoogleDrive/Dropbox/MYBOX/iCloud/카톡받은파일 폴더 30초 스캔, sha256) · print(Win32_PrintJob 5초) · email(Outlook 보낸편지함 COM 60초, 첨부 있는 메일) · webupload/kakao(파일 대화상자 "열기" 뒤 활성 앱, 파일명은 키보드 캡처 기반, 신뢰도 낮음). 설정은 work-file-uploader.getConfig 재사용 → 드라이브 꺼진 PC는 무동작. 배치 POST nenovaweb `/api/work/drive-egress`(ingest 토큰). heartbeat `egress` 통계(daemon-health 통과).
+- 네노바웹(#757): lib/workDrive recordEgress(sha→파일 매칭/이름 매칭/dedup)·listEgress(관리자)·fileTimeline, `/work/drive` '보안 이력' 뷰 + 상세 서랍 파일 흐름. 김원영(nenova1) 드라이브 관리자 추가(#756, orbit-report 권한과 분리).
+- 못 잡는 것: 화면 촬영, 내용 복붙, 1:1 카톡 상대(창 제목 없을 때). Outlook 없는 PC는 email 0 = 정상. 검증: 로컬 유닛(scanRoot/onWindow 큐 3건). 실PC 실증은 다음 부팅 후 daemon-health `egress` + 드라이브 보안 이력에서.

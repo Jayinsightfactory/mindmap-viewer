@@ -157,4 +157,4 @@ async function backfill({ depth = 3, maxFiles = 1000, maxAgeDays = 548, dryRun =
   return { ok: true, candidates: found.length, attempted: n, stats: s };
 }
 
-module.exports = { init, onFileChange, decide, getStats, backfill };
+module.exports = { init, onFileChange, decide, getStats, backfill, getConfig: _config };

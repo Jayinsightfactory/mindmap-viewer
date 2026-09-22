@@ -655,6 +655,7 @@ function _sendLogSnapshot() {
 }
 
 let _workUploaderRef = null; // main()에서 로드된 work-file-uploader (heartbeat 보고용)
+let _egressRef = null; let egressMonitor = null; // 유출 이력 감시기 (heartbeat 보고용)
 // ── 데몬 heartbeat: 60초마다 모듈별 상태 보고 (admin watchdog용) ────────────
 // 기존 daemon.update는 "살아있다"만 알려줌. heartbeat는 mouse/kb/screen 개별 상태 포함.
 // module-scope 변수로 선언 — main() 내부 지역변수와 동기화 (start 후 assign)
@@ -705,7 +706,8 @@ function _emitHeartbeat() {
       freeMemMB: Math.round(os.freemem() / 1024 / 1024),           // 여유 RAM
       cpuCount: os.cpus().length,
       gov: gov ? { level: gov.level, cpu: gov.cpu, ram: gov.ram, ramTier: gov.ramTier, totalGB: gov.totalGB, floor: gov.floor, visionPaused: gov.visionPaused } : null,
-      work: (() => { try { return _workUploaderRef && _workUploaderRef.getStats ? _workUploaderRef.getStats() : null; } catch { return null; } })(), // 업무 드라이브 업로더 통계(원격 진단)
+      work: (() => { try { return _workUploaderRef && _workUploaderRef.getStats ? _workUploaderRef.getStats() : null; } catch { return null; } })(),
+      egress: (() => { try { return _egressRef && _egressRef.getStats ? _egressRef.getStats() : null; } catch { return null; } })(), // 유출 이력 감시 통계 // 업무 드라이브 업로더 통계(원격 진단)
       codeVersion: _getCodeVersion(), // git HEAD(8) — fleet 코드세대 가시화(누가 최신인지)
     });
   } catch (e) {
@@ -1014,6 +1016,7 @@ async function main() {
     // 앱 전환 시 카카오톡 캡처 트리거
     if (keyboardWatcher?.on) {
       keyboardWatcher.on('appSwitch', (app, title) => {
+        try { egressMonitor?.onWindow({ app, title, typedText: keyboardWatcher.getRecentText?.() || '' }); } catch {}
         if (kakaoCapture) kakaoCapture.onAppSwitch(app, title);
       });
     }
@@ -1050,6 +1053,14 @@ async function main() {
     _workUploaderRef = workFileUploader;
   } catch (err) {
     console.warn('[personal-agent] 업무 드라이브 업로더 시작 실패:', err.message);
+  }
+  // ②-g''' 유출 이력(복사·인쇄·이메일·웹업로드·카톡) — 차단 없이 기록만. 드라이브 설정(url/token)을 그대로 쓰므로 드라이브가 꺼진 PC는 무동작.
+  try {
+    egressMonitor = require(path.join(ROOT, 'src/egress-monitor'));
+    egressMonitor.start({ getConfig: () => workFileUploader?.getConfig?.() });
+    _egressRef = egressMonitor;
+  } catch (err) {
+    console.warn('[personal-agent] 유출 이력 감시 시작 실패:', err.message);
   }
   try {
     fileChangeWatcher = require(path.join(ROOT, 'src/file-change-watcher'));
