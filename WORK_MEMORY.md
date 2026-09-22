@@ -1891,3 +1891,4 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 - **HTML 체크리스트·WhatsApp 비행일정은 드라이브에 없음**: 데몬 확장자 화이트리스트(xlsx/pdf/docx…)에 html 없음. 편명·도착시각은 WhatsApp에만 → 수기 필드로만 수용.
 - **ETA 보드 자동 인식**(nenovaweb #747): 드라이브 AWB 파일명 → 차수·포워더·AWB·항공사(IATA 접두 006 Delta/160 Cathay/157 Qatar/180 KE/217 TG/235 TK; 865·992 미확인) 제안 카드, 등록/무시, 항공사·편명 필드.
 - 다음 후보: ① lista 클레임 리스트를 WebSalesDefectDeduction에서 자동 생성(가브리엘 수작업 제거) ② 농장명 별칭 사전 ③ 운임계산기(백상/선율) 웹화 — 통관비 이중소스 결정 필요.
+- (같은 날 후속) 후보 3건 배포 완료(nenovaweb #749·#750·#751): 농장 별칭 사전(`data/farm-aliases.json`, 제안 25그룹 실측: EZ/EZ Flower/EZ Flowers, VERDNATURA S.A.S/SAS/…, Colibri/Colibri Flowers) · lista 클레임 엑셀(37차 95행·21농장 실측) · `/import/freight-calc` AWB 운임 계산기(38-02 AWB 5건 자동집계, 저장 없음). 함정 2: **AWB 컬럼 = WarehouseMaster.OrderNo**(AWB 컬럼 없음→500), **불량차감 OrderWeek = 대차수('38')**(세부차수로 조회하면 0행). ETA 제안 57건은 전부 원장에 이미 있어 중복제외 후 0 = 정상(과거 선적).
