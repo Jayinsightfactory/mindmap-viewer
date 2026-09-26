@@ -518,13 +518,15 @@ async function visionAnalyze(base64, ctx) {
   // ── OCR 트리아지 (env VISION_OCR_TRIAGE=shadow|on, 기본 off) ─────────────────
   // shadow: 분류·집계만(Claude는 그대로 호출 → 손실0 실측). on: OCR판정건은 Claude 스킵.
   const _tmode = _ocrTriage.mode();
+  let _triageText = null; // Vision 결과가 나오면 그걸 라벨로 되먹임(judge kNN 학습) — 규칙만으론 0.8%만 OCR로 가는 실측(9/17~) 때문
   if (_tmode !== 'off') {
     try {
       const _ocr = _ocrTriage.ocrExtract(base64);
-      const _dec = _ocrTriage.classify(ctx, _ocr);
+      const _dec = await _ocrTriage.classifyJudged(ctx, _ocr); // judge 계층(캐시→규칙→로컬 kNN), 결정 로그 ~/.orbit/judge-log.jsonl
+      _triageText = _ocrTriage.triageText(ctx, _ocr);
       _ocrTriage.tally(_dec, ctx);
       if (_dec.route === 'ocr') {
-        console.log(`  [ocr-triage:${_tmode}] OCR-only ← ${((ctx && ctx.name) || '').slice(0, 24)} (${_dec.reason}, ${_ocr.wordCount}단어)`);
+        console.log(`  [ocr-triage:${_tmode}] OCR-only ← ${((ctx && ctx.name) || '').slice(0, 24)} (${_dec.reason}, ${_dec.by} ${_dec.confidence}, ${_ocr.wordCount}단어)`);
         if (_tmode === 'on') {
           _emitOcrEvent(ctx, _ocr.text);   // 텍스트 보존(screen.ocr), Claude 미호출
           return null;                     // 호출측은 null=스킵으로 처리
@@ -537,7 +539,7 @@ async function visionAnalyze(base64, ctx) {
   if (ROUTER_ON) console.log(`  [모델] ${model || '기본'} ← ${((ctx && ctx.name) || '').slice(0, 24)}`);
 
   let result = await analyze(base64, ctx, model);
-  if (_isValidResult(result)) return result;
+  if (_isValidResult(result)) { _ocrTriage.feedback(_triageText, result); return result; }
 
   // 1회 재시도
   console.log('  ⟳ 빈 결과 — 1회 재시도');

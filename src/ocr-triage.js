@@ -53,17 +53,30 @@ function ocrExtract(base64) {
 
 // 보수적 분류: 기본은 Vision. 명백한 읽기/유휴/비업무일 때만 OCR.
 // 반환 { route: 'vision'|'ocr', reason }
-function classify(ctx, ocr) {
+// 규칙 = 답 + 확신도(judge 계층의 2단). 확신도가 낮은 판정(ocr-only 0.6, 숫자밀도 0.7)은 kNN(3단)이 라벨을 20개 넘게 쌓은 뒤부터 대신 답한다.
+function rule(ctx, ocr) {
   ctx = ctx || {};
-  if (!ocr || !ocr.ok) return { route: 'vision', reason: 'ocr-unavailable' };  // OCR 불가 → 안전 승격
+  if (!ocr || !ocr.ok) return { route: 'vision', reason: 'ocr-unavailable', confidence: 1 };  // OCR 불가 → 안전 승격
   const hay = [ctx.name, ctx.windowTitle, ocr.text].filter(Boolean).join(' ');
-  if (HIGH_VALUE_RE.test(hay)) return { route: 'vision', reason: 'high-value-keyword' };
-  if (Array.isArray(ctx.recentClicks) && ctx.recentClicks.length) return { route: 'vision', reason: 'interactive-clicks' };
-  if (ENTRY_RE.test(ocr.text)) return { route: 'vision', reason: 'entry-pattern' };
+  if (HIGH_VALUE_RE.test(hay)) return { route: 'vision', reason: 'high-value-keyword', confidence: 0.95 };
+  if (Array.isArray(ctx.recentClicks) && ctx.recentClicks.length) return { route: 'vision', reason: 'interactive-clicks', confidence: 0.9 };
+  if (ENTRY_RE.test(ocr.text)) return { route: 'vision', reason: 'entry-pattern', confidence: 0.85 };
   // 숫자 밀도 높음(단가/수량/금액 화면 가능성) → 안전하게 Vision.
   const numRuns = (ocr.text.match(/\d{2,}/g) || []).length;
-  if (numRuns >= 12) return { route: 'vision', reason: 'numeric-dense' };
-  return { route: 'ocr', reason: 'reading/idle-nonwork' };
+  if (numRuns >= 12) return { route: 'vision', reason: 'numeric-dense', confidence: 0.7 };
+  return { route: 'ocr', reason: 'reading/idle-nonwork', confidence: 0.6 };
+}
+// 동기 호환용(기존 호출측): 규칙만.
+function classify(ctx, ocr) { const r = rule(ctx, ocr); return { route: r.route, reason: r.reason, confidence: r.confidence, by: 'rule' }; }
+// judge 경유(권장): 캐시 → 규칙 → 로컬 kNN → 보수적 기본값(vision). 확신도 낮으면 항상 vision 쪽으로.
+async function classifyJudged(ctx, ocr) {
+  const judge = require('./judge');
+  const text = [ctx && ctx.name, ctx && ctx.windowTitle, ocr && ocr.text].filter(Boolean).join(' | ');
+  const r0 = rule(ctx, ocr);
+  const j = await judge.choice({ key: 'vision-triage', text, options: ['vision', 'ocr'], rule: () => ({ answer: r0.route, confidence: r0.confidence, reason: r0.reason }), thresholds: { rule: 0.85, local: 0.8 } });
+  // 안전장치: 어느 단이 답했든 'ocr'(해독 생략)은 확신도 0.75 이상일 때만. 아니면 vision.
+  const route = j.answer === 'ocr' && j.confidence >= 0.75 ? 'ocr' : 'vision';
+  return { route, reason: j.reason || r0.reason, confidence: j.confidence, by: j.by };
 }
 
 // ── 집계 & 리포트(파일럿 실측용) ──────────────────────────────────────────────
@@ -75,6 +88,7 @@ function tally(dec, ctx) {
   _stats.total++;
   _stats[dec.route]++;
   _stats.byReason[dec.reason] = (_stats.byReason[dec.reason] || 0) + 1;
+  if (dec.by) { _stats.byEngine = _stats.byEngine || {}; _stats.byEngine[dec.by] = (_stats.byEngine[dec.by] || 0) + 1; } // judge 어느 단이 답했나(cache/rule/local)
   const app = String((ctx && ctx.name) || '기타').replace(/\s*[\(\-–].*/, '').trim() || '기타';
   _stats.byApp[app] = _stats.byApp[app] || { vision: 0, ocr: 0 };
   _stats.byApp[app][dec.route]++;
@@ -93,4 +107,20 @@ function writeReport() {
   } catch {}
 }
 
-module.exports = { mode, ocrExtract, classify, tally, summary, writeReport, REPORT_PATH };
+// judge에 넣는 판단 근거 텍스트(분류·라벨 양쪽이 같은 문자열을 써야 kNN이 맞는다)
+function triageText(ctx, ocr) { return [ctx && ctx.name, ctx && ctx.windowTitle, ocr && ocr.text].filter(Boolean).join(' | '); }
+// Vision(Claude) 결과 → 라벨 되먹임. Claude가 "열람·유휴·시청" 류로 읽었고 자동화 불가면 'ocr'(다음엔 해독 생략 가능), 입력·등록·저장이면 'vision'.
+const IDLE_RE = /유휴|대기 ?중|열람|시청|읽는|읽고|스크롤|잠금 ?화면|바탕 ?화면|로그인 ?화면|유튜브|youtube|뉴스|검색 ?결과|채팅 ?목록|둘러보|확인 ?중|살펴보/i;
+const WORK_RE = /입력|등록|저장|수정|삭제|작성|전송|발주|출고|분배|견적|송금|결제|업로드|다운로드|붙여넣|복사/;
+function feedback(text, result) {
+  if (!text || !result) return;
+  try {
+    const judge = require('./judge');
+    const hay = [result.activity, result.screen, result.hint].filter(Boolean).join(' ');
+    let label = null;
+    if (result.automatable === true || WORK_RE.test(hay)) label = 'vision';
+    else if (IDLE_RE.test(hay)) label = 'ocr';
+    if (label) judge.label('vision-triage', text, label);
+  } catch {}
+}
+module.exports = { mode, ocrExtract, rule, classify, classifyJudged, triageText, feedback, tally, summary, writeReport, REPORT_PATH };

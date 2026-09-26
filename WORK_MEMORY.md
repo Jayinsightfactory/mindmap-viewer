@@ -1900,3 +1900,10 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 - 네노바웹(#757): lib/workDrive recordEgress(sha→파일 매칭/이름 매칭/dedup)·listEgress(관리자)·fileTimeline, `/work/drive` '보안 이력' 뷰 + 상세 서랍 파일 흐름. 김원영(nenova1) 드라이브 관리자 추가(#756, orbit-report 권한과 분리).
 - 못 잡는 것: 화면 촬영, 내용 복붙, 1:1 카톡 상대(창 제목 없을 때). Outlook 없는 PC는 email 0 = 정상. 검증: 로컬 유닛(scanRoot/onWindow 큐 3건). 실PC 실증은 다음 부팅 후 daemon-health `egress` + 드라이브 보안 이력에서.
 - ⚠ 사고(2026-09-22 저녁): egress-monitor의 `New-Object -ComObject Outlook.Application`이 직원 PC에서 **Outlook을 자동 실행**시킴(정재훈·김원영·조현욱·김원빈·박성수·설연주 = 1c5f364 받은 PC). 수정 2d80365: `Get-Process OUTLOOK` 있을 때만 `Marshal::GetActiveObject`. gitpull-worker로 켜진 4대 즉시 반영, 꺼진 2대는 부팅 시. **규칙: 데몬에서 COM 객체는 절대 New-Object로 만들지 말 것(앱 실행됨)** — GetActiveObject만.
+
+## 2026-09-26 Jev식 판단 계층(judge) 1차 적용 — Vision 캡처 선별 (검색어: judge, Jev, 판단 계층, ocr-triage, kNN, 라벨 되먹임)
+- 설계 문서(Claude Docs "Jev식 판단 계층 로컬 적용 설계"): 판단(choice/score/bool+확신도)을 생성과 분리, 캐시→규칙→로컬 kNN→(Jev 선택)→Claude. 사장 결정: 제안대로 적용, Jev 키 없이 3단으로 시작.
+- `src/judge.js`: 의존성 0(문자 3-gram 해시 벡터 kNN), 결정 로그 `~/.orbit/judge-log.jsonl`, 라벨 `~/.orbit/judge-labels.jsonl`, label() 사람/Claude 되먹임. 라벨 20개 미만이면 kNN 침묵.
+- ocr-triage: rule()이 답+확신도 반환, `classifyJudged()`(judge 경유, ocr 판정은 확신도≥0.75만), `feedback()` = Vision 결과(activity/automatable)에서 라벨 도출 → kNN이 Claude를 흉내내게 됨. vision-worker 연결.
+- **실측**: spool 워커 shadow 9/17~ 1,030장 중 규칙이 OCR로 보낸 건 8장(0.8%) — HIGH_VALUE_RE(kakao|excel…)가 거의 다 잡아서 규칙만으론 절감 0. 되먹임 kNN 없이는 의미 없다는 근거.
+- 다음: 라벨 수백 건 쌓인 뒤 judge-log에서 kNN vs Claude 일치율 측정 → 일치 90%+면 VISION_OCR_TRIAGE=on. 2차 적용 후보: parse-paste 품목 매칭, 챗봇 라우팅(네노바웹 lib/judge 동일 계약).
