@@ -55,6 +55,7 @@ const WebSocket    = require('ws');
 const chokidar     = require('chokidar');
 const fs           = require('fs');
 const path         = require('path');
+const _eventValueJudge = require('./src/event-value-judge'); // /api/hook 저장 가치 판정(daemon.update 반복 컷)
 // rate-limit: 인메모리 구현 (express-rate-limit v8 Railway 프록시 호환 문제 대체)
 const _rlStore = new Map();
 const _RL_MAX_ENTRIES = 5000; // 메모리 상한
@@ -1835,6 +1836,7 @@ app.get('/api/admin/db-size-diag', async (req, res) => {
 // POST /api/admin/purge-noise-events — 순수 노이즈 타입(그래프/온톨로지 어디에도 안 쓰임) 삭제(디스크 확보)
 // 대상: install.progress/install.diag/daemon.update/daemon.error/daemon.heartbeat/daemon.log.snapshot/daemon.perf.issue
 // (graph-engine.NOISE_TYPES + /api/hook 힙압력 스킵목록과 동일 — 이미 "버려도 되는 것"으로 확정된 타입)
+app.get('/api/admin/event-value-stats', async (req, res) => { if (!(await isAdminReqAsync(req))) return res.status(403).json({ error: 'admin only' }); res.json(_eventValueJudge.getStats()); });
 app.post('/api/admin/purge-noise-events', async (req, res) => {
   try {
     if (!(await isAdminReqAsync(req))) return res.status(403).json({ error: 'admin only' });
@@ -4027,6 +4029,9 @@ app.post('/api/hook', async (req, res) => {
           || event.type === 'daemon.log.snapshot' || event.type === 'daemon.perf.issue')) {
         continue;
       }
+      // [2026-09-26] 저장 가치 판정(Jev식): 같은 PC의 같은 daemon.update(lifeline ok 반복, 전체 이벤트의 93%)는 30분에 1건만 저장.
+      // 첫 건·상태 변화는 항상 저장하므로 health/이메일 알림(아래 별도 루프, events 배열 그대로 사용) 무영향.
+      try { if (!_eventValueJudge.decide(event).store) continue; } catch {}
       try { await Promise.resolve(insertEvent(event)); } catch (e) {
         console.error('[hook] insertEvent FAIL:', e.message, 'id=', event.id, 'type=', event.type);
         if (!req._insertErrors) req._insertErrors = [];

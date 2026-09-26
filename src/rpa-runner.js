@@ -151,6 +151,12 @@ async function run(job = {}) {
   };
 
   if (dryRun) return { ...base, executed: false };
+  // 실행 게이트(Jev식): 되돌릴 수 없는 행동이면 사람 확인(confirmIrreversible) 없이는 실행하지 않고, 예상 화면(expectWindow)과 다르면 멈춘다.
+  try {
+    const gate = await require('./exec-gate').check({ ...job, script: validation.script }, { activeWindowTitle: job.activeWindowTitle || (typeof job.getActiveWindow === 'function' ? job.getActiveWindow() : '') });
+    if (!gate.allow) return { ...base, ok: false, executed: false, mode: 'gated', error: gate.reasons.join(' / '), gate };
+    base.gate = gate;
+  } catch (e) { return { ...base, ok: false, executed: false, mode: 'gated', error: 'gate error: ' + e.message }; }
   if (validation.scriptType === 'pad') return { ...base, ok: false, executed: false, error: 'PAD scripts require manual import/approval' };
 
   const cmd = buildCommand(validation.scriptType, file);

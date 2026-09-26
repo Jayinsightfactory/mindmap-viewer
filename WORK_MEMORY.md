@@ -1907,3 +1907,4 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 - ocr-triage: rule()이 답+확신도 반환, `classifyJudged()`(judge 경유, ocr 판정은 확신도≥0.75만), `feedback()` = Vision 결과(activity/automatable)에서 라벨 도출 → kNN이 Claude를 흉내내게 됨. vision-worker 연결.
 - **실측**: spool 워커 shadow 9/17~ 1,030장 중 규칙이 OCR로 보낸 건 8장(0.8%) — HIGH_VALUE_RE(kakao|excel…)가 거의 다 잡아서 규칙만으론 절감 0. 되먹임 kNN 없이는 의미 없다는 근거.
 - 다음: 라벨 수백 건 쌓인 뒤 judge-log에서 kNN vs Claude 일치율 측정 → 일치 90%+면 VISION_OCR_TRIAGE=on. 2차 적용 후보: parse-paste 품목 매칭, 챗봇 라우팅(네노바웹 lib/judge 동일 계약).
+- (같은 날) judge 2·3차: `src/exec-gate.js`(골 파이프라인 실행 게이트: 되돌릴 수 없는 행동이면 confirmIrreversible 필수, expectWindow 불일치면 중단; rpa-runner.run에 연결, 결정 로그 key exec-irreversible) · `src/event-value-judge.js`(/api/hook 저장 가치: 같은 PC 같은 daemon.update 30분 1건, 실측 93% 잡음 컷; 통계 GET /api/admin/event-value-stats). 카톡 변경 큐는 nenovaweb feat/kakao-change-queue.
