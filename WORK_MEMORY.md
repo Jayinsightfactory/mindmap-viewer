@@ -1909,3 +1909,11 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 - 다음: 라벨 수백 건 쌓인 뒤 judge-log에서 kNN vs Claude 일치율 측정 → 일치 90%+면 VISION_OCR_TRIAGE=on. 2차 적용 후보: parse-paste 품목 매칭, 챗봇 라우팅(네노바웹 lib/judge 동일 계약).
 - (같은 날) judge 2·3차: `src/exec-gate.js`(골 파이프라인 실행 게이트: 되돌릴 수 없는 행동이면 confirmIrreversible 필수, expectWindow 불일치면 중단; rpa-runner.run에 연결, 결정 로그 key exec-irreversible) · `src/event-value-judge.js`(/api/hook 저장 가치: 같은 PC 같은 daemon.update 30분 1건, 실측 93% 잡음 컷; 통계 GET /api/admin/event-value-stats). 카톡 변경 큐는 nenovaweb feat/kakao-change-queue.
 - (9/27) 카톡 변경 큐 배포(nenovaweb #759·#760, /orders/change-queue): 영업방 피드(NENOVA_SALES_READ_TOKEN, ISO·7일 창 순회) → 분류(변경사항 .95/검역차감/발주추가) → kakao-audit `auditText`(export) 파싱·DB 대조 → 반영됨/무시(웹 파일). 라이브 12일: 큐 154건(변경사항 152), 파싱 성공 140/154(91%). 함정: 서브에이전트가 쓴 파일에 NUL 바이트 → `file`이 data로 표시, grep 이진 취급 → 커밋 전 NUL 검사.
+
+## 2026-09-27 유출 이력: 원본 찾기 + 스냅샷 업로드 (검색어: egress snapshot resolveSourceFile 인쇄 원본 GetActiveObject)
+- 지시: "보안 이력에서 어떤 파일의 어떤 내용이 인쇄·유출됐는지 명확해야 하고 파일을 내가 볼 수 있어야". 과거 데이터 무관, 앞으로만.
+- 결함: 인쇄(Win32_PrintJob)는 문서명만 → 서버가 파일을 못 가짐. 카톡/웹업로드도 파일명만.
+- 수정 src/egress-monitor.js: flush 시 enrich() → resolveSourceFile(열린 Office 문서 GetActiveObject FullName / Desktop·Documents·Downloads·클라우드 깊이3 이름검색) → snapshot()이 /api/work/drive-ingest 에 egressSnapshot=1 로 업로드(sha당 1회 ~/.orbit/egress-snap-sent.json). 이벤트에 path·sha·snapshot 필드. 인쇄 detail에 Excel ActiveSheet. stats snapshots/resolved/unresolved.
+- ⚠ New-Object -ComObject 금지 유지(Get-Process 확인 후 GetActiveObject만).
+- 웹 짝: nenova-erp-ui PR #761 (preview/open, 관리자만).
+- 검증: docKey 정규화, 실제 Downloads xlsx 이름으로 resolve 성공. 실PC 인쇄 이벤트 실증은 미검증(직원 인쇄 발생 후 /work/drive 보안 이력에서 확인).

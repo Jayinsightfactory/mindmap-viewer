@@ -23,7 +23,7 @@ const EXT_OK = /\.(xlsx|xlsm|xls|csv|pdf|docx|doc|hwp|pptx|ppt|txt|zip)$/i;
 const MAX_HASH_BYTES = 200 * 1024 * 1024;
 let _getCfg = null;           // () => Promise<{enabled,url,token,userName,userId}|null>  (work-file-uploader._config 재사용)
 let _queue = [];              // 보낼 이벤트
-let _stats = { copy: 0, print: 0, email: 0, webupload: 0, kakao: 0, sent: 0, failed: 0, lastError: '', lastSentAt: '', watchRoots: [] };
+let _stats = { copy: 0, print: 0, email: 0, webupload: 0, kakao: 0, sent: 0, failed: 0, snapshots: 0, resolved: 0, unresolved: 0, lastError: '', lastSentAt: '', watchRoots: [] };
 let _timers = [];
 const _seenCopy = new Map();  // fullPath → mtimeMs (같은 파일 반복 보고 방지)
 const _seenJobs = new Set();  // 인쇄 JobId
@@ -106,12 +106,82 @@ function onWindow({ app = '', title = '', typedText = '' } = {}) {
   else if (/chrome|edge|whale|firefox/.test(a)) { const site = (t.match(/(gmail|naver|daum|google drive|drive\.google|dropbox|wetransfer|notion|slack|works)/i) || [])[1] || t.slice(0, 60); push({ kind: 'webupload', filename: _dialogSeen.file || '(파일명 미상)', destKind: 'browser', dest: site, detail: t.slice(0, 120), dedupKey: `web|${t}|${_dialogSeen.file}|${Math.floor(now / 60000)}` }); _dialogSeen = { file: '', at: 0 }; }
 }
 
+// ── ⑤ 원본 파일 찾기 + 스냅샷 업로드 ──────────────────────────────────────────────
+// 인쇄·메일·카톡·웹 이벤트는 "문서명"만 있어서 서버가 어떤 파일인지·무슨 내용인지 못 본다(2026-09-27 사장 지시: 어떤 파일의 어떤 내용이
+// 나갔는지 명확해야 하고 파일을 볼 수 있어야 함). 여기서 원본 경로를 찾아 sha·path를 붙이고, 파일을 드라이브에 '유출 스냅샷'으로 올린다.
+//   경로 탐색: ① 열린 Office 문서(Excel/Word/PowerPoint — 실행 중일 때만 GetActiveObject, New-Object 금지) ② Desktop/Documents/Downloads/클라우드 루트 깊이 3
+const SNAP_EXT = /\.(xlsx|xlsm|xls|csv|pdf|docx|doc|hwp|pptx)$/i;
+const SNAP_MAX = 25 * 1024 * 1024;
+const SNAP_SENT = path.join(os.homedir(), '.orbit', 'egress-snap-sent.json');
+const _pathCache = new Map();  // 문서명(lower) → { fp, at }
+let _snapSent = null;
+function loadSnapSent() { if (_snapSent) return _snapSent; try { _snapSent = new Set(JSON.parse(fs.readFileSync(SNAP_SENT, 'utf8'))); } catch { _snapSent = new Set(); } return _snapSent; }
+function saveSnapSent() { try { fs.mkdirSync(path.dirname(SNAP_SENT), { recursive: true }); fs.writeFileSync(SNAP_SENT, JSON.stringify([...loadSnapSent()].slice(-5000))); } catch {} }
+// 인쇄 큐 문서명 정규화: "Microsoft Excel - 22차 AWB.xlsx" / "22차 AWB.xlsx - Excel" / "22차 AWB" → "22차 awb"
+function docKey(name) { return String(name || '').replace(/^(microsoft\s+)?(excel|word|powerpoint)\s*-\s*/i, '').replace(/\s*-\s*(excel|word|powerpoint|한글|hancom.*)$/i, '').replace(/\.(xlsx|xlsm|xls|csv|pdf|docx|doc|hwp|pptx|txt)$/i, '').trim().toLowerCase(); }
+async function openOfficeDocs() {
+  const out = await ps("$o=@(); foreach ($p in @(@('EXCEL','Excel.Application','Workbooks'),@('WINWORD','Word.Application','Documents'),@('POWERPNT','PowerPoint.Application','Presentations'))) { if (Get-Process -Name $p[0] -ErrorAction SilentlyContinue) { try { $a=[System.Runtime.InteropServices.Marshal]::GetActiveObject($p[1]); foreach ($d in $a.($p[2])) { $o += $d.FullName }; if ($p[0] -eq 'EXCEL') { try { $o += ('SHEET|' + $a.ActiveSheet.Name) } catch {} } } catch {} } }; $o", 15000);
+  const docs = [], meta = {};
+  for (const l of out.split(/\r?\n/).map((x) => x.trim()).filter(Boolean)) { if (l.startsWith('SHEET|')) meta.sheet = l.slice(6); else docs.push(l); }
+  return { docs, meta };
+}
+function searchByName(key) {
+  const home = os.homedir(); const roots = [path.join(home, 'Desktop'), path.join(home, 'Documents'), path.join(home, 'Downloads'), ...cloudRoots().map((r) => r.root)];
+  const walk = (dir, depth) => {
+    let ents = []; try { ents = fs.readdirSync(dir, { withFileTypes: true }); } catch { return null; }
+    for (const e of ents.slice(0, 3000)) { if (e.isFile() && SNAP_EXT.test(e.name) && !e.name.startsWith('~$') && docKey(e.name) === key) return path.join(dir, e.name); }
+    if (depth >= 3) return null;
+    for (const e of ents) if (e.isDirectory() && !/^(\.|\$|node_modules|AppData)/i.test(e.name)) { const r = walk(path.join(dir, e.name), depth + 1); if (r) return r; }
+    return null;
+  };
+  for (const r of roots) { const hit = walk(r, 0); if (hit) return hit; }
+  return null;
+}
+async function resolveSourceFile(evt) {
+  if (evt.kind === 'copy' && evt.dest && fs.existsSync(evt.dest)) return { fp: evt.dest, meta: {} };
+  const key = docKey(evt.filename); if (!key || key.length < 2) return null;
+  const c = _pathCache.get(key); if (c && Date.now() - c.at < 10 * 60e3) return c;
+  let fp = null, meta = {};
+  if (evt.kind === 'print') { try { const o = await openOfficeDocs(); meta = o.meta; fp = o.docs.find((d) => docKey(path.basename(d)) === key) || null; } catch {} }
+  if (!fp) { try { fp = searchByName(key); } catch {} }
+  const r = fp ? { fp, meta, at: Date.now() } : null; if (r) _pathCache.set(key, r); return r;
+}
+async function snapshot(fp, evt, cfg) {
+  if (!SNAP_EXT.test(fp)) return { snapshot: false, why: 'ext' };
+  let st; try { st = fs.statSync(fp); } catch { return { snapshot: false, why: 'stat' }; }
+  if (st.size > SNAP_MAX || st.size < 16) return { snapshot: false, why: 'size' };
+  let buf; try { buf = fs.readFileSync(fp); } catch { return { snapshot: false, why: 'locked' }; }
+  const sha = crypto.createHash('sha256').update(buf).digest('hex');
+  const base = { sha, size: st.size, path: fp.slice(0, 400) };
+  if (loadSnapSent().has(sha)) return { ...base, snapshot: true, why: 'already' };
+  const form = new FormData();
+  form.append('file', new Blob([buf]), path.basename(fp)); form.append('filename', path.basename(fp));
+  form.append('orbitUserId', cfg.userId || ''); form.append('userName', cfg.userName || ''); form.append('hostname', os.hostname());
+  form.append('dir', path.basename(path.dirname(fp))); form.append('mtime', new Date(st.mtimeMs).toISOString()); form.append('eventType', 'egress');
+  form.append('egressSnapshot', '1'); form.append('egressKind', evt.kind); form.append('egressDedupKey', evt.dedupKey || '');
+  try {
+    const r = await fetch(`${cfg.url}/api/work/drive-ingest`, { method: 'POST', headers: { Authorization: 'Bearer ' + cfg.token }, body: form, signal: AbortSignal.timeout(60000) });
+    const j = await r.json().catch(() => ({}));
+    if (r.ok && j.success) { loadSnapSent().add(sha); saveSnapSent(); _stats.snapshots++; return { ...base, snapshot: true, why: j.duplicate ? 'dup' : 'uploaded' }; }
+    return { ...base, snapshot: false, why: 'http ' + r.status + ' ' + (j.error || '') };
+  } catch (e) { return { ...base, snapshot: false, why: 'network ' + e.message }; }
+}
+async function enrich(e, cfg) {
+  let r = null; try { r = await resolveSourceFile(e); } catch {}
+  if (!r || !r.fp) { _stats.unresolved++; return { ...e, snapshot: false }; }
+  _stats.resolved++;
+  const s = await snapshot(r.fp, e, cfg);
+  const detail = r.meta && r.meta.sheet && e.kind === 'print' ? `${e.detail || ''} · 시트 ${r.meta.sheet}` : e.detail;
+  return { ...e, path: r.fp.slice(0, 400), sha: s.sha || e.sha || '', size: s.size || e.size || 0, snapshot: !!s.snapshot, snapshotWhy: s.why, detail };
+}
+
 // ── 전송 ─────────────────────────────────────────────────────────────────────
 async function flush() {
   if (!_queue.length || !_getCfg) return;
   let cfg = null; try { cfg = await _getCfg(); } catch {}
   if (!cfg || !cfg.enabled || !cfg.url || !cfg.token) return; // 드라이브 기능이 꺼진 PC는 이력도 보내지 않는다(같은 게이트)
-  const batch = _queue.splice(0, 100).map((e) => ({ ...e, orbitUserId: cfg.userId || '', userName: cfg.userName || '' }));
+  const raw = _queue.splice(0, 100).map((e) => ({ ...e, orbitUserId: cfg.userId || '', userName: cfg.userName || '' }));
+  const batch = []; for (const e of raw) batch.push(await enrich(e, cfg));
   try {
     const r = await fetch(`${cfg.url}/api/work/drive-egress`, { method: 'POST', headers: { Authorization: 'Bearer ' + cfg.token, 'Content-Type': 'application/json' }, body: JSON.stringify({ events: batch }), signal: AbortSignal.timeout(30000) });
     if (!r.ok) throw new Error('http ' + r.status);
@@ -132,4 +202,4 @@ function start({ getConfig }) {
 function stop() { _timers.forEach((t) => clearInterval(t)); _timers = []; }
 function getStats() { return { ..._stats, queued: _queue.length }; }
 
-module.exports = { start, stop, onWindow, getStats, flush, _test: { scanRoot, push, onWindow, queue: () => _queue } };
+module.exports = { start, stop, onWindow, getStats, flush, _test: { scanRoot, push, onWindow, queue: () => _queue, docKey, resolveSourceFile, searchByName, openOfficeDocs } };
