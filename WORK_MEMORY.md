@@ -1917,3 +1917,4 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 - ⚠ New-Object -ComObject 금지 유지(Get-Process 확인 후 GetActiveObject만).
 - 웹 짝: nenova-erp-ui PR #761 (preview/open, 관리자만).
 - 검증: docKey 정규화, 실제 Downloads xlsx 이름으로 resolve 성공. 실PC 인쇄 이벤트 실증은 미검증(직원 인쇄 발생 후 /work/drive 보안 이력에서 확인).
+- 2026-09-28 "어디로" 상세화(검색어: egress 어디로 printerMap deviceMap kakao-in UTF8): ps() 출력 UTF-8 고정(한글 프린터명 ???? 해결), Win32_Printer 포트(IP_192_168_0_200→IP)·위치·네트워크, Win32_DiskDrive 모델·S/N(드라이브 문자 연결), Outlook CC·보낸 계정, 인쇄 쪽수·부수·컬러·인쇄 프로그램. 카톡 '받은 파일' 폴더=수신이라 destKind kakao-in. 웹 짝 PR #762.

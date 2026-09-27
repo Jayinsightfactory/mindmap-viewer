@@ -33,7 +33,8 @@ let _dialogSeen = { file: '', at: 0 };
 
 function ps(script, timeoutMs = 20000) {
   return new Promise((resolve) => {
-    const child = execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', script], { timeout: timeoutMs, windowsHide: true, maxBuffer: 4 * 1024 * 1024 }, (err, stdout) => resolve(err ? '' : String(stdout || '')));
+    // 한글 프린터명·사용자명이 '????'로 깨지던 것(2026-09-28 실측) → 출력 인코딩을 UTF-8로 고정
+    const child = execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', '[Console]::OutputEncoding=[System.Text.Encoding]::UTF8; ' + script], { timeout: timeoutMs, windowsHide: true, maxBuffer: 4 * 1024 * 1024 }, (err, stdout) => resolve(err ? '' : String(stdout || '')));
     child.on('error', () => resolve(''));
   });
 }
@@ -41,9 +42,22 @@ function shaOf(fp) { try { const st = fs.statSync(fp); if (st.size > MAX_HASH_BY
 function push(evt) { _stats[evt.kind] = (_stats[evt.kind] || 0) + 1; _queue.push({ ...evt, at: evt.at || new Date().toISOString(), hostname: os.hostname() }); if (_queue.length > 500) _queue.splice(0, _queue.length - 500); }
 
 // ── ① 복사 유출: 이동식 드라이브 + 클라우드 동기화 폴더 ────────────────────────────────
+// 드라이브 문자 → 물리 장치(모델·시리얼·인터페이스). "볼륨 USB Drive"만으로는 어떤 장치인지 알 수 없어서(2026-09-28) 추가. 5분 캐시.
+let _devMap = { at: 0, map: {} };
+async function deviceMap() {
+  if (Date.now() - _devMap.at < 5 * 60e3) return _devMap.map;
+  const out = await ps("Get-CimInstance Win32_DiskDrive | ForEach-Object { $d = $_; Get-CimInstance -Query \"ASSOCIATORS OF {Win32_DiskDrive.DeviceID='$($d.DeviceID)'} WHERE AssocClass=Win32_DiskDriveToDiskPartition\" | ForEach-Object { Get-CimInstance -Query \"ASSOCIATORS OF {Win32_DiskPartition.DeviceID='$($_.DeviceID)'} WHERE AssocClass=Win32_LogicalDiskToPartition\" | ForEach-Object { $_.DeviceID + '|' + $d.InterfaceType + '|' + $d.Model + '|' + $d.SerialNumber } } }", 20000);
+  const map = {}; for (const l of out.split(/\r?\n/).map((x) => x.trim()).filter(Boolean)) { const [letter, iface, model, sn] = l.split('|'); if (letter) map[letter.toUpperCase()] = { iface: iface || '', model: (model || '').trim(), sn: (sn || '').trim() }; }
+  _devMap = { at: Date.now(), map }; return map;
+}
 async function removableRoots() {
-  const out = await ps("Get-CimInstance Win32_LogicalDisk | Where-Object { $_.DriveType -eq 2 -or $_.DriveType -eq 4 } | ForEach-Object { $_.DeviceID + '|' + $_.DriveType + '|' + $_.VolumeName }", 15000);
-  return out.split(/\r?\n/).map((l) => l.trim()).filter(Boolean).map((l) => { const [dev, type, vol] = l.split('|'); return { root: dev + '\\', kind: type === '2' ? 'usb' : 'network', label: vol || '' }; });
+  const out = await ps("Get-CimInstance Win32_LogicalDisk | Where-Object { $_.DriveType -eq 2 -or $_.DriveType -eq 4 } | ForEach-Object { $_.DeviceID + '|' + $_.DriveType + '|' + $_.VolumeName + '|' + $_.ProviderName }", 15000);
+  const dev = await deviceMap().catch(() => ({}));
+  return out.split(/\r?\n/).map((l) => l.trim()).filter(Boolean).map((l) => {
+    const [devId, type, vol, provider] = l.split('|'); const d = dev[String(devId || '').toUpperCase()] || null;
+    const label = type === '2' ? ['이동식 장치', d && d.model, d && d.sn && `S/N ${d.sn}`, vol && `볼륨 ${vol}`].filter(Boolean).join(' · ') : ['네트워크 드라이브', provider, vol].filter(Boolean).join(' · ');
+    return { root: devId + '\\', kind: type === '2' ? 'usb' : 'network', label };
+  });
 }
 function cloudRoots() {
   const home = os.homedir(); const cands = [
@@ -63,7 +77,9 @@ function scanRoot(r, depth = 0) {
     let st; try { st = fs.statSync(fp); } catch { continue; }
     const prev = _seenCopy.get(fp); if (prev === st.mtimeMs) continue; _seenCopy.set(fp, st.mtimeMs);
     if (prev === undefined && Date.now() - st.mtimeMs > 6 * 3600e3) continue; // 감시 시작 전부터 있던 옛 파일은 이력 대상 아님
-    push({ kind: 'copy', filename: e.name, sha: shaOf(fp), size: st.size, destKind: r.kind, dest: fp, detail: r.label ? `볼륨 ${r.label}` : '', dedupKey: `copy|${fp}|${st.mtimeMs}` });
+    // 카톡 '받은 파일' 폴더는 밖으로 나간 게 아니라 들어온 것(수신) — destKind 'kakao-in' 으로 구분해 유출로 읽히지 않게 한다(2026-09-28 실측 17건 전부 수신)
+    const inbound = r.kind === 'kakao';
+    push({ kind: 'copy', filename: e.name, sha: shaOf(fp), size: st.size, destKind: inbound ? 'kakao-in' : r.kind, dest: fp, detail: inbound ? '카카오톡으로 받은 파일(외부→PC)' : (r.label ? (r.kind === 'usb' || r.kind === 'network' ? r.label : `볼륨 ${r.label}`) : (r.kind === 'onedrive' || r.kind === 'googledrive' || r.kind === 'dropbox' || r.kind === 'mybox' || r.kind === 'icloud' ? '클라우드 동기화 폴더 → 외부 저장' : '')), dedupKey: `copy|${fp}|${st.mtimeMs}` });
   }
 }
 async function pollCopy() {
@@ -71,12 +87,26 @@ async function pollCopy() {
 }
 
 // ── ② 인쇄 ───────────────────────────────────────────────────────────────────
+// 프린터 이름 → 포트(IP)·위치·드라이버. "어느 프린터"인지(사무실 복합기 IP / 집 프린터 / PDF) 보이게(2026-09-28). 10분 캐시.
+let _printers = { at: 0, map: {} };
+async function printerMap() {
+  if (Date.now() - _printers.at < 10 * 60e3) return _printers.map;
+  const out = await ps("Get-CimInstance Win32_Printer | ForEach-Object { $_.Name + '|' + $_.PortName + '|' + $_.Location + '|' + $_.DriverName + '|' + $_.Network + '|' + $_.Shared }", 15000);
+  const map = {}; for (const l of out.split(/\r?\n/).map((x) => x.trim()).filter(Boolean)) { const [name, port, loc, drv, net] = l.split('|'); if (name) map[name] = { port: port || '', loc: loc || '', drv: drv || '', net: /true/i.test(net || '') }; }
+  _printers = { at: Date.now(), map }; return map;
+}
 async function pollPrint() {
-  const out = await ps("Get-CimInstance Win32_PrintJob | ForEach-Object { $_.JobId.ToString() + '|' + $_.Document + '|' + $_.Name + '|' + $_.TotalPages + '|' + $_.Owner }", 15000);
-  for (const l of out.split(/\r?\n/).map((x) => x.trim()).filter(Boolean)) {
-    const [id, doc, printer, pages, owner] = l.split('|'); if (!id || _seenJobs.has(id + '|' + doc)) continue; _seenJobs.add(id + '|' + doc); if (_seenJobs.size > 5000) _seenJobs.clear();
-    const pr = String(printer || '').split(',')[0].trim();
-    push({ kind: 'print', filename: String(doc || '').trim(), destKind: /pdf|xps|onenote/i.test(pr) ? 'print-to-file' : 'printer', dest: pr, detail: `${pages || '?'}쪽 · ${owner || ''}`, dedupKey: `print|${id}|${doc}|${new Date().toISOString().slice(0, 13)}` });
+  const out = await ps("Get-CimInstance Win32_PrintJob | ForEach-Object { $_.JobId.ToString() + '|' + $_.Document + '|' + $_.Name + '|' + $_.TotalPages + '|' + $_.Owner + '|' + $_.Size + '|' + $_.Color + '|' + $_.Copies }", 15000);
+  const lines = out.split(/\r?\n/).map((x) => x.trim()).filter(Boolean); if (!lines.length) return;
+  const pm = await printerMap().catch(() => ({}));
+  for (const l of lines) {
+    const [id, doc, printer, pages, owner, size, color, copies] = l.split('|'); if (!id || _seenJobs.has(id + '|' + doc)) continue; _seenJobs.add(id + '|' + doc); if (_seenJobs.size > 5000) _seenJobs.clear();
+    const pr = String(printer || '').split(',')[0].trim(); const p = pm[pr] || {};
+    const toFile = /pdf|xps|onenote|fax/i.test(pr + ' ' + (p.drv || '') + ' ' + (p.port || ''));
+    const ip = (String(p.port || '').replace(/^IP_(\d+)_(\d+)_(\d+)_(\d+)$/, '$1.$2.$3.$4').match(/\d{1,3}(?:\.\d{1,3}){3}/) || [])[0]; // 표준 TCP/IP 포트는 'IP_192_168_0_200' 꼴
+    const where = toFile ? `파일로 출력(${pr})` : [`프린터 ${pr}`, ip ? `IP ${ip}` : (p.port && !/^(USB|LPT|COM)/i.test(p.port) ? `포트 ${p.port}` : (p.port ? '직접연결 ' + p.port : '')), p.loc && `위치 ${p.loc}`, p.net && '네트워크 프린터'].filter(Boolean).join(' · ');
+    const app = (String(doc || '').match(/^(Microsoft\s+\w+|한글|Adobe\s+\w+|Chrome|Edge|Excel|Word|PowerPoint)/i) || [])[1] || '';
+    push({ kind: 'print', filename: String(doc || '').trim(), destKind: toFile ? 'print-to-file' : 'printer', dest: pr, app, detail: [`${pages || '?'}쪽`, copies && Number(copies) > 1 ? `${copies}부` : '', /true/i.test(color || '') ? '컬러' : '', where, owner ? `사용자 ${owner}` : ''].filter(Boolean).join(' · '), dedupKey: `print|${id}|${doc}|${new Date().toISOString().slice(0, 13)}` });
   }
 }
 
@@ -87,10 +117,11 @@ async function pollOutlook() {
   // ⚠ New-Object -ComObject 는 Outlook을 '실행'시킨다(2026-09-22 직원 PC에서 Outlook이 저절로 켜지는 사고). 이미 떠 있는 Outlook에만 GetActiveObject로 붙고, 없으면 아무것도 안 한다.
   const running = await ps("if (Get-Process -Name OUTLOOK -ErrorAction SilentlyContinue) { 'yes' } else { 'no' }", 8000);
   if (!/yes/.test(running)) return;
-  const out = await ps(`try { $o = [System.Runtime.InteropServices.Marshal]::GetActiveObject('Outlook.Application'); $ns = $o.GetNamespace('MAPI'); $f = $ns.GetDefaultFolder(5); $items = $f.Items; $items.Sort('[SentOn]', $true); $items = $items.Restrict("[SentOn] >= '${s}'"); foreach ($m in $items) { if ($m.Attachments.Count -gt 0) { $a = @(); foreach ($x in $m.Attachments) { $a += $x.FileName }; Write-Output ($m.EntryID + '|' + $m.SentOn.ToString('s') + '|' + $m.To + '|' + $m.Subject + '|' + ($a -join ';')) } } } catch {}`, 30000);
+  const out = await ps(`try { $o = [System.Runtime.InteropServices.Marshal]::GetActiveObject('Outlook.Application'); $ns = $o.GetNamespace('MAPI'); $f = $ns.GetDefaultFolder(5); $items = $f.Items; $items.Sort('[SentOn]', $true); $items = $items.Restrict("[SentOn] >= '${s}'"); foreach ($m in $items) { if ($m.Attachments.Count -gt 0) { $a = @(); foreach ($x in $m.Attachments) { $a += $x.FileName }; Write-Output ($m.EntryID + '|' + $m.SentOn.ToString('s') + '|' + $m.To + '|' + $m.Subject + '|' + ($a -join ';') + '|' + $m.CC + '|' + $m.SenderEmailAddress) } } } catch {}`, 30000);
   for (const l of out.split(/\r?\n/).map((x) => x.trim()).filter(Boolean)) {
-    const [id, sentOn, to, subject, atts] = l.split('|'); if (!id || _seenMail.has(id)) continue; _seenMail.add(id);
-    for (const fn of String(atts || '').split(';').filter(Boolean)) push({ kind: 'email', filename: fn, destKind: 'outlook', dest: String(to || '').slice(0, 200), detail: `제목 ${String(subject || '').slice(0, 80)}`, at: sentOn ? new Date(sentOn).toISOString() : undefined, dedupKey: `email|${id}|${fn}` });
+    const [id, sentOn, to, subject, atts, cc, from] = l.split('|'); if (!id || _seenMail.has(id)) continue; _seenMail.add(id);
+    const detail = [`제목 ${String(subject || '').slice(0, 80)}`, cc && `참조 ${String(cc).slice(0, 120)}`, from && `보낸 계정 ${String(from).slice(0, 80)}`].filter(Boolean).join(' · ');
+    for (const fn of String(atts || '').split(';').filter(Boolean)) push({ kind: 'email', filename: fn, destKind: 'outlook', dest: String(to || '').slice(0, 200), detail, at: sentOn ? new Date(sentOn).toISOString() : undefined, dedupKey: `email|${id}|${fn}` });
   }
 }
 
