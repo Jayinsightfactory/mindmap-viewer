@@ -272,6 +272,25 @@ async function findCaptures() {
   return caps;
 }
 
+// [2026-09-28 업무 흐름 태깅] 사람별 업무 흐름 카탈로그(orbit_ops_report kind=workflow-catalog, 1시간 캐시).
+// 캡처마다 "그 사람의 어느 업무·몇 번째 단계"인지 고르게 해서, 행동 묘사가 아닌 업무 단위 근거를 쌓는다.
+let _wfCatalog = { at: 0, byUid: {} };
+async function _refreshWfCatalog() {
+  if (Date.now() - _wfCatalog.at < 60 * 60 * 1000) return;
+  _wfCatalog.at = Date.now();
+  try {
+    const r = await fetch(new URL('/api/flow/ops-report?kind=workflow-catalog', ORBIT_SERVER), { headers: { Authorization: 'Bearer ' + ORBIT_TOKEN } });
+    const j = await r.json();
+    if (j?.latest?.report?.byUid) _wfCatalog.byUid = j.latest.report.byUid;
+  } catch {}
+}
+function _workflowBlock(userId) {
+  const c = userId && _wfCatalog.byUid[userId];
+  if (!c || !(c.workflows || []).length) return '';
+  const list = c.workflows.map((w, i) => `${i + 1}. ${w.name} (계기: ${w.trigger}) 단계: ${w.steps.map((s, k) => `${k + 1})${s}`).join(' ')}`).join('\n');
+  return `\n[이 사용자의 알려진 업무 흐름] ${c.name}(${c.dept || ''})이 하는 업무 목록이다. 이 화면이 어느 업무의 몇 번째 단계인지 workflow 항목에 골라라. 어디에도 안 맞으면 name을 새 업무 이름으로 짓고 known=false.\n${list}\n`;
+}
+
 // ── 분석 프롬프트 ─────────────────────────────────────────────────────────────
 function _buildPrompt(ctx) {
   // [골:실행좌표 융합] 이 화면에서 실제 클릭된 좌표들(같은 payload에 첨부됨)을 필드에 매핑시킨다.
@@ -287,6 +306,7 @@ function _buildPrompt(ctx) {
   if (ctx.windowTitle) contextBlock += `\n[창 제목] ${ctx.windowTitle}\n`;
   if (ctx.prevSummary) contextBlock += `\n[직전 화면] 방금 전 이 사용자가 보던 화면: ${ctx.prevSummary}\n지금 화면이 그로부터 무엇이 바뀌었는지 changeFromPrev에 적어라.\n`;
   if (ctx.typedContext) contextBlock += `\n[이 무렵 타이핑한 내용] ${ctx.typedContext}\n`;
+  contextBlock += _workflowBlock(ctx.userId);
   return `스크린샷을 정밀 분석해주세요. 호스트: ${ctx.hostname}${clickBlock}${contextBlock}
 다음 JSON 형식으로만 응답 (마크다운 없이 순수 JSON):
 {
@@ -302,6 +322,7 @@ function _buildPrompt(ctx) {
   "farmCountry": {"farm": "화면에 보이는 해외 농장·공급업체명(없으면 null)", "country": "콜롬비아|중국|네덜란드|에콰도르|태국|호주|베트남|국내|null"},
   "receivedFrom": "이 작업의 입력이 어디서 왔는가(카톡방 이름·파일명·전산 화면·사람, 보이는 것만, 없으면 null)",
   "handedTo": "결과가 어디로 가는가(카톡방·전산 테이블·파일·사람, 보이는 것만, 없으면 null)",
+  "workflow": {"name": "이 화면이 속한 업무 흐름 이름([이 사용자의 알려진 업무 흐름]이 있으면 그 이름 그대로, 업무와 무관하면 null)", "known": true, "step": "그 업무의 몇 번째 단계인지 숫자(모르면 null)", "caseKey": "이 업무 건을 구분하는 값(예: '40-01차 라움', '9월 카드매입', 없으면 null)", "decision": "이 화면에서 사람이 내린 판단 1줄(예: '부족분을 라움 대신 초이문에 우선 배정', 없으면 null)"},
 
   "entities": {
     "customers": ["화면에 실제로 보이는 거래처명"],
@@ -512,6 +533,7 @@ function _emitOcrEvent(ctx, ocrText) {
 
 // ── 통합 분석 함수 (1회 재시도 포함) ─────────────────────────────────────────
 async function visionAnalyze(base64, ctx) {
+  await _refreshWfCatalog();
   const analyze = USE_CLI ? visionCli : ANTHROPIC_KEY ? visionApi : null;
   if (!analyze) throw new Error('Claude CLI 또는 ANTHROPIC_API_KEY 필요');
 
