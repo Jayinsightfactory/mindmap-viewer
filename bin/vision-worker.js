@@ -288,7 +288,7 @@ function _workflowBlock(userId) {
   const c = userId && _wfCatalog.byUid[userId];
   if (!c || !(c.workflows || []).length) return '';
   const list = c.workflows.map((w, i) => `${i + 1}. ${w.name} (계기: ${w.trigger}) 단계: ${w.steps.map((s, k) => `${k + 1})${s}`).join(' ')}`).join('\n');
-  return `\n[이 사용자의 알려진 업무 흐름] ${c.name}(${c.dept || ''})이 하는 업무 목록이다. 이 화면이 어느 업무의 몇 번째 단계인지 workflow 항목에 골라라. 어디에도 안 맞으면 name을 새 업무 이름으로 짓고 known=false.\n${list}\n`;
+  return `\n[이 사용자의 알려진 업무 흐름] ${c.name}(${c.dept || ''})이 하는 업무 목록이다. 이 화면이 어느 업무의 몇 번째 단계인지 workflow 항목에 골라라. 회사 업무인데 어디에도 안 맞으면 name을 새 업무 이름으로 짓고 known=false. 개인 용무(쇼핑·검색·사적 대화 등)나 업무와 무관한 화면이면 workflow 는 null.\n${list}\n`;
 }
 
 // ── 분석 프롬프트 ─────────────────────────────────────────────────────────────
