@@ -29,6 +29,7 @@ const NAME = {
   MN506C7A6A710A046E: '조현욱', MNMSAQJD78E544A631: '강명훈',
   MNMRVD11EDCCF6E7CE: '김원빈', MNC78F666A0ADDE30E: '김원빈',
   MN8232D542A97C0862: '아드리아나', MNH03H73690BB2CD82: '임재용(사장)',
+  MNF64400D6CD233E3A: '김도준', // 2026-09-28 영업지원, PC DESKTOP-U46T0GG
 };
 
 // ── 수치 파싱 ────────────────────────────────────────────────────────────────
@@ -263,7 +264,7 @@ function discover(t) {
   console.log(`표 ${tables.length}개 중 분석가능 ${scanned}개 · 앵커 발견 ${withAnchor}개`);
   console.log(`(공식을 하나도 알려주지 않고 데이터에서만 찾은 결과)\n`);
 
-  const order = ['설연주', '김원빈', '아드리아나', '조현욱', '박성수', '강현우', '강명훈', '임재용(사장)'];
+  const order = ['설연주', '김도준', '김원빈', '아드리아나', '조현욱', '박성수', '강현우', '강명훈', '임재용(사장)'];
   const users = [...byUser.keys()].sort((a, b) => {
     const ia = order.indexOf(a), ib = order.indexOf(b);
     return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib);
