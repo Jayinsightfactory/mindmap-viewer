@@ -649,7 +649,9 @@ function createFlowMapRouter(deps = {}) {
           FROM a LEFT JOIN orbit_auth_users u ON u.id = a.user_id
          GROUP BY a.user_id, u.name ORDER BY captures DESC`, [String(days)]);
       const pct = (x, n) => (Number(n) ? Math.round(100 * Number(x) / Number(n)) : null);
-      res.json({ ok: true, days, people: rows.map((r) => ({
+      // 퇴사자·재설치로 교체된 옛 계정은 목록에서만 숨긴다(config/hidden-users.json, 데이터는 유지)
+      let hidden = {}; try { hidden = require('../config/hidden-users.json'); } catch {}
+      res.json({ ok: true, days, people: rows.filter((r) => !hidden[r.user_id]).map((r) => ({
         userId: r.user_id, name: r.name || r.user_id, captures: Number(r.captures), analyzed: Number(r.analyzed),
         analyzedRate: pct(r.analyzed, r.captures), entities: pct(r.with_entities, r.analyzed), fieldValues: pct(r.with_field_values, r.analyzed), tables: pct(r.with_tables, r.analyzed),
         stage: pct(r.with_stage, r.analyzed), purpose: pct(r.with_purpose, r.analyzed), actionDone: pct(r.with_done, r.analyzed), messenger: pct(r.messenger, r.analyzed), sameScreenRepeat: pct(r.same_screen_repeat, r.analyzed) })) });

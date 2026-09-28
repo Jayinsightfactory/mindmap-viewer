@@ -102,6 +102,21 @@ try {
 
 # 재설치 클린 초기화: 옛 캡처·업로드마커·펜딩·비전상태·옛 신원(config) 제거 → 새 데이터만 작업.
 # (런처/워치독 등은 install.ps1이 재설치하므로 건드리지 않음. captures 폴더만 통째로 비움.)
+# [2026-09-28] 지우기 전에 옛 신원으로 미전송 캡처를 스풀에 먼저 올린다(최대 3분).
+# 안 올리고 지우면 서버엔 capture 기록만 남고 이미지가 없어 영구 해독 0(hoon J 818장·박성수 332장 유실 사례).
+try {
+  $sc = "$env:USERPROFILE\mindmap-viewer\src\screen-capture.js"
+  $node = (Get-Command node -ErrorAction SilentlyContinue).Source
+  if ($node -and (Test-Path $sc) -and (Test-Path "$env:USERPROFILE\.orbit-config.json")) {
+    Write-Host "    남은 캡처를 서버로 보내는 중..." -ForegroundColor DarkGray
+    $env:ORBIT_SC_PATH = $sc
+    $js = 'const sc=require(process.env.ORBIT_SC_PATH);(async()=>{let t=0;for(let i=0;i<40;i++){const n=await sc.uploadPendingToSpool(50).catch(()=>0);t+=n;if(!n)break}console.log("spooled "+t);process.exit(0)})()'
+    $jsFile = "$env:TEMP\orbit-spool-flush.js"
+    [IO.File]::WriteAllText($jsFile, $js)
+    $pr = Start-Process -FilePath $node -ArgumentList "`"$jsFile`"" -NoNewWindow -PassThru
+    if (-not $pr.WaitForExit(180000)) { try { $pr.Kill() } catch {} }
+  }
+} catch {}
 try {
   $orbitHome = "$env:USERPROFILE\.orbit"
   foreach ($p in @("$orbitHome\captures", "$orbitHome\vision-pending")) {
