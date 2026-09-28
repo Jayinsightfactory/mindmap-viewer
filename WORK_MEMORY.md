@@ -1924,3 +1924,12 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 - mindmap-viewer: config/erp-user-map.json(nenovaIC1·nenova1 name), bin/anchor-discovery.js(MN8232… 매핑·order·주석). server.js·WORK_MEMORY 과거 사건 주석은 기록이라 보존.
 - nenovaweb PR #763: workManuals·sync-orbit-manuals 멤버, workflowConfig(가브리엘 제거·아드리아나 잔존), workDrive NAME_ALIAS '가브리엘'→'아드리아나'(과거 업로드 유지), 주석·초안·스토리보드·orbit-report.
 - ⚠ 불일치 발견: erp-user-map은 nenova1=가브리엘(→아드리아나)인데, nenovaweb workDrive WORK_DRIVE_ADMIN_USER_IDS=['nenova1']=김원영(드라이브 관리자)로 다룸. 두 시스템의 nenova1 정체가 어긋남 — 사장 확인 필요(이번엔 이름만 지시대로 변경, 정체는 안 건드림).
+
+## 2026-09-28 — 캡처 썸네일 API 무인증 노출 차단 (c6e582f)
+검색어: vision thumbnail 썸네일 인증 보안 401 관리자전용 token 쿼리 img
+- 문제: GET /api/vision/thumbnails(목록+fields)·/api/vision/thumbnail/:id(jpeg)가 무인증 공개였음(실측 120건/200).
+- 수정: server.js `_visionThumbAdminOk` — Bearer 헤더(서버-서버, nenovaweb /my-work용) 또는 `?token=`(img 태그용) 중 마스터/관리자 토큰·관리자 이메일 계정(isAdminReqAsync)만 통과. 무토큰 401, 비관리자 403. Cache-Control public→private.
+- 프런트: cctv.html·app.html fetch는 원래 ?token= 붙임. <img>에 맨 URL 넣던 app.html·auto-proposals·work-detail·work-flow에 `thumbSrc()`로 token 부착.
+- 라이브 실측: 무인증 목록 401 / 무인증 이미지 401 / 잘못된 토큰 403 / Bearer 마스터 200 image/jpeg / ?token= 마스터 200.
+- 미검증: 브라우저에서 관리자 로그인 후 화면 썸네일 실제 표시(토큰 입력 불가로 미확인).
+- 주의(결과): 직원(비관리자)이 work-detail 등에서 보던 썸네일은 이제 403 → "이미지 없음" 표시. 의도된 관리자 전용화. 본인 화면 허용이 필요하면 userId=본인 조건 추가 검토.
