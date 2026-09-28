@@ -43,6 +43,7 @@ select,button{background:var(--panel);border:1px solid var(--line);color:var(--t
 <div class="lightbox" id="lb" onclick="this.style.display='none'"><img id="lbimg"></div>
 <script>
 const TK=localStorage.getItem('orbit_token')||new URLSearchParams(location.search).get('token')||'';
+const thumbSrc=u=>u?(u+(u.includes('?')?'&':'?')+'token='+encodeURIComponent(TK)):'';
 const H=TK?{Authorization:'Bearer '+TK}:{};
 const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 let STEPS=[];
@@ -71,7 +72,7 @@ function render(){
   if(!steps.length){document.getElementById('root').innerHTML='<div class="empty">해당 화면 없음</div>';return;}
   document.getElementById('root').innerHTML='<div class="seq">'+steps.slice(0,150).map(s=>{
     const ac=appClass(s.app);
-    const img=s.thumbnailUrl?`<img loading="lazy" src="${s.thumbnailUrl}" onclick="zoom(this.src)" onerror="this.parentNode.innerHTML='<div class=noimg>이미지 없음</div>'">`:'<div class="noimg">이미지 없음</div>';
+    const img=s.thumbnailUrl?`<img loading="lazy" src="${thumbSrc(s.thumbnailUrl)}" onclick="zoom(this.src)" onerror="this.parentNode.innerHTML='<div class=noimg>이미지 없음</div>'">`:'<div class="noimg">이미지 없음</div>';
     const inputs=(s.inputs||[]).map(x=>`<div class="inp">⌨️ ${esc(x.ko||x.raw||'')}</div>`).join('');
     const flds=(s.fields||[]).filter(x=>x.label||x.value).map(x=>`<span class="fld">${esc(x.label||'')}${x.value?': <b>'+esc(x.value)+'</b>':''}</span>`).join('');
     return `<div class="card">

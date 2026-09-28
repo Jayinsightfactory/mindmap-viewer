@@ -61,6 +61,7 @@ button{cursor:pointer} input{color-scheme:dark}
 <div id="lb" onclick="this.style.display='none'"><img id="lbimg" alt=""></div>
 <script>
 const TK = localStorage.getItem('orbit_token') || '';
+const thumbSrc=u=>u?(u+(u.includes('?')?'&':'?')+'token='+encodeURIComponent(TK)):'';
 const H = { headers: { Authorization: 'Bearer ' + TK } };
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -101,7 +102,7 @@ function stepHtml(s, i) {
     body = `<span class="win">→ ${esc(s.label || s.url)}</span>`;
   } else if (s.kind === 'screen') {
     body = `${esc(s.screen)}${s.activity ? ` — <span class="sub">${esc(s.activity)}</span>` : ''}` +
-      (s.thumbnailUrl ? `<span class="thumb" data-src="${esc(s.thumbnailUrl)}">이미지</span>` : '');
+      (s.thumbnailUrl ? `<span class="thumb" data-src="${esc(thumbSrc(s.thumbnailUrl))}">이미지</span>` : '');
   }
   const win = s.kind !== 'screen' && s.win ? `<span class="win">${esc(s.win)}</span>` : '';
   return `<li><span class="n">${i + 1}</span><span class="tm">${kst(s.t)}</span><span><span class="k k-${s.kind}">${KIND[s.kind]}</span>${body}${win}</span></li>`;

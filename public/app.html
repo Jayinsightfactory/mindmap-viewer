@@ -78,6 +78,7 @@
 const $ = s => document.querySelector(s);
 const KEY = 'orbit_flow_token';
 // [2026-07-16] 셸 로그인 토큰(localStorage.orbit_token)도 인정 — 로그인했는데 또 토큰 요구하던 문제 수정
+const thumbSrc=u=>u?(u+(u.includes('?')?'&':'?')+'token='+encodeURIComponent(token())):'';
 const token = () => sessionStorage.getItem(KEY) || localStorage.getItem('orbit_token') || localStorage.getItem('orbitToken') || '';
 function showTok(){ $('#tokbar').style.display='flex'; $('#tokin').value=token(); $('#tokin').focus(); }
 function saveTok(){ const v=$('#tokin').value.trim(); if(v){ sessionStorage.setItem(KEY,v); $('#tokbar').style.display='none'; render(state.v); } }
@@ -249,7 +250,7 @@ async function viewScreens(){
             const auto = Number(t.automationScore)||0;
             const badge = auto>=0.6?'<span class="tag" style="color:#5fd39b">⚡자동화 후보</span>':'';
             return `<div class="scard" data-id="${t.id}" style="background:var(--panel);border:1px solid var(--border);border-radius:10px;overflow:hidden;cursor:pointer">
-              <img src="${t.thumbnailUrl}" loading="lazy" style="width:100%;height:124px;object-fit:cover;object-position:top;background:#0d0e10;display:block">
+              <img src="${thumbSrc(t.thumbnailUrl)}" loading="lazy" style="width:100%;height:124px;object-fit:cover;object-position:top;background:#0d0e10;display:block">
               <div style="padding:8px 10px">
                 <div style="font-size:11px;color:var(--muted)">${new Date(t.timestamp).toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'})} · ${(t.app||'').slice(0,18)} ${badge}</div>
                 <div class="pii" style="font-size:12px;color:var(--txt2);margin-top:3px;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical">${t.activity||t.screen||''}</div>
@@ -290,7 +291,7 @@ async function viewScreens(){
           const clk = (st.clickFields||[]).length?` <span style="color:#5b9dff">📍${st.clickFields.length}</span>`:'';
           const gp = st.gapSec>60?` <span class="muted">(+${Math.round(st.gapSec/60)}분)</span>`:'';
           return `<div style="display:flex;gap:8px;padding:6px 0;border-bottom:1px dashed var(--border)">
-            <img src="${st.thumbnailUrl}" loading="lazy" style="width:120px;height:68px;object-fit:cover;object-position:top;border-radius:6px;background:#0d0e10;flex:none;cursor:pointer" class="sstep" data-si="${i}" data-sj="${j}">
+            <img src="${thumbSrc(st.thumbnailUrl)}" loading="lazy" style="width:120px;height:68px;object-fit:cover;object-position:top;border-radius:6px;background:#0d0e10;flex:none;cursor:pointer" class="sstep" data-si="${i}" data-sj="${j}">
             <div style="min-width:0;font-size:12px">
               <div class="muted" style="font-size:11px">${j+1}. ${new Date(st.t).toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit',second:'2-digit'})} · ${(st.app||'').slice(0,20)}${gp}${clk}</div>
               <div class="pii" style="color:var(--txt2);margin-top:2px">${st.activity||st.screen||''}</div>
@@ -346,7 +347,7 @@ function openScreen(t){
     <div style="display:flex;justify-content:space-between;align-items:start;gap:12px;margin-bottom:10px">
       <div><h3 style="margin:0" class="pii">${t.app||''}</h3><div class="muted" style="font-size:12px">${new Date(t.timestamp).toLocaleString('ko-KR')} · ${t.screen||''}</div></div>
       <button class="ghost" id="scClose">닫기 ✕</button></div>
-    <img src="${t.thumbnailUrl}" style="width:100%;border-radius:8px;border:1px solid var(--border);background:#0d0e10">
+    <img src="${thumbSrc(t.thumbnailUrl)}" style="width:100%;border-radius:8px;border:1px solid var(--border);background:#0d0e10">
     <div class="sec" style="margin-top:12px"><b>무슨 작업</b><div class="muted pii" style="font-size:13px">${t.activity||''}</div></div>
     ${fields.length?`<div class="sec"><b>입력 필드 (${fields.length}) · 📍=클릭좌표</b>${fieldRows}</div>`:''}
     ${t.hint?`<div class="sec"><b>⚡ 자동화 방법</b><div class="muted" style="font-size:12px">${t.hint}</div></div>`:''}</div>`;

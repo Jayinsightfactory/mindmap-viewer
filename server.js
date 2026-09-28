@@ -4780,9 +4780,22 @@ app.get('/api/vision/spool/stat', (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// [2026-09-28] 캡처 썸네일(직원 화면·필드값) = 관리자 전용. 무인증 노출 차단.
+// Bearer 헤더(서버-서버: nenovaweb /my-work) 또는 ?token= (app.html·cctv.html 의 <img>/fetch 가 쿼리로 붙임) 둘 다 허용.
+async function _visionThumbAdminOk(req) {
+  const raw = ((req.headers.authorization || '').replace(/^Bearer\s+/i, '').trim()) || String(req.query.token || '').trim();
+  if (!raw) return 401;
+  if (env.isMasterToken(raw) || env.isAdminToken(raw)) return 0;
+  const fake = { headers: { ...req.headers, authorization: 'Bearer ' + raw }, query: req.query };
+  try { if (await isAdminReqAsync(fake)) return 0; } catch {}
+  return 403;
+}
+
 // 캡처 썸네일 이미지 제공 (screen.analyzed 이벤트의 thumbnail 필드)
 app.get('/api/vision/thumbnail/:eventId', async (req, res) => {
   try {
+    const code = await _visionThumbAdminOk(req);
+    if (code) return res.status(code).json({ error: code === 401 ? 'unauthorized' : 'admin only' });
     const db = dbModule.getDb();
     if (!db?.query) return res.status(503).send('DB not available');
     const result = await db.query(
@@ -4795,7 +4808,7 @@ app.get('/api/vision/thumbnail/:eventId', async (req, res) => {
     // 포맷 감지: 구 썸네일=PNG(0x89504E47), 신 썸네일=JPEG(0xFFD8) — magic byte로 Content-Type 결정
     const isJpeg = buf.length > 2 && buf[0] === 0xFF && buf[1] === 0xD8;
     res.setHeader('Content-Type', isJpeg ? 'image/jpeg' : 'image/png');
-    res.setHeader('Cache-Control', 'public, max-age=86400');
+    res.setHeader('Cache-Control', 'private, max-age=86400');
     res.send(buf);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -4803,6 +4816,8 @@ app.get('/api/vision/thumbnail/:eventId', async (req, res) => {
 // 최근 캡처 썸네일 목록 — ?userId=&hours=&limit= 필터. [골] 화면단위 업무 타임라인용.
 app.get('/api/vision/thumbnails', async (req, res) => {
   try {
+    const code = await _visionThumbAdminOk(req);
+    if (code) return res.status(code).json({ error: code === 401 ? 'unauthorized' : 'admin only' });
     const db = dbModule.getDb();
     if (!db?.query) return res.status(503).json({ error: 'DB not available' });
     const limit = Math.min(parseInt(req.query.limit) || 40, 120);
