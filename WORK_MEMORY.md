@@ -1918,3 +1918,9 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 - 웹 짝: nenova-erp-ui PR #761 (preview/open, 관리자만).
 - 검증: docKey 정규화, 실제 Downloads xlsx 이름으로 resolve 성공. 실PC 인쇄 이벤트 실증은 미검증(직원 인쇄 발생 후 /work/drive 보안 이력에서 확인).
 - 2026-09-28 "어디로" 상세화(검색어: egress 어디로 printerMap deviceMap kakao-in UTF8): ps() 출력 UTF-8 고정(한글 프린터명 ???? 해결), Win32_Printer 포트(IP_192_168_0_200→IP)·위치·네트워크, Win32_DiskDrive 모델·S/N(드라이브 문자 연결), Outlook CC·보낸 계정, 인쇄 쪽수·부수·컬러·인쇄 프로그램. 카톡 '받은 파일' 폴더=수신이라 destKind kakao-in. 웹 짝 PR #762.
+
+## 2026-09-28 수입부 담당 이름 변경 가브리엘 → 아드리아나 (검색어: 가브리엘 아드리아나 rename erp-user-map anchor-discovery NAME_ALIAS)
+- 지시: "가브리엘을 아드리아나로 변경". 같은 자리(PC DESKTOP-05VLRN1·토큰 nenovaIC1/nenova1·orbitUserId MN8232D542A97C0862 유지) 이름 변경으로 처리.
+- mindmap-viewer: config/erp-user-map.json(nenovaIC1·nenova1 name), bin/anchor-discovery.js(MN8232… 매핑·order·주석). server.js·WORK_MEMORY 과거 사건 주석은 기록이라 보존.
+- nenovaweb PR #763: workManuals·sync-orbit-manuals 멤버, workflowConfig(가브리엘 제거·아드리아나 잔존), workDrive NAME_ALIAS '가브리엘'→'아드리아나'(과거 업로드 유지), 주석·초안·스토리보드·orbit-report.
+- ⚠ 불일치 발견: erp-user-map은 nenova1=가브리엘(→아드리아나)인데, nenovaweb workDrive WORK_DRIVE_ADMIN_USER_IDS=['nenova1']=김원영(드라이브 관리자)로 다룸. 두 시스템의 nenova1 정체가 어긋남 — 사장 확인 필요(이번엔 이름만 지시대로 변경, 정체는 안 건드림).
