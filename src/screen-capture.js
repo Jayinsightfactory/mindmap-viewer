@@ -832,7 +832,8 @@ function capture(trigger = 'manual') {
 
   // noLocalSave 앱(카카오톡 등): PNG 저장 없이 메타데이터만 서버 전송 (개인 대화 내용 로컬 저장 방지)
   const _appKey = getAppProfileKey(_lastActiveApp);
-  if (APP_PROFILES[_appKey]?.noLocalSave) {
+  // [2026-09-29] 단, 개인정보 정책의 '회사 업무 카톡방'(privacy-policy workRooms)으로 판정된 창은 사진을 남겨 해독한다(사장님 결정: 업무방 내용 수집).
+  if (APP_PROFILES[_appKey]?.noLocalSave && !(_pv && _pv.allow && _pv.kind === 'messenger_work')) {
     _sendCaptureMetadata('(no-save)', trigger, {
       app: _lastActiveApp, windowTitle: _lastWindowTitle,
       activityLevel: _activityState?.label || '', automationScore: _automationScore,
