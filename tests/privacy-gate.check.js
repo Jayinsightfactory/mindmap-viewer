@@ -15,7 +15,7 @@ const rows = [];
 function check(name, got, exp) { const ok = got === exp; if (!ok) fail++; rows.push([ok ? 'PASS' : 'FAIL', name, exp, got]); }
 
 // ── 1) classify 20케이스 (정책 파일 그대로 = localExtraction.enabled=false) ──
-g._setPolicyForTest(POLICY); g._setPauseForTest(0);
+g._setPolicyForTest(Object.assign({}, POLICY, { localExtraction: { enabled: false, consentedUsers: [] } })); // 동의 전 기준(운영 파일 설정과 무관) g._setPauseForTest(0);
 const cases = [
   ['카톡 업무방 수입방', { app: 'kakaotalk', windowTitle: '수입방' }, 'messenger_work'],
   ['카톡 업무방 현장 추가취소방', { app: 'kakaotalk', windowTitle: '현장 추가취소방' }, 'messenger_work'],
