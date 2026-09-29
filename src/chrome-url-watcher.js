@@ -159,6 +159,13 @@ function _collect() {
       // Apply URL filters
       if (_shouldSkip(url)) continue;
 
+      // [2026-09-29] 송신 전 개인정보 게이트 — 업무 도메인 외 URL·제목은 보내지 않고 건수만(도메인도 미기록)
+      try {
+        const _g = require('./privacy-gate');
+        const _pv = _g.classify({ app: 'chrome', windowTitle: title || '', url });
+        if (!_pv.allow) { if (!_lastSentUrls.has(url)) { _trackSent(url); _g.record('browser', _pv); } continue; }
+      } catch {}
+
       // Dedup
       if (_lastSentUrls.has(url)) continue;
 

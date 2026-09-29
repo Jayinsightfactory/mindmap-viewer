@@ -1,0 +1,8 @@
+{
+  "_comment": "메신저 로컬 업무 추출용 기본 사전. 서버 GET /api/daemon/work-dictionary 가 nenova 전산(Flower/Farm/Customer) 이름을 합쳐 내려줌. 여기엔 전산에 없는 약칭·업무어만.",
+  "products": ["장미", "카네이션", "안스륨", "수국", "국화", "리시안셔스", "알스트로메리아", "거베라", "튤립", "백합", "작약", "스프레이", "rose", "carnation", "anthurium", "hydrangea", "alstroemeria", "gypsophila", "안개"],
+  "customers": [],
+  "farms": ["BOAT", "Cloud", "QINS", "almacabi", "flores tiba"],
+  "keywords": ["발주", "입고", "분배", "출고", "견적", "송금", "클레임", "인보이스", "invoice", "AWB", "awb", "통관", "검역", "정산", "단가", "불량", "추가", "취소", "재고", "packing list", "패킹", "선적", "항공", "빌번호", "B/L", "크레딧", "credit", "order", "PO"],
+  "units": ["박스", "box", "bx", "단", "송이", "개", "kg", "stems", "stem", "bunch", "bunches", "cs", "ea"]
+}

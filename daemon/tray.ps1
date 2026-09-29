@@ -1,4 +1,4 @@
-# Orbit AI - 시스템 트레이 애플리케이션
+﻿# Orbit AI - 시스템 트레이 애플리케이션
 # .NET Windows Forms 기반, npm 패키지 불필요
 
 Add-Type -AssemblyName System.Windows.Forms
@@ -15,6 +15,7 @@ if (Test-Path $configPath) {
     if ($config.serverUrl) {
       $dashboardUrl = $config.serverUrl
     }
+    if ($config.token) { $script:orbitToken = $config.token }
   } catch {
     # config 파싱 실패 시 기본값 사용
   }
@@ -62,8 +63,8 @@ $agentPath = Join-Path $scriptDir "personal-agent.js"
 function Get-NodePath {
   $localNode = Join-Path (Split-Path -Parent $scriptDir) "node\node.exe"
   if (Test-Path $localNode) { return $localNode }
-  $nodePath = (Get-Command node -ErrorAction SilentlyContinue)?.Source
-  if ($nodePath) { return $nodePath }
+  $nodeCmd = Get-Command node -ErrorAction SilentlyContinue   # PS 5.1 호환 (?. 는 PS7 전용)
+  if ($nodeCmd) { return $nodeCmd.Source }
   return "node"
 }
 
@@ -122,6 +123,41 @@ $dashItem.Add_Click({
   Start-Process $dashboardUrl
 })
 $contextMenu.Items.Add($dashItem) | Out-Null
+
+# [2026-09-29] 개인 용무 중 — ~/.orbit/personal-pause-until (ISO) 에 기록. 데몬 privacy-gate 가 그 시각까지 수집 차단
+$pauseFile = Join-Path $env:USERPROFILE ".orbit\personal-pause-until"
+function Set-PersonalPause([int]$minutes) {
+  try {
+    New-Item -ItemType Directory -Force (Split-Path -Parent $pauseFile) | Out-Null
+    if ($minutes -le 0) {
+      Remove-Item $pauseFile -Force -ErrorAction SilentlyContinue
+      $trayIcon.ShowBalloonTip(3000, "Orbit AI", "개인 용무 해제 - 업무 기록 재개", [System.Windows.Forms.ToolTipIcon]::Info)
+    } else {
+      $until = (Get-Date).ToUniversalTime().AddMinutes($minutes).ToString("yyyy-MM-ddTHH:mm:ss.fffZ")
+      [System.IO.File]::WriteAllText($pauseFile, $until)
+      $trayIcon.ShowBalloonTip(3000, "Orbit AI", "개인 용무 중 - $minutes 분 동안 수집 멈춤", [System.Windows.Forms.ToolTipIcon]::Info)
+    }
+  } catch {}
+}
+$pauseMenu = New-Object System.Windows.Forms.ToolStripMenuItem
+$pauseMenu.Text = "개인 용무 중"
+$p30 = New-Object System.Windows.Forms.ToolStripMenuItem; $p30.Text = "30분 멈춤"; $p30.Add_Click({ Set-PersonalPause 30 })
+$p60 = New-Object System.Windows.Forms.ToolStripMenuItem; $p60.Text = "1시간 멈춤"; $p60.Add_Click({ Set-PersonalPause 60 })
+$p0 = New-Object System.Windows.Forms.ToolStripMenuItem; $p0.Text = "해제"; $p0.Add_Click({ Set-PersonalPause 0 })
+$pauseMenu.DropDownItems.Add($p30) | Out-Null
+$pauseMenu.DropDownItems.Add($p60) | Out-Null
+$pauseMenu.DropDownItems.Add($p0) | Out-Null
+$contextMenu.Items.Add($pauseMenu) | Out-Null
+
+# 내 수집 내역 보기 — 대시보드 열기와 같은 방식(Start-Process) + 본인 토큰
+$privItem = New-Object System.Windows.Forms.ToolStripMenuItem
+$privItem.Text = "내 수집 내역 보기"
+$privItem.Add_Click({
+  $u = $dashboardUrl.TrimEnd('/') + "/my-privacy.html"
+  if ($script:orbitToken) { $u = $u + "?token=" + [uri]::EscapeDataString($script:orbitToken) }
+  Start-Process $u
+})
+$contextMenu.Items.Add($privItem) | Out-Null
 
 # 재시작
 $restartItem = New-Object System.Windows.Forms.ToolStripMenuItem

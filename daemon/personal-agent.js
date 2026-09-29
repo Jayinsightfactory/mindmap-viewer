@@ -935,7 +935,7 @@ async function main() {
     } catch {}
 
     clipboardWatcher.start((evt) => {
-      _reportEvent('clipboard.change', { text: evt.text, length: evt.length, sourceApp: evt.sourceApp });
+      _reportEvent('clipboard.change', { text: evt.text, length: evt.length, sourceApp: evt.sourceApp, privacy: evt.privacy }); // privacy: 게이트 차단 시 {redacted,kind,reason,charCount}
       // 주문 패턴 분석
       if (orderDetector) orderDetector.analyzeClipboard(evt);
     });

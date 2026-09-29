@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>내 수집 내역</title>
+<style>
+  :root { --bg:#f6f7f9; --card:#fff; --ink:#1d2330; --mute:#6b7383; --line:#e3e6eb; --acc:#2463d6; --warn:#b54708; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#14171c; --card:#1d2129; --ink:#e7e9ee; --mute:#9aa2b1; --line:#2d333d; --acc:#6ea0ff; --warn:#f0a35e; } }
+  body { margin:0; background:var(--bg); color:var(--ink); font:14px/1.55 system-ui, -apple-system, "Malgun Gothic", sans-serif; }
+  main { max-width: 880px; margin: 0 auto; padding: 24px 16px 48px; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  .sub { color: var(--mute); margin: 0 0 20px; }
+  section { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 16px; margin-bottom: 16px; }
+  h2 { font-size: 15px; margin: 0 0 10px; }
+  .row { display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+  button { font: inherit; padding: 8px 14px; border-radius: 8px; border: 1px solid var(--line); background: var(--card); color: var(--ink); cursor: pointer; min-height: 40px; }
+  button.primary { background: var(--acc); border-color: var(--acc); color: #fff; }
+  .scroll { overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
+  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  td.n, th.n { text-align: right; }
+  .muted { color: var(--mute); }
+  .pill { display:inline-block; padding:2px 8px; border-radius:999px; background: var(--bg); border:1px solid var(--line); font-size:12px; }
+  #tokenbar { display:none; gap:8px; }
+  #tokenbar input { flex:1; min-width: 200px; padding:8px; border-radius:8px; border:1px solid var(--line); background:var(--card); color:var(--ink); }
+  .err { color: var(--warn); }
+</style>
+</head>
+<body>
+<main>
+  <h1>내 수집 내역</h1>
+  <p class="sub">회사가 이 PC에서 무엇을 받았고, 무엇을 받지 않았는지, 누가 내 기록을 열어봤는지 본인만 볼 수 있습니다. <a href="#policy">수집 원칙</a></p>
+
+  <div id="tokenbar" class="row" style="margin-bottom:16px">
+    <input id="tok" placeholder="Orbit 토큰을 붙여넣으세요 (설치 시 받은 토큰)">
+    <button class="primary" id="tokbtn">확인</button>
+  </div>
+  <p id="msg" class="err"></p>
+
+  <section>
+    <h2>개인 용무 중</h2>
+    <p class="muted" id="pausestate">상태 확인 중…</p>
+    <div class="row">
+      <button data-min="30">30분 멈춤</button>
+      <button data-min="60">1시간 멈춤</button>
+      <button data-min="0">해제</button>
+    </div>
+    <p class="muted" style="margin:8px 0 0">멈춘 동안 화면·입력·주소는 수집하지 않고 "개인 용무" 시간만 남습니다. PC 반영까지 최대 1분.</p>
+  </section>
+
+  <section>
+    <h2>받은 기록 (앱별)</h2>
+    <div class="scroll"><table id="coltbl"><thead><tr><th>종류</th><th>앱</th><th class="n">오늘</th><th class="n">7일</th></tr></thead><tbody></tbody></table></div>
+  </section>
+
+  <section>
+    <h2>보내기 전에 막은 기록 (사유별, 내용 없이 건수만)</h2>
+    <div class="scroll"><table id="blktbl"><thead><tr><th>사유</th><th class="n">오늘</th><th class="n">7일</th></tr></thead><tbody></tbody></table></div>
+    <p class="muted" id="pausedmin" style="margin:8px 0 0"></p>
+    <p style="margin:8px 0 0"><strong>개인 웹: 수집 안 함</strong> <span class="muted">(검색·쇼핑·유튜브 등은 시간·건수·주소 모두 남기지 않습니다)</span></p>
+  </section>
+
+  <section>
+    <h2>관리자 열람 기록 (최근 30일)</h2>
+    <div class="scroll"><table id="audtbl"><thead><tr><th>시각</th><th>열람자</th><th>화면/API</th><th>범위</th></tr></thead><tbody></tbody></table></div>
+  </section>
+
+  <section id="policy">
+    <h2>수집 원칙</h2>
+    <ul>
+      <li>받는 것: 업무 프로그램(엑셀·nenova·nenovaweb·이카운트 등) 화면과 입력, 회사 업무 단톡방 내용, 업무 사이트 주소.</li>
+      <li>안 받는 것: 카톡 1:1·개인방, 개인 메신저, 개인 용무 중 모든 것(시간만). 1:1·개인방은 사용 시간만 남습니다. 개인 웹(검색·쇼핑·유튜브 등)은 아무것도 남기지 않습니다.</li>
+      <li>보관: 30일.</li>
+      <li>열람 공개: 관리자가 원문(입력·화면·카톡)을 조회하면 이 페이지에 기록됩니다.</li>
+    </ul>
+  </section>
+</main>
+<script>
+(function () {
+  const qs = new URLSearchParams(location.search);
+  const qsTok = qs.get('token');
+  try { if (qsTok) { localStorage.setItem('orbit_token', qsTok); history.replaceState(null, '', location.pathname); } } catch {}
+  let token = '';
+  try { token = localStorage.getItem('orbit_token') || ''; } catch {}
+  if (!token && qsTok) token = qsTok;
+  const $ = (id) => document.getElementById(id);
+  const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const KIND = { messenger_local: '메신저(PC 안에서만 처리)', messenger_private: '메신저 개인방', personal_web: '개인 웹', paused: '개인 용무 중', messenger_work: '업무 메신저', work: '업무' };
+  const REASON = { not_work_room: '업무방 아님', messenger_no_title: '방 이름 없음', non_work_domain: '업무 사이트 아님', personal_title: '개인 용도 제목', personal_pause: '일시정지', bad_url: '주소 해석 불가', no_work_items: '업무 항목 없음(전송 안 함)', work_items_sent: '업무 항목만 전송', local_extract: 'PC 안 처리' };
+  const label = (k) => { const [a, b] = String(k).split(':'); return (KIND[a] || a) + (b ? ' · ' + (REASON[b] || b) : ''); };
+
+  if (!token) { $('tokenbar').style.display = 'flex'; }
+  $('tokbtn').onclick = () => { const v = $('tok').value.trim(); if (!v) return; try { localStorage.setItem('orbit_token', v); } catch {} token = v; load(); };
+
+  async function api(path, opts) {
+    const r = await fetch(path, Object.assign({ headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' } }, opts || {}));
+    if (r.status === 401) { $('tokenbar').style.display = 'flex'; throw new Error('토큰이 없거나 만료됐습니다.'); }
+    const j = await r.json(); if (!r.ok) throw new Error(j.error || r.status); return j;
+  }
+  function pauseText(until) {
+    if (!until) return '수집 중 (일시정지 아님)';
+    return '개인 용무 중 — ' + new Date(until).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' }) + '까지 수집 멈춤';
+  }
+  document.querySelectorAll('button[data-min]').forEach(b => b.onclick = async () => {
+    try { const j = await api('/api/privacy/pause', { method: 'POST', body: JSON.stringify({ minutes: Number(b.dataset.min) }) }); $('pausestate').textContent = pauseText(j.pauseUntil); }
+    catch (e) { $('msg').textContent = e.message; }
+  });
+
+  async function load() {
+    if (!token) return;
+    $('msg').textContent = '';
+    try {
+      const d = await api('/api/privacy/me');
+      $('tokenbar').style.display = 'none';
+      $('pausestate').textContent = pauseText(d.pauseUntil);
+      const cb = $('coltbl').tBodies[0];
+      cb.innerHTML = d.collected.length ? d.collected.map(r => `<tr><td>${esc(r.type)}</td><td>${esc(r.app)}</td><td class="n">${r.today}</td><td class="n">${r.week}</td></tr>`).join('') : '<tr><td colspan="4" class="muted">최근 7일 기록 없음</td></tr>';
+      const keys = Object.keys(d.blocked.week).sort((a, b) => d.blocked.week[b] - d.blocked.week[a]);
+      $('blktbl').tBodies[0].innerHTML = keys.length ? keys.map(k => `<tr><td>${esc(label(k))}</td><td class="n">${d.blocked.today[k] || 0}</td><td class="n">${d.blocked.week[k]}</td></tr>`).join('') : '<tr><td colspan="3" class="muted">막은 기록 없음 (또는 PC가 아직 새 버전이 아님)</td></tr>';
+      const mm = (d.minutes && d.minutes.week) || {}; const mt = (d.minutes && d.minutes.today) || {};
+      $('pausedmin').textContent = `개인 용무 시간: 오늘 ${Math.round(d.pausedMinutes.today)}분 · 7일 ${Math.round(d.pausedMinutes.week)}분 / 메신저 개인방 사용(내용 없음): 오늘 ${Math.round(mt.messenger_private || 0)}분 · 7일 ${Math.round(mm.messenger_private || 0)}분`;
+      $('audtbl').tBodies[0].innerHTML = d.adminAccess.length ? d.adminAccess.map(r => `<tr><td>${esc(new Date(r.ts).toLocaleString('ko-KR'))}</td><td>${esc(r.actor)}</td><td>${esc(r.endpoint)}</td><td><span class="pill">${esc(r.scope)}</span></td></tr>`).join('') : '<tr><td colspan="4" class="muted">열람 기록 없음</td></tr>';
+    } catch (e) { $('msg').textContent = e.message; }
+  }
+  load();
+})();
+</script>
+</body>
+</html>

@@ -183,7 +183,14 @@ async function _check() {
           orderFormat = null;
         }
 
-        const { sourceApp, sourceWindow } = _getCachedContext();
+        const { sourceApp, sourceWindow: _rawSourceWindow } = _getCachedContext();
+        // [2026-09-29] 송신 전 개인정보 게이트 — 업무 판정일 때만 텍스트, 아니면 길이만
+        let _pv = null;
+        try { _pv = require('./privacy-gate').classify({ app: sourceApp, windowTitle: _rawSourceWindow }); } catch {}
+        const _blocked = !!(_pv && !_pv.allow);
+        if (_blocked && _pv.kind === 'personal_web') { _lastFingerprint = fp; _lastEmitAt = Date.now(); return; } // 개인 웹: 이벤트 없음
+        if (_blocked) { try { require('./privacy-gate').record('clipboard', _pv); } catch {} orderDetected = null; orderFormat = null; }
+        const sourceWindow = _blocked ? require('./privacy-gate').maskedTitle(_pv.kind) : _rawSourceWindow;
 
         if (sourceApp) {
           _clipboardFreqByApp[sourceApp] = (_clipboardFreqByApp[sourceApp] || 0) + 1;
@@ -199,7 +206,8 @@ async function _check() {
 
         _callback({
           type: 'clipboard.change',
-          text: text.substring(0, 2000), // 확대: 500→2000자 (발주서 전체 포함)
+          text: _blocked ? '' : text.substring(0, 2000), // 확대: 500→2000자 (발주서 전체 포함)
+          privacy: _blocked ? { redacted: true, kind: _pv.kind, reason: _pv.reason, charCount: text.length } : undefined,
           length: text.length,
           sourceApp,
           windowTitle: sourceWindow,
@@ -211,8 +219,8 @@ async function _check() {
           clipboardFreqByApp: { ..._clipboardFreqByApp },
           orderFormat: orderFormat,
           orderConfidence: orderDetected ? orderDetected.confidence : undefined,
-          parsedItems: parsed.length > 0 ? parsed : undefined,
-          parsedCount: parsed.length || undefined,
+          parsedItems: !_blocked && parsed.length > 0 ? parsed : undefined,
+          parsedCount: (!_blocked && parsed.length) || undefined,
           timestamp: new Date().toISOString(),
         });
 

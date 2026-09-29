@@ -1936,6 +1936,12 @@ app.post('/api/admin/migrate-ontology-workspace', async (req, res) => {
 });
 
 // GET /api/learning/logs — 원시 이벤트 로그 조회 (관리자 대시보드용)
+// [2026-09-29] 개인정보: 정책 배포(/api/daemon/privacy-policy)·본인 열람(/api/privacy/me)·개인용무 일시정지·관리자 열람 기록
+// 열람 기록 미들웨어는 아래 원문 조회 라우트들(learning/logs·vision/thumbnail(s)·kakao/messages·flow/work-unified)보다 먼저 등록돼야 함
+{ const _privacyRouter = require('./routes/privacy')({ getPool: () => dbModule.getDb(), verifyTokenAsync: require('./src/auth').verifyTokenAsync, env });
+  app.use(_privacyRouter.auditMiddleware);
+  app.use('/api', _privacyRouter); }
+
 app.get('/api/learning/logs', async (req, res) => {
   try {
     // [2026-09-29 보안] 직원 키보드·화면 원문 → 관리자만, 또는 자기 userId 만(무인증 200 노출 차단)

@@ -28,6 +28,30 @@ const path  = require('path');
 const fs    = require('fs');
 const { execSync } = require('child_process');
 const { normalizeAppName, sanitizeWindowTitle } = require('./data-quality');
+// [2026-09-29] 송신 전 개인정보 게이트 — 메신저 개인방·개인 웹·개인용무 중 입력은 버퍼에 넣지 않음
+let _privacyGate = null; try { _privacyGate = require('./privacy-gate'); } catch {}
+let _localExtractor = null; try { _localExtractor = require('./local-work-extractor'); } catch {}
+let _privBlockedChars = 0;         // 이번 청크에서 게이트가 막은 문자 수
+let _privBlockedReasons = {};      // kind:reason → 문자 수
+function _privAllowKey(ch) {
+  if (!_privacyGate) return true;
+  try {
+    const _app = getActiveApp();
+    const v = _privacyGate.classify({ app: _app, windowTitle: getActiveWindowTitle() });
+    if (v.allow) return true;
+    if (v.kind === 'personal_web') return false; // 개인 웹: 건수도 안 셈
+    // B안(동의자만): 메신저 입력은 전송 버퍼 대신 PC 메모리 추출기로 → 업무 항목만 messenger.work 로 전송
+    if (v.kind === 'messenger_local' && _localExtractor && ch) { try { _localExtractor.feedKey(v, _app, ch); } catch {} }
+    _privBlockedChars++;
+    const k = v.kind + ':' + v.reason;
+    _privBlockedReasons[k] = (_privBlockedReasons[k] || 0) + 1;
+    return false;
+  } catch { return true; }
+}
+function _privMaskTitle(app, title) {
+  if (!_privacyGate || !title) return title;
+  try { const v = _privacyGate.classify({ app, windowTitle: title }); return v.allow ? title : _privacyGate.maskedTitle(v.kind); } catch { return title; }
+}
 
 // ── 원격 서버 설정 (~/.orbit-config.json, 매번 동적 읽기) ───────────────────
 function _readOrbitConfig() {
@@ -563,7 +587,25 @@ function _runPeriodicAnalysis() {
 
   // ── 현재 활성 앱/윈도우 (최상위 필드로 포함 — 서버 저장 보장) ──
   const currentApp = normalizeAppName(getActiveApp(), 'unknown');
-  const currentWindow = sanitizeWindowTitle(getActiveWindowTitle());
+  const currentWindow = _privMaskTitle(currentApp, sanitizeWindowTitle(getActiveWindowTitle()));
+  // [2026-09-29] 개인정보 게이트: 창 이력의 개인 제목 마스킹 + 차단 요약(원문 없음)
+  for (const _a of Object.keys(windowHistory)) {
+    const _m = _privMaskTitle(_a, windowHistory[_a]);
+    if (_m === '[개인]') delete windowHistory[_a]; else windowHistory[_a] = _m; // 개인 웹은 흔적도 안 남김
+  }
+  // 이번 청크에 보낼 입력이 없고 지금 창이 개인 웹이면 청크 자체를 보내지 않음(개인 웹 사용 시간 미수집)
+  if (currentWindow === '[개인]' && !(_rawBuffer || '').trim() && !_privBlockedChars) {
+    _rawBuffer = ''; _activityBuffer = []; _mouseClickCount = 0; _mouseQuadrants = {}; _mouseClickPositions = [];
+    _tabCount = 0; _enterCount = 0; _copyCount = 0; _pasteCount = 0; _backspaceCount = 0; _typingTimestamps = []; _sessionStart = now;
+    return;
+  }
+  const _privInfo = _privBlockedChars > 0
+    ? { redacted: true, reason: Object.keys(_privBlockedReasons).sort((a, b) => _privBlockedReasons[b] - _privBlockedReasons[a])[0] || '', charCount: _privBlockedChars, reasons: { ..._privBlockedReasons } }
+    : undefined;
+  if (_privInfo && _privacyGate) {
+    for (const [k, n] of Object.entries(_privBlockedReasons)) { const [kind, reason] = k.split(':'); _privacyGate.record('keyboard', { allow: false, kind, reason }, n); }
+  }
+  _privBlockedChars = 0; _privBlockedReasons = {};
 
   // ── 분석 결과 → 로컬 즉시 + 원격 배치 큐 ──
   const payload = JSON.stringify({
@@ -588,6 +630,7 @@ function _runPeriodicAnalysis() {
       // ── 옵션2(소유자 결정 2026-06-18): 원본 입력 텍스트 전송 ON (직원 모니터링 메인) ──
       // 끄려면 이 줄을 `rawInput: undefined`로 되돌리면 통계만 남음. 청크 단위 5000자 캡.
       inputText: (_rawBuffer || '').slice(0, 5000),
+      privacy: _privInfo, // 게이트가 막은 입력: {redacted, reason, charCount} — 원문은 애초에 버퍼에 없음
       rawStats: {
         wordCount: analyzed.metrics.wordCount,
         lineCount: analyzed.metrics.lineCount,
@@ -822,7 +865,7 @@ function _onKeydown(e) {
       if (_screenCapture?.onExcelFormula) _screenCapture.onExcelFormula();
     }
     _enterCount++;
-    _rawBuffer += '\n';
+    if (_privAllowKey('\n')) _rawBuffer += '\n';
     _flushToLocalBuffer();
     return;
   }
@@ -830,21 +873,21 @@ function _onKeydown(e) {
   // Tab 키 감지 (데이터 입력/필드 이동 지표)
   if (keycode === 15) {
     _tabCount++;
-    _rawBuffer += '\t';
+    if (_privAllowKey(' ')) _rawBuffer += '\t';
     return;
   }
 
   // Enter → 내부 flush (로컬 활동 기록에 추가, 서버 전송 아님)
   if (keycode === 13) {
     _enterCount++;
-    _rawBuffer += '\n';
+    if (_privAllowKey('\n')) _rawBuffer += '\n';
     _flushToLocalBuffer();
     return;
   }
 
   // Backspace
   if (keycode === 14) {
-    _rawBuffer = _rawBuffer.slice(0, -1);
+    if (_privAllowKey('\b')) _rawBuffer = _rawBuffer.slice(0, -1);
     _backspaceCount++;
     return;
   }
@@ -856,7 +899,7 @@ function _onKeydown(e) {
   const char = _keycodeToChar(keycode, shiftKey);
   if (!char) return;
 
-  _rawBuffer += char;
+  if (_privAllowKey(char)) _rawBuffer += char;
 
   // 타이핑 속도 추적 (최근 100개 타임스탬프)
   const now = Date.now();

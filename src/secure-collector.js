@@ -206,6 +206,12 @@ function _captureScreen(status) {
       console.log('[secure-collector] 은행 창 감지 — 캡처 스킵');
       return null;
     }
+    // [2026-09-29] 송신 전 개인정보 게이트 — 개인방/개인웹/개인용무 중이면 캡처 안 함(건수만 기록)
+    try {
+      const _g = require('./privacy-gate');
+      const _pv = _g.classify({ app: status?.proc || '', windowTitle: status?.title || '' });
+      if (!_pv.allow) { _g.record('screen', _pv); return null; }
+    } catch {}
 
     fs.mkdirSync(CAPTURE_DIR, { recursive: true });
     const ts       = Date.now();

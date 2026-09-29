@@ -510,8 +510,10 @@ function _uploadCaptureToServer(filepath, trigger, context) {
         data: {
           trigger,
           triggerReason: _getTriggerDescription(trigger),
-          app: resolvedCtx.app,
-          windowTitle: resolvedCtx.title,
+          app: context.privacyKind ? (context.app || '') : resolvedCtx.app,
+          windowTitle: context.privacyKind ? context.windowTitle : resolvedCtx.title,
+          privacyKind: context.privacyKind || undefined,   // 게이트 차단 시에만 (원문 없음)
+          privacyReason: context.privacyReason || undefined,
           activityLevel: context.activityLevel || '',
           automationScore: context.automationScore || 0,
           cooltime: context.cooltime || _effectiveCooltime(context.app, trigger),
@@ -809,6 +811,24 @@ function capture(trigger = 'manual') {
   _updateActivityState();
 
   if (!_shouldCapture(trigger, _lastActiveApp)) return null;
+
+  // [2026-09-29] 송신 전 개인정보 게이트 — 개인방/개인웹/개인용무 중이면 PNG 저장·스풀·업로드 없이 메타(앱·종류·시각)만
+  let _pv = null;
+  try { _pv = require('./privacy-gate').classify({ app: _lastActiveApp, windowTitle: _lastWindowTitle }); } catch {}
+  if (_pv && !_pv.allow) {
+    if (_pv.kind === 'personal_web') { _lastCaptureTime = Date.now(); return null; } // 개인 웹: 이벤트 없음
+    try { require('./privacy-gate').record('screen', _pv); } catch {}
+    // B안(동의자만): 메신저 화면은 파일 없이 메모리 OCR → 업무 항목만 전송(local-work-extractor)
+    if (_pv.kind === 'messenger_local') { try { require('./local-work-extractor').ocrForeground(_pv, _lastActiveApp); } catch {} }
+    _sendCaptureMetadata('(privacy-blocked)', trigger, {
+      app: _pv.kind === 'paused' ? '' : _lastActiveApp,
+      windowTitle: require('./privacy-gate').maskedTitle(_pv.kind),
+      privacyKind: _pv.kind, privacyReason: _pv.reason,
+      activityLevel: _activityState?.label || '', capturePolicy: _getTriggerPolicy(trigger),
+    });
+    _lastCaptureTime = Date.now(); // 쿨타임 갱신(차단 화면 연속 재시도 방지)
+    return null;
+  }
 
   // noLocalSave 앱(카카오톡 등): PNG 저장 없이 메타데이터만 서버 전송 (개인 대화 내용 로컬 저장 방지)
   const _appKey = getAppProfileKey(_lastActiveApp);

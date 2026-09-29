@@ -115,6 +115,8 @@ function sanitizeWindowTitle(raw, fallback = '') {
   s = s.replace(/\?[^\s]*/g, '?[params]');
   s = s.replace(/\/Users\/[\w.-]+\//g, '/Users/[user]/');
   s = s.replace(/C:\\Users\\[\w.-]+\\/gi, 'C:\\Users\\[user]\\');
+  // [2026-09-29 개인정보 게이트] 개인 용도 창제목(검색·쇼핑·유튜브 등)은 '[개인]'으로 치환
+  try { s = require('./privacy-gate').redactTitleIfPersonal(s); } catch {}
   return s.slice(0, 200);
 }
 
