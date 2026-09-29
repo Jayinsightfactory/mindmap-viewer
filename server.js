@@ -4875,6 +4875,50 @@ app.get('/api/vision/work-records', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+
+// [2026-09-29 백필] 이미 해독된 화면 중 업무 흐름(workflow) 태깅이 없는 것을 저장 썸네일로 다시 해독해 기존 이벤트에 병합.
+// 새 이벤트를 만들지 않는다(중복 금지). bin/vision-backfill.js 가 사용. 관리자만.
+const _BACKFILL_KEYS = ['workflow', 'fields', 'activity', 'purpose', 'outputArtifact', 'nextLikely', 'actionDone', 'businessStage', 'changeFromPrev', 'automationHint', 'autoAreas', 'backfilledAt'];
+app.get('/api/vision/backfill-candidates', async (req, res) => {
+  try {
+    const code = await _visionThumbAdminOk(req);
+    if (code) return res.status(code).json({ error: code === 401 ? 'unauthorized' : 'admin only' });
+    const db = dbModule.getDb();
+    if (!db?.query) return res.status(503).json({ error: 'DB not available' });
+    const limit = Math.min(parseInt(req.query.limit) || 200, 2000);
+    const params = [];
+    let where = `type = 'screen.analyzed' AND data_json->'workflow' IS NULL AND data_json->>'thumbnail' IS NOT NULL AND data_json->>'backfilledAt' IS NULL`;
+    if (req.query.from) { params.push(String(req.query.from)); where += ` AND timestamp >= $${params.length}`; }
+    if (req.query.to) { params.push(String(req.query.to)); where += ` AND timestamp <= $${params.length}`; }
+    if (req.query.userId) { params.push(String(req.query.userId)); where += ` AND user_id = $${params.length}`; }
+    params.push(limit);
+    const { rows } = await db.query(
+      `SELECT id, user_id, timestamp, data_json->>'app' AS app, data_json->>'windowTitle' AS window_title, data_json->>'hostname' AS hostname
+         FROM events WHERE ${where} ORDER BY timestamp DESC LIMIT $${params.length}`, params);
+    // 사람별 규모(같은 조건, limit 무관) — 소요 추정용
+    const cp = params.slice(0, -1);
+    const { rows: cnt } = await db.query(`SELECT user_id, COUNT(*)::int AS n FROM events WHERE ${where} GROUP BY user_id ORDER BY n DESC`, cp);
+    const names = {}; try { (await db.query('SELECT id, name FROM orbit_auth_users')).rows.forEach((u) => { names[u.id] = u.name || ''; }); } catch {}
+    res.json({ ok: true, counts: cnt.map((c) => ({ ...c, userName: names[c.user_id] || '' })), candidates: rows.map((r) => ({ id: r.id, userId: r.user_id, userName: names[r.user_id] || '', timestamp: r.timestamp, app: r.app || '', windowTitle: r.window_title || '', hostname: r.hostname || '' })) });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+app.post('/api/vision/backfill-merge', async (req, res) => {
+  try {
+    const code = await _visionThumbAdminOk(req);
+    if (code) return res.status(code).json({ error: code === 401 ? 'unauthorized' : 'admin only' });
+    const db = dbModule.getDb();
+    if (!db?.query) return res.status(503).json({ error: 'DB not available' });
+    const id = String((req.body && req.body.id) || ''); const patchIn = (req.body && req.body.patch) || {};
+    if (!id || typeof patchIn !== 'object' || Array.isArray(patchIn)) return res.status(400).json({ error: 'id, patch required' });
+    const patch = {};
+    for (const k of _BACKFILL_KEYS) if (patchIn[k] !== undefined) patch[k] = patchIn[k];
+    if (!Object.keys(patch).length) return res.status(400).json({ error: 'no allowed keys' });
+    if (!patch.backfilledAt) patch.backfilledAt = new Date().toISOString();
+    const r = await db.query(`UPDATE events SET data_json = (data_json::jsonb || $2::jsonb) WHERE id = $1 AND type = 'screen.analyzed'`, [id, JSON.stringify(patch)]);
+    if (!r.rowCount) return res.status(404).json({ error: 'event not found' });
+    res.json({ ok: true, id, keys: Object.keys(patch) });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
 app.get('/api/vision/thumbnails', async (req, res) => {
   try {
     const code = await _visionThumbAdminOk(req);

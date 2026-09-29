@@ -459,7 +459,7 @@ function pickModel(ctx) {
 
 // ── Claude CLI 분석 (Max 구독 — API 키 불필요) ───────────────────────────────
 async function visionCli(base64, ctx, model) {
-  const tmpFile = path.join(TEMP_DIR, `cap-${Date.now()}.png`);
+  const tmpFile = path.join(TEMP_DIR, `cap-${Date.now()}.${String(base64).startsWith('/9j/') ? 'jpg' : 'png'}`); // 백필 썸네일=JPEG
   fs.writeFileSync(tmpFile, Buffer.from(base64, 'base64'));
   // CLI는 프롬프트에 파일 경로를 포함하면 Read 도구로 이미지 인식
   const prompt = `${tmpFile} ${_buildPrompt(ctx)}`;
@@ -1082,4 +1082,6 @@ async function main() {
   }
 }
 
-main().catch(e => { console.error(e.message); process.exit(1); });
+// [2026-09-29] require 시(bin/vision-backfill.js) 메인루프 미실행 — 직접 실행할 때만 동작(기존 동작 불변)
+if (require.main === module) main().catch(e => { console.error(e.message); process.exit(1); });
+module.exports = { visionAnalyze, visionCli, _buildPrompt, _parseResult, _isValidResult, _refreshWfCatalog, _workflowBlock, pickModel, ORBIT_SERVER, ORBIT_TOKEN, USE_CLI, CLAUDE_CLI };

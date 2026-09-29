@@ -1945,3 +1945,11 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 - 위험: 업무 도메인 밖 업무 사이트 URL 유실, 클립보드 앱 판정 부정확(CPU 최상위 프로세스), 메신저 개인방 입력은 PC 로컬 분석에서도 빠짐, 개인 웹 창의 keyboard 청크는 입력 없으면 통째로 미전송.
 - 롤백: 브랜치 미머지/revert. 긴급 시 정책만으로 완화 불가(차단은 코드 기본값) → revert 후 push.
 - 보안 발견(별건): /api/nenova/* GET 무인증(3e548e7로 main이 막음).
+
+## 2026-09-29 Vision 백필 — 9/17~9/28 해독분에 업무 흐름(workflow) 태깅 병합
+- 검색어: vision-backfill, backfill-merge, backfill-candidates, backfilledAt, workflow 태깅 소급, 썸네일 재해독, OrbitVisionBackfill
+- 요청: 이미 해독된 screen.analyzed 중 data_json.workflow 없는 것을 저장 썸네일(jpeg)로 새 프롬프트로 다시 해독 → **기존 이벤트에 병합**(새 이벤트 금지). push·배포·예약등록은 메인 승인 후.
+- 수정: server.js GET /api/vision/backfill-candidates(관리자, 사람별 counts 포함)·POST /api/vision/backfill-merge(허용 키만 data_json::jsonb || patch, backfilledAt 기록) / bin/vision-worker.js require 가드+export(동작 불변, jpeg 임시파일 확장자) / bin/vision-backfill.js(--max 60, --dry-run, --legacy, --no-quota는 dry-run 전용, 라운드로빈 설연주·강현우·조현욱 가중2, quota-guard, 연속3실패 중단) / setup/register-vision-backfill.ps1(ASCII, 미등록, 01:30 --max 150).
+- 규모(PG 직접 집계): 후보 1271건 — 김원빈360·설연주225·강명훈223·아드리아나180·임재용162·강현우48·조현욱34·김도준23·기타16. 9/23~27 해독 거의 없음(캡처 공백).
+- 검증: node --check 3파일 OK. dry-run --max 3 --legacy 실행 → 썸네일 수신·카탈로그 블록 주입 확인, 그러나 **Claude CLI OAuth 만료**("OAuth session expired")로 해독 0건 → workflow·fields.box 채움은 미검증. 첫 시도는 quota-guard(일일 5%p 캡) 정상 차단.
+- 다음에 볼 곳: CLI 재로그인(/login) 후 `node bin/vision-backfill.js --dry-run --max 3 --legacy --no-quota --to 2026-09-26T23:59:59`. 병합 후 workflow=null(업무무관)은 backfilledAt 으로 재대상 제외.
