@@ -101,7 +101,7 @@ function show(id) {
 
 // 토큰 없으면 입력 바 노출 (?token= 로 들어오면 저장하고 넘어간다)
 const qsTok = new URLSearchParams(location.search).get('token');
-if (qsTok) localStorage.setItem('orbit_token', qsTok);
+if (qsTok) { localStorage.setItem('orbit_token', qsTok); localStorage.setItem('orbitToken', qsTok); const _q = new URLSearchParams(location.search); _q.delete('token'); history.replaceState(null, '', location.pathname + (_q.toString() ? '?' + _q : '') + location.hash); }
 if (!localStorage.getItem('orbit_token')) document.getElementById('tokenbar').style.display = 'flex';
 document.getElementById('toksave').onclick = () => {
   const v = document.getElementById('tokin').value.trim();

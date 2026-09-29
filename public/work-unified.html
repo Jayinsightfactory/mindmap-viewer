@@ -67,6 +67,10 @@ ul.links{padding-left:18px;margin:6px 0}ul.links li{margin:3px 0}
 <main id="main"></main>
 </div>
 <script>
+// [2026-09-29] 네노바웹 /my-work 가 ?token= 으로 열람 토큰을 넘긴다 → 저장하고 주소에서 지운다
+{ const q = new URLSearchParams(location.search), t = q.get('token'); if (t) { localStorage.setItem('orbit_token', t); localStorage.setItem('orbitToken', t); q.delete('token'); history.replaceState(null, '', location.pathname + (q.toString() ? '?' + q : '') + location.hash); } }
+</script>
+<script>
 (async function(){
 const tok = localStorage.getItem('orbit_token') || localStorage.getItem('orbitToken') || '';
 const main0 = document.getElementById('main');

@@ -4804,6 +4804,23 @@ async function _visionThumbAdminOk(req) {
   return 403;
 }
 
+// [2026-09-29] 네노바웹 /my-work 용 12시간 열람 토큰 — nenovaSS3 로그인만으로 Orbit 화면(통합본 등)이 보이게.
+// 관리자 토큰으로만 발급(네노바웹 서버가 ORBIT_OWNER_TOKEN 으로 호출, 약 11시간 캐시 → 하루 2~3개). PG 에만 저장(expires_at).
+app.post('/api/auth/viewer-token', async (req, res) => {
+  try {
+    const code = await _visionThumbAdminOk(req);
+    if (code) return res.status(code).json({ error: code === 401 ? 'unauthorized' : 'admin only' });
+    const raw = ((req.headers.authorization || '').replace(/^Bearers+/i, '').trim());
+    const auth = require('./src/auth');
+    let u = null; try { u = (await auth.verifyTokenAsync(raw)) || verifyToken(raw); } catch {}
+    if (!u || !u.id) return res.status(400).json({ error: 'user token required' });
+    const token = 'orbit_' + require('crypto').randomBytes(24).toString('hex');
+    const expiresAt = new Date(Date.now() + 12 * 3600 * 1000).toISOString();
+    await auth.pgBackupToken(token, u.id, expiresAt);
+    res.json({ ok: true, token, expiresAt });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // 캡처 썸네일 이미지 제공 (screen.analyzed 이벤트의 thumbnail 필드)
 app.get('/api/vision/thumbnail/:eventId', async (req, res) => {
   try {
