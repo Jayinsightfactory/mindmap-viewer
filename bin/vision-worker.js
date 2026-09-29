@@ -307,6 +307,8 @@ function _buildPrompt(ctx) {
   if (ctx.prevSummary) contextBlock += `\n[직전 화면] 방금 전 이 사용자가 보던 화면: ${ctx.prevSummary}\n지금 화면이 그로부터 무엇이 바뀌었는지 changeFromPrev에 적어라.\n`;
   if (ctx.typedContext) contextBlock += `\n[이 무렵 타이핑한 내용] ${ctx.typedContext}\n`;
   contextBlock += _workflowBlock(ctx.userId);
+  // [2026-09-29 말투] 직원이 읽는 문장은 네노바 업무 말투로(nenova-work-features/STYLE.md 요약)
+  contextBlock += '\n[문장 쓰는 법] activity·purpose·outputArtifact·nextLikely·changeFromPrev·workflow.decision·automationHint·autoAreas 는 직원이 동료에게 말하듯 쉬운 한국어로, 한 문장 60자 안쪽. "누가 무엇을 한다" 순서로 쓰고 명사 나열("~ 및 ~ 수행", "검토 및 확인 중")은 쓰지 마라. 개발 용어(파싱·트리거·산출물·좌표·필드·테이블·API·OCR·Vision·세션·프로세스)는 금지. 회사 말(차수·분배·출고·견적서·거래처·농장·입고·송금·불량·단/박스/송이)을 쓰고, 프로그램은 전산(nenova)·네노바웹·카톡·엑셀로 불러라.\n';
   return `스크린샷을 정밀 분석해주세요. 호스트: ${ctx.hostname}${clickBlock}${contextBlock}
 다음 JSON 형식으로만 응답 (마크다운 없이 순수 JSON):
 {
