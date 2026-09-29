@@ -54,6 +54,23 @@ function _compileRegexList(list) {
   for (const s of (Array.isArray(list) ? list : [])) { try { if (typeof s === 'string' && s) out.push(new RegExp(s, 'i')); } catch {} }
   return out;
 }
+// [2026-09-29] 업무방 판정 = 정규화한 방 이름 완전일치(부분일치 금지 — '화훼'가 '화훼 관리 프로그램'을 통과시키던 구멍).
+// 정규화: NFKC·소문자·공백 1칸·양끝 장식(●★☆*)·카톡 제목 꼬리(" YYYY-MM-DD", "님의 메시지", "'s message", " - 카카오톡", 말줄임, 인원수 "(12)"/" 12") 제거.
+function normalizeRoomName(s) {
+  let t = String(s == null ? '' : s).normalize('NFKC').toLowerCase().replace(/\s+/g, ' ').trim();
+  for (let i = 0; i < 4; i++) {
+    const before = t;
+    t = t.replace(/\s*-\s*(카카오톡|kakaotalk)$/, '')
+      .replace(/\s+\d{4}-\d{2}-\d{2}$/, '')
+      .replace(/님의 메시지$/, '').replace(/'s message$/, '')
+      .replace(/(\.{2,}|…)+$/, '')
+      .replace(/\s*\(\d{1,4}\)$/, '').replace(/\s+\d{1,4}$/, '')
+      .replace(/^[●★☆*\s]+|[●★☆*\s]+$/g, '')
+      .trim();
+    if (t === before) break;
+  }
+  return t;
+}
 function _compile(raw) {
   const p = Object.assign({}, DEFAULT_POLICY, raw || {});
   const me = _orbitConfig();
@@ -70,7 +87,7 @@ function _compile(raw) {
     version: p.version || '',
     messengerApps: _compileRegexList(p.messengerApps),
     messengerTitles: _compileRegexList(p.messengerTitlePatterns),
-    workRooms: (p.workRooms || []).filter(s => typeof s === 'string' && s).map(s => s.toLowerCase()),
+    workRooms: (p.workRooms || []).filter(s => typeof s === 'string' && s).map(normalizeRoomName),
     workDomains: (p.workDomains || []).filter(s => typeof s === 'string' && s).map(s => s.toLowerCase()),
     personalTitles: (p.personalTitlePatterns || []).filter(s => typeof s === 'string' && s).map(s => new RegExp(_escRe(s), 'i')),
     myWorkMessengers,
@@ -173,7 +190,8 @@ function classify(input = {}) {
     if (pol.myWorkMessengers.length && pol.myWorkMessengers.some(m => appL.includes(m) || t.includes(m))) {
       return { allow: true, kind: 'messenger_work', reason: 'work_messenger_user' };
     }
-    const ri = t ? pol.workRooms.findIndex(r => t.includes(r)) : -1;
+    const nt = title ? normalizeRoomName(title) : '';
+    const ri = nt ? pol.workRooms.indexOf(nt) : -1;
     if (ri >= 0) return { allow: true, kind: 'messenger_work', reason: 'work_room', roomName: pol.workRoomsOrig[ri] || null, roomKind: 'group' };
     // B안(로컬 처리): 정책 enabled + 이 PC 사용자가 동의 명단에 있을 때만. 원문은 PC 메모리에서 업무 항목만 추출(local-work-extractor)
     if (pol.localExtract) { _noteKindTime('messenger_local'); return { allow: false, kind: 'messenger_local', reason: 'local_extract', local: true, roomName: null, roomKind: 'unknown' }; }
@@ -304,4 +322,4 @@ if (_dailyTimer.unref) _dailyTimer.unref();
 function _setPauseForTest(ms) { _pauseCache = { until: ms || 0, at: Date.now() + 1e9 }; }
 function _setPolicyForTest(raw) { _policy = _compile(raw || DEFAULT_POLICY); _policyFetchedAt = Date.now(); }
 
-module.exports = { classify, record, redactTitleIfPersonal, maskedTitle, getPauseUntil, setPauseUntil, DEFAULT_POLICY, PERSONAL_TITLE_MARK, _setPolicyForTest, _setPauseForTest };
+module.exports = { classify, normalizeRoomName, record, redactTitleIfPersonal, maskedTitle, getPauseUntil, setPauseUntil, DEFAULT_POLICY, PERSONAL_TITLE_MARK, _setPolicyForTest, _setPauseForTest };

@@ -180,3 +180,9 @@ TOK  = 마스터 분석토큰 (orbit_ 프리픽스, /api/learning·admin 조회�
 설치 때 이름 미입력 → userName=userId(무명). 데이터 유지한 채 이름만:
 - `POST /api/admin/update-user-name {userId, name}` (admin 토큰=dlaww584 config토큰; PG+SQLite 업데이트). 재설치 불필요.
 - 식별: daemon-health/logs의 userName, 또는 online 여부(꺼진 PC=그 사람). 화면/타이핑 내용으로도 식별 가능(단 idle/크래시루프면 내용 없음).
+
+## 16. 카톡 업무방 게이트 점검 — "이 방 왜 안 모이나" (2026-09-29, 정책 v2026-09-29.5)
+- 판정: `src/privacy-gate.js` classify → **정규화한 방 이름 완전일치**(부분일치 아님). 정규화 = NFKC·소문자·공백·양끝 ●★*·꼬리(` YYYY-MM-DD`·`님의 메시지`·`'s message`·말줄임·인원수) 제거. 정책=`config/privacy-policy.json` workRooms(**실제 창 제목 전체**를 적을 것, 키워드 금지).
+- 실제 창 제목 확인: `GET /api/learning/logs?type=screen.capture&from=YYYY-MM-DD&to=...&limit=2000`(+`keyboard.chunk`)에서 app=kakaotalk 인 windowTitle 집계.
+- ⚠️ `/api/kakao/messages`(kakao_messages)는 **nenovakakao 브릿지 9개 방만** 들어온다(chatroom 그 외는 Vision 앱 라벨). 거래처방·스페인어방 0건 = 정상(수집기 한계). 그 방 내용은 데몬 screen.capture→Vision 경로로만 옴.
+- 정책 적용 확인: `GET /api/daemon/privacy-policy` 의 version.

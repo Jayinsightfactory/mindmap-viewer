@@ -1953,3 +1953,11 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 - 규모(PG 직접 집계): 후보 1271건 — 김원빈360·설연주225·강명훈223·아드리아나180·임재용162·강현우48·조현욱34·김도준23·기타16. 9/23~27 해독 거의 없음(캡처 공백).
 - 검증: node --check 3파일 OK. dry-run --max 3 --legacy 실행 → 썸네일 수신·카탈로그 블록 주입 확인, 그러나 **Claude CLI OAuth 만료**("OAuth session expired")로 해독 0건 → workflow·fields.box 채움은 미검증. 첫 시도는 quota-guard(일일 5%p 캡) 정상 차단.
 - 다음에 볼 곳: CLI 재로그인(/login) 후 `node bin/vision-backfill.js --dry-run --max 3 --legacy --no-quota --to 2026-09-26T23:59:59`. 병합 후 workflow=null(업무무관)은 backfilledAt 으로 재대상 제외.
+
+## 2026-09-29 개인정보 게이트 업무방 완전일치 전환 (정책 v2026-09-29.5)
+검색어: privacy-gate workRooms 완전일치 normalizeRoomName 부분일치 화훼 관리 프로그램 업무방 0건 kakao_messages 브릿지 9개방
+- 문제: workRooms 부분일치라 카톡앱으로 잡힌 '화훼 관리 프로그램 v1.0.15'(ERP)·'주광 발주 - Excel'·직원 1:1('네노바 현장팀 규하님')이 업무방으로 통과. 정책 53개 중 다수가 키워드('화훼','원예','주광','라움').
+- 수정: normalizeRoomName(NFKC·소문자·●★*·날짜/님의 메시지/말줄임/인원수 꼬리 제거) 후 완전일치. 서버는 게이트 미사용 — 데몬(screen-capture messenger_work 사진보존·secure-collector·local-work-extractor)이 전부 classify 한 곳을 씀.
+- 정책: 53→83개(키워드를 30일 실측 창 제목 전체로 교체). 실측 창제목 498개 중 통과 129→84, 탈락 45=ERP/엑셀 제목·Vision 앱라벨·직원 1:1·알림팝업(의도). 기존 53개 항목 전부 최소 1개 실제 제목이 여전히 통과. '네노바&선율'(실제 제목, 정책엔 '네노바&선율방')은 신규 통과.
+- 0건 38(+)개 원인: 이름 불일치 아님 — kakao_messages 는 nenovakakao 브릿지 9개 방만 적재(수집기 한계). 44개 비브릿지 항목 모두 직원 PC 창 제목에서 실측됨(설연주·김원영·정재훈·조현욱·박성수·아드리아나). 스페인어방도 카톡(아드리아나 PC), WhatsApp/웍스 아님.
+- 기각: kakao_messages chatroom 으로 실제 방 이름 판단 → 그 외 값은 Vision 앱 이름이라 불가.
