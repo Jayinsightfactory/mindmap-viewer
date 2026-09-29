@@ -1,5 +1,5 @@
 {
-  "version": "2026-09-29.3",
+  "version": "2026-09-29.4",
   "_comment": "개인정보 송신 전 차단 정책(사장님 결정 2026-09-29). 데몬이 GET /api/daemon/privacy-policy 로 1시간마다 받아 ~/.orbit/privacy-policy.json 에 캐시. 패턴은 대소문자 무시 정규식 문자열.",
   "messengerApps": [
     "^kakaotalk$",
@@ -75,7 +75,12 @@
     "울산동산",
     "아산로뎀",
     "레바논 창동",
-    "(Manager aduanero)"
+    "(Manager aduanero)",
+    "Papucho",
+    "Nuria",
+    "네노바 현장",
+    "김원배 대표",
+    "주님방"
   ],
   "_workRoomsNote": "2026-09-29 사장님 지시: 직원 카톡 창 제목(8/10~9/29) 실데이터에서 업무방(사내 그룹·거래처·공급처·창고·통관) 추가. 개인방(가족·친구·동호회)과 직원 간 1:1 은 제외(1:1 은 로컬 추출 경로).",
   "workMessengerUsers": {},
@@ -158,13 +163,8 @@
   "candidates": {
     "_comment": "사장님 확인 전 제안 목록 — 미적용. 확정 workRooms 는 9개만.",
     "workRooms": [
-      "네노바 현장",
-      "Papucho",
-      "Nuria",
       "소니정",
-      "문성진",
-      "김원배 대표",
-      "주님방"
+      "문성진"
     ],
     "workMessengerUsers": {
       "MNMRVD11EDCCF6E7CE": [
