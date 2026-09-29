@@ -1,5 +1,5 @@
 {
-  "version": "2026-09-29.1",
+  "version": "2026-09-29.2",
   "_comment": "개인정보 송신 전 차단 정책(사장님 결정 2026-09-29). 데몬이 GET /api/daemon/privacy-policy 로 1시간마다 받아 ~/.orbit/privacy-policy.json 에 캐시. 패턴은 대소문자 무시 정규식 문자열.",
   "messengerApps": [
     "^kakaotalk$",
@@ -42,8 +42,20 @@
   "workMessengerUsers": {},
   "_workMessengerUsersNote": "{ \"<userId 또는 hostname>\": [\"wechat\"] } — 지정 PC에서 그 메신저 전체를 업무로 간주. 사장님 확정(2026-09-29): 비움 — 위챗은 localExtraction(B안)으로 처리.",
   "localExtraction": {
-    "enabled": false,
-    "consentedUsers": []
+    "enabled": true,
+    "consentedUsers": [
+      "MNIAFICB3DC88DCB34",
+      "MNMRVD11EDCCF6E7CE",
+      "MN8232D542A97C0862",
+      "MNMSAQJD78E544A631",
+      "MNH03H73690BB2CD82",
+      "MNMRX6SR07F5FF7C0C",
+      "MN506C7A6A710A046E",
+      "MNF64400D6CD233E3A",
+      "MN9B6750A0A37D561D",
+      "MN2F3C3CEDBE96B26C"
+    ],
+    "_note": "2026-09-29 사장님 지시: 동의서 회수 전이지만 전원 동의 상태로 간주하고 적용. 실제 동의서 회수 후 미동의자는 이 목록에서 뺄 것."
   },
   "_localExtractionNote": "B안(로컬 처리). enabled=true 이고 이 PC의 userId(또는 hostname)가 consentedUsers 에 있을 때만 1:1·개인방·위챗 텍스트를 PC 메모리에서 추출해 업무 항목만 messenger.work 로 전송(원문·상대 이름·전화번호 없음). 그 외엔 차단(사용 시간만). 직원 서면 동의 후 명단 추가.",
   "workDomains": [
