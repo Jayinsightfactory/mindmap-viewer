@@ -1942,7 +1942,7 @@ app.get('/api/learning/logs', async (req, res) => {
     { const code = await _visionThumbAdminOk(req);
       if (code) {
         const raw = ((req.headers.authorization || '').replace(/^Bearers+/i, '').trim()) || String(req.query.token || '').trim();
-        let me = null; try { me = raw ? await verifyToken(raw) : null; } catch {}
+        let me = null; try { me = raw ? (await require('./src/auth').verifyTokenAsync(raw)) || verifyToken(raw) : null; } catch {}
         if (!me || !req.query.userId || req.query.userId !== me.id) return res.status(code).json({ error: code === 401 ? 'unauthorized' : 'admin only' });
       } }
     const pool = dbModule.getDb();
@@ -8741,6 +8741,8 @@ app.use('/api/pad', require('./routes/pad-connector')({ getDb: dbModule.getDb })
 app.use('/api/nenova/ai', require('./routes/nenova-ai'));
 
 // ─── nenova SQL Server 직접 연결 (전산 데이터 실시간 조회 + 동기화) ──────────
+// [2026-09-29 보안] 전산 거래처·농장·품목(대표자명·사업자번호 포함) 무인증 노출 차단 — 로그인 토큰 필수
+app.use('/api/nenova', async (req, res, next) => { if (req.method !== 'GET') return next(); const raw = ((req.headers.authorization || '').replace(/^Bearers+/i, '').trim()) || String(req.query.token || '').trim(); if (!raw) return res.status(401).json({ error: 'unauthorized' }); if (env.isMasterToken(raw) || env.isAdminToken(raw)) return next(); let u = null; try { u = (await require('./src/auth').verifyTokenAsync(raw)) || verifyToken(raw); } catch {} if (!u) return res.status(401).json({ error: 'unauthorized' }); next(); });
 app.use('/api/nenova', require('./routes/nenova-db')({ getDb: dbModule.getDb }));
 
 // ─── nenova 이슈 태스킹 (입고딜레이/주문변경/불량 자동 생성 + KakaoWork 알림) ──
