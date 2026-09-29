@@ -1938,6 +1938,13 @@ app.post('/api/admin/migrate-ontology-workspace', async (req, res) => {
 // GET /api/learning/logs — 원시 이벤트 로그 조회 (관리자 대시보드용)
 app.get('/api/learning/logs', async (req, res) => {
   try {
+    // [2026-09-29 보안] 직원 키보드·화면 원문 → 관리자만, 또는 자기 userId 만(무인증 200 노출 차단)
+    { const code = await _visionThumbAdminOk(req);
+      if (code) {
+        const raw = ((req.headers.authorization || '').replace(/^Bearers+/i, '').trim()) || String(req.query.token || '').trim();
+        let me = null; try { me = raw ? await verifyToken(raw) : null; } catch {}
+        if (!me || !req.query.userId || req.query.userId !== me.id) return res.status(code).json({ error: code === 401 ? 'unauthorized' : 'admin only' });
+      } }
     const pool = dbModule.getDb();
     const limit = Math.min(parseInt(req.query.limit) || 200, 2000);
     const userId = req.query.userId || null;
@@ -8723,6 +8730,8 @@ app.use('/api/think', require('./routes/think-engine')({ getDb: dbModule.getDb, 
 app.use('/api/mining', require('./routes/process-mining')({ getDb: dbModule.getDb, reportSheet }));
 
 // ─── 카카오톡 복호화 + 메시지 분석 ──────────────────────────────────────────
+// [2026-09-29 보안] 카톡 원문 조회는 관리자 토큰만(워커는 owner 토큰 사용). /import 등 쓰기는 라우터 자체 토큰 검사 유지
+app.get('/api/kakao/messages', async (req, res, next) => { const code = await _visionThumbAdminOk(req); if (code) return res.status(code).json({ error: code === 401 ? 'unauthorized' : 'admin only' }); next(); });
 app.use('/api/kakao', require('./routes/kakao-decrypt')({ getDb: dbModule.getDb }));
 
 // ─── PAD 커넥터 (nenova ERP 자동화) ─────────────────────────────────────────
