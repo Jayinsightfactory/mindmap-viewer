@@ -1933,3 +1933,15 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 - 라이브 실측: 무인증 목록 401 / 무인증 이미지 401 / 잘못된 토큰 403 / Bearer 마스터 200 image/jpeg / ?token= 마스터 200.
 - 미검증: 브라우저에서 관리자 로그인 후 화면 썸네일 실제 표시(토큰 입력 불가로 미확인).
 - 주의(결과): 직원(비관리자)이 work-detail 등에서 보던 썸네일은 이제 403 → "이미지 없음" 표시. 의도된 관리자 전용화. 본인 화면 허용이 필요하면 userId=본인 조건 추가 검토.
+
+## 2026-09-29 — 개인정보 송신 전 게이트 + 수집 내역 공개 (feat/privacy-gate, 미배포)
+검색어: privacy-gate 개인정보 차단 messenger_local 로컬추출 localExtraction consentedUsers workRooms 업무방 personal_web 개인용무 personal-pause-until my-privacy orbit_access_audit 열람기록 messenger.work
+- 사장님 확정: ①카톡 업무방 9개(수입방·현장방·영업방·현장 추가취소방·수입불량방·빌번호방·네노바&선율방·견적방·스케줄방)만 내용 수집 ②1:1·개인방·위챗=차단(사용시간만), 단 동의자는 B안(PC 메모리에서 업무항목만 추출·messenger.work 전송, 원문·이름·전화 금지) — config/privacy-policy.json localExtraction {enabled:false, consentedUsers:[]} 기본 OFF ③개인 웹=시간·건수·도메인 전부 미수집(로컬 카운터도 없음) ④개인용무 일시정지 ⑤관리자 열람 기록 공개 ⑥기존 데이터 삭제 기능 만들지 말 것.
+- 실측: 위챗(김원빈 MNMRVD11EDCCF6E7CE) 창제목은 항상 'WeChat'/'Weixin' → 방 이름 판별 불가(방 이름은 screen.analyzed Vision 결과에만). workMessengerUsers 비움. keyboard.chunk 에서 app 필드에 다른 창 제목이 섞이는 현상 있어 messengerTitlePatterns(제목만으로 메신저 판정) 추가.
+- 업무방 후보: kakao_messages 채팅방 999개 중 실제 방 이름은 위 9개(발신자 14~29명)뿐, 나머지는 Vision이 만든 앱 이름. candidates(발주/출고/재고/정산/송금/네노바/nenova)는 파일에만, 미적용.
+- 파일: src/privacy-gate.js(신규) · src/local-work-extractor.js(신규, 사전+정규식) · setup/ocr-screen-memory.ps1(신규, 파일 없는 메모리 OCR) · config/privacy-policy.json · config/work-dictionary.json · routes/privacy.js(정책·사전·/api/privacy/me·pause·열람기록 미들웨어) · public/my-privacy.html · 연결: keyboard-watcher·screen-capture·secure-collector·chrome-url-watcher·clipboard-watcher·data-quality(sanitizeWindowTitle→'[개인]')·personal-agent · daemon/tray.ps1(메뉴 2개 + PS5.1 호환 ?. 제거, BOM) · PRIVACY_POLICY.md · tests/privacy-gate.check.js.
+- 검증: node tests/privacy-gate.check.js → ALL PASS(classify 21·동의 게이트 7·메신저 문장 10×2·processText 3·QWERTY 1). 로컬 서버(NODE_PATH, DB 없음) policy 200 / me·pause·work-dictionary 무토큰 401 / my-privacy.html 200.
+- 미검증: 실 PC에서 트레이(tray.ps1은 설치 경로에 없음 — 페이지 버튼이 실사용 경로), 메모리 OCR 실제 인식, PG 테이블 생성·열람기록 insert(로컬 DB 없음).
+- 위험: 업무 도메인 밖 업무 사이트 URL 유실, 클립보드 앱 판정 부정확(CPU 최상위 프로세스), 메신저 개인방 입력은 PC 로컬 분석에서도 빠짐, 개인 웹 창의 keyboard 청크는 입력 없으면 통째로 미전송.
+- 롤백: 브랜치 미머지/revert. 긴급 시 정책만으로 완화 불가(차단은 코드 기본값) → revert 후 push.
+- 보안 발견(별건): /api/nenova/* GET 무인증(3e548e7로 main이 막음).
