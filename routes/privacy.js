@@ -18,6 +18,7 @@ const POLICY_PATH = path.join(__dirname, '..', 'config', 'privacy-policy.json');
 const AUDITED = [
   { re: /^\/api\/learning\/logs\/?$/, name: '/api/learning/logs' },
   { re: /^\/api\/vision\/thumbnails\/?$/, name: '/api/vision/thumbnails' },
+  { re: /^\/api\/vision\/work-records\/?$/, name: '/api/vision/work-records' },
   { re: /^\/api\/vision\/thumbnail\/([^/]+)\/?$/, name: '/api/vision/thumbnail/:id', eventParam: 1 },
   { re: /^\/api\/kakao\/messages\/?$/, name: '/api/kakao/messages' },
   { re: /^\/api\/flow\/work-unified\/?$/, name: '/api/flow/work-unified' },

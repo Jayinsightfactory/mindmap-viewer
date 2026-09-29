@@ -4844,6 +4844,35 @@ app.get('/api/vision/thumbnail/:eventId', async (req, res) => {
 });
 
 // 최근 캡처 썸네일 목록 — ?userId=&hours=&limit= 필터. [골] 화면단위 업무 타임라인용.
+// [2026-09-29] 업무별 실제 작업 기록 — 해독 화면 중 workflow.name(또는 businessStage)이 맞는 것의 세부(화면·한 일·입력 칸·누른 곳·판단·건).
+// 네노바웹 /my-work 업무 파이프라인 상세용. ?userId=&wf=<업무명>|&stage=<단계>&hours=(최대 720)&limit=(최대 80). 관리자만.
+app.get('/api/vision/work-records', async (req, res) => {
+  try {
+    const code = await _visionThumbAdminOk(req);
+    if (code) return res.status(code).json({ error: code === 401 ? 'unauthorized' : 'admin only' });
+    const db = dbModule.getDb();
+    if (!db?.query) return res.status(503).json({ error: 'DB not available' });
+    const userId = String(req.query.userId || ''); if (!userId) return res.status(400).json({ error: 'userId required' });
+    const hours = Math.min(parseInt(req.query.hours) || 336, 720), limit = Math.min(parseInt(req.query.limit) || 40, 80);
+    const params = [userId, new Date(Date.now() - hours * 3600 * 1000).toISOString()];
+    let where = `type = 'screen.analyzed' AND user_id = $1 AND timestamp >= $2`;
+    if (req.query.wf) { params.push(String(req.query.wf)); where += ` AND data_json->'workflow'->>'name' = $${params.length}`; }
+    else if (req.query.stage) { params.push(String(req.query.stage)); where += ` AND data_json->>'businessStage' LIKE $${params.length} || '%'`; }
+    params.push(limit);
+    const { rows } = await db.query(
+      `SELECT id, timestamp, data_json->>'app' AS app, data_json->>'screen' AS screen, data_json->>'activity' AS activity,
+              data_json->>'actionDone' AS done, data_json->>'purpose' AS purpose, data_json->>'changeFromPrev' AS change,
+              data_json->>'nextLikely' AS next, data_json->'workflow' AS workflow, data_json->>'businessStage' AS stage,
+              data_json->'fields' AS fields, data_json->'entities' AS entities, (data_json->>'thumbnail') IS NOT NULL AS thumb
+         FROM events WHERE ${where} ORDER BY timestamp DESC LIMIT $${params.length}`, params);
+    res.json({ ok: true, records: rows.map((r) => ({
+      id: r.id, timestamp: r.timestamp, app: r.app, screen: r.screen, activity: r.activity, done: r.done, purpose: r.purpose, change: r.change, next: r.next,
+      workflow: r.workflow || null, stage: r.stage, thumb: !!r.thumb, entities: r.entities || null,
+      fields: (Array.isArray(r.fields) ? r.fields : []).slice(0, 12).map((f) => ({ name: f.name, type: f.type, value: f.currentValue ?? null, click: Array.isArray(f.clickXY) || !!f.clickXY, human: !!f.humanRequired, why: f.humanReason || null })),
+    })) });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 app.get('/api/vision/thumbnails', async (req, res) => {
   try {
     const code = await _visionThumbAdminOk(req);
