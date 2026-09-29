@@ -344,6 +344,8 @@ function _buildPrompt(ctx) {
       "currentValue": "현재 입력된 값 (보이는 경우)",
       "position": "화면 위치 (상단/중앙/하단 + 좌/우)",
       "clickXY": "[x,y] — 위 실제 클릭 좌표 중 이 필드에 떨어진 것(있을 때만, pyautogui 실행 좌표로 씀)",
+      "box": "[x0,y0,x1,y1] — 이 이미지에서 이 필드가 차지하는 영역, 이미지 전체를 가로·세로 0~1000 으로 본 정수 좌표(화면에 보일 때만)",
+      "order": "사용자가 이 화면에서 이 필드를 다룬 순서 1,2,3…(클릭 좌표 순서·입력 값·직전 화면으로 판단, 다루지 않은 필드는 생략)",
       "dataSource": "kakao|manual|erp|clipboard|unknown",
       "humanRequired": true/false,
       "humanReason": "사람 판단 필요한 이유 (humanRequired가 true일 때만)"

@@ -4868,7 +4868,9 @@ app.get('/api/vision/work-records', async (req, res) => {
     res.json({ ok: true, records: rows.map((r) => ({
       id: r.id, timestamp: r.timestamp, app: r.app, screen: r.screen, activity: r.activity, done: r.done, purpose: r.purpose, change: r.change, next: r.next,
       workflow: r.workflow || null, stage: r.stage, thumb: !!r.thumb, entities: r.entities || null,
-      fields: (Array.isArray(r.fields) ? r.fields : []).slice(0, 12).map((f) => ({ name: f.name, type: f.type, value: f.currentValue ?? null, click: Array.isArray(f.clickXY) || !!f.clickXY, human: !!f.humanRequired, why: f.humanReason || null })),
+      fields: (Array.isArray(r.fields) ? r.fields : []).slice(0, 12).map((f) => ({ name: f.name, type: f.type, value: f.currentValue ?? null, click: Array.isArray(f.clickXY) || !!f.clickXY, human: !!f.humanRequired, why: f.humanReason || null,
+        box: Array.isArray(f.box) && f.box.length === 4 && f.box.every((v) => Number.isFinite(+v)) ? f.box.map((v) => Math.max(0, Math.min(1000, Math.round(+v)))) : null,
+        order: Number.isFinite(+f.order) && +f.order > 0 ? +f.order : null })),
     })) });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
