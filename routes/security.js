@@ -26,7 +26,8 @@ const router  = express.Router();
  * @returns {express.Router}
  */
 function createRouter(deps) {
-  const { db, shadowAiDetector, auditLog, getEventsForUser, resolveUserId } = deps;
+  const { db, shadowAiDetector, auditLog, getEventsForUser, resolveUserId, optionalAuth, isAdminReq } = deps;
+  const auth = optionalAuth || ((req, res, next) => next());
 
   const { getAllEvents, getEventsByChannel } = db;
 
@@ -49,12 +50,18 @@ function createRouter(deps) {
    * @query {string} [hours]   - 탐색 시간 윈도우 (기본값: 168 = 7일)
    * @returns {{ findings: ShadowAiFinding[], checkedEvents: number, windowHours: number }}
    */
-  router.get('/shadow-ai', async (req, res) => {
+  // [2026-10-01] 비로그인('local')이면 전 직원 이벤트가 그대로 나가던 노출 차단.
+  // 관리자=전체, 로그인 사용자=본인 이벤트만, 그 외 401. 채널 필터도 본인 범위 안에서만.
+  router.get('/shadow-ai', auth, async (req, res) => {
     const { channel, hours } = req.query;
 
-    const userEvents = await _getUserEvents(req);
+    const admin = isAdminReq ? await isAdminReq(req).catch(() => false) : false;
+    const uid = resolveUserId ? resolveUserId(req) : 'local';
+    if (!admin && (!uid || uid === 'local')) return res.status(401).json({ error: 'login required' });
+
+    const userEvents = admin ? await getAllEvents() : (getEventsForUser ? await getEventsForUser(uid) : []);
     let events = channel
-      ? (getEventsByChannel ? getEventsByChannel(channel) : userEvents.filter(e => e.channelId === channel))
+      ? ((admin && getEventsByChannel) ? getEventsByChannel(channel) : userEvents.filter(e => e.channelId === channel))
       : userEvents;
 
     const h      = parseInt(hours || '168');
