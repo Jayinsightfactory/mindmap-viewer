@@ -820,6 +820,7 @@ function capture(trigger = 'manual') {
   let _pv = null;
   try { _pv = require('./privacy-gate').classify({ app: _lastActiveApp, windowTitle: _lastWindowTitle }); } catch {}
   if (_pv && !_pv.allow) {
+    try { _fbStats.lastPrivacy = _pv.kind + '@' + trigger; } catch {}
     if (_pv.kind === 'personal_web') { _lastCaptureTime = Date.now(); return null; } // 개인 웹: 이벤트 없음
     try { require('./privacy-gate').record('screen', _pv); } catch {}
     // B안(동의자만): 메신저 화면은 파일 없이 메모리 OCR → 업무 항목만 전송(local-work-extractor)
@@ -1330,11 +1331,12 @@ function _fallbackTick(nowArg) {
   _refreshIdleMs(); // 비동기 — 다음 틱에 반영
   let fg = null;
   if (_fbFg && (now - _fbFg.at) < 2 * FALLBACK.tickMs) fg = _fbFg; // 실제 포그라운드 우선
-  else { try { fg = _fgProvider(); } catch { return null; } }
+  else { try { fg = _fgProvider(); } catch { fg = null; } }
   const app = normalizeAppName((fg && fg.app) || '', '');
   const title = sanitizeWindowTitle((fg && fg.title) || '');
-  if (!app) return null;
-  if (_isBankingWindow(app, title)) { _fbStats.bankSkip++; return 'bank-skip'; }
+  _fbStats.lastApp = app; _fbStats.fgSource = (fg === _fbFg) ? 'ps' : 'cache';
+  if (!app) { _fbStats.last = 'no-app'; return null; }
+  if (_isBankingWindow(app, title)) { _fbStats.bankSkip++; _fbStats.last = 'bank-skip'; _fbStats.lastApp = '(bank)'; return 'bank-skip'; }
 
   // 실제 입력 신호(GetLastInputInfo)가 있으면 활동상태에 반영 (훅 없이도 idle/active 구분)
   if (_fbIdleMs != null && _fbIdleMs < FALLBACK.activeMs) {
@@ -1354,6 +1356,7 @@ function _fallbackTick(nowArg) {
     _lastInputTime = Math.max(_lastInputTime, now); // 창 전환 = 사용자 활동
     try { _updateActivityLevel(app, title); } catch {}
     const r = _fbCaptureFn('fallback-appchange');
+    _fbStats.last = r ? 'appchange' : 'appchange-skipped';
     if (r) { _fbStats.appchange++; _fbLastTimerAt = now; }
     return r ? 'fallback-appchange' : null;
   }
@@ -1361,11 +1364,12 @@ function _fallbackTick(nowArg) {
   const userActive = (_fbIdleMs != null)
     ? _fbIdleMs < FALLBACK.activeMs
     : (now - _fbLastFgChangeAt) < FALLBACK.activeMs;
-  if (!userActive) return null;
-  if ((now - _fbLastTimerAt) < FALLBACK.timerMs) return null;
+  if (!userActive) { _fbStats.last = 'user-idle'; return null; }
+  if ((now - _fbLastTimerAt) < FALLBACK.timerMs) { _fbStats.last = 'timer-wait'; return null; }
   _lastActiveApp = app;
   _lastWindowTitle = title;
   const r = _fbCaptureFn('fallback-timer');
+  _fbStats.last = r ? 'timer' : 'timer-skipped';
   if (r) { _fbStats.timer++; _fbLastTimerAt = now; }
   return r ? 'fallback-timer' : null;
 }
