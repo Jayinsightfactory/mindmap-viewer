@@ -837,6 +837,7 @@ async function processServerQueue() {
             hostname: item.hostname,
             originalCaptureId: item.id,
             ...result,
+            ..._whereCtx(item),
             app: result.app || item.app || '',
             // 썸네일 (100KB 이하 — 관리자 대시보드 표시용)
             thumbnail: item.imageBase64 ? _makeThumb(item.imageBase64) : undefined,  // 전체 화면 축소
@@ -954,6 +955,18 @@ async function processLocalDir() {
 }
 
 // ── 스풀 모드: 서버 볼륨에 모인 전 직원 백로그를 owner PC 무과금 CLI로 소진 ──────
+// [2026-10-05 어디에넣음] 원문 창제목·엑셀(시트/셀/수식줄)·클릭 좌표를 레코드에 그대로 보존(LLM 요약 screen과 별도). 없으면 생략.
+function _whereCtx(src) {
+  const o = {};
+  try {
+    if (src && src.windowTitle) o.rawWindowTitle = String(src.windowTitle).slice(0, 200);
+    if (src && src.excel && typeof src.excel === 'object') o.excel = src.excel;
+    if (src && src.lastClick) o.lastClick = src.lastClick;
+    const cl = (src && Array.isArray(src.recentClicks) ? src.recentClicks : []).filter(c => c && typeof c.x === 'number' && typeof c.y === 'number').slice(-8).map(c => ({ x: c.x, y: c.y, t: c.t || null }));
+    if (cl.length) o.clicks = cl;
+  } catch {}
+  return o;
+}
 // 데몬이 /api/vision/spool에 올린 파일을 list→file→분석→screen.analyzed→delete 로 한 건씩 비운다.
 // 스풀은 app/windowTitle 메타를 실어오므로 라우터(핵심=Sonnet)가 정상 작동한다(로컬 모드와 차이).
 const SPOOL_BATCH_N = parseInt(process.env.VISION_SPOOL_BATCH) || 30;
@@ -1007,7 +1020,7 @@ async function processSpool() {
           sessionId: `spool-${full.hostname || it.userId}-${Math.floor(new Date(full.ts || Date.now()).getTime() / 1800000)}`,
           userId: full.userId || it.userId, timestamp: full.ts || new Date().toISOString(),
           data: { hostname: full.hostname, originalCaptureId: it.file, trigger: full.trigger, ...result,
-            app: result.app || full.app || '', thumbnail: _makeThumb(full.imageBase64) },
+            app: result.app || full.app || '', thumbnail: _makeThumb(full.imageBase64), ..._whereCtx(full) },
         }] });
         const ok = await new Promise(resolve => {
           const sUrl = new URL('/api/hook', ORBIT_SERVER); const sMod = sUrl.protocol === 'https:' ? https : http;

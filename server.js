@@ -4728,7 +4728,7 @@ function _spoolSafeFile(name) { return /^[A-Za-z0-9._-]+\.json$/.test(name) ? na
 app.post('/api/vision/spool', async (req, res) => {
   const token = (req.headers.authorization || '').replace('Bearer ', '').trim();
   if (!token.startsWith('orbit_')) return res.status(401).json({ error: 'orbit token required' });
-  const { imageBase64, app: appName, hostname, windowTitle, userId, ts, trigger, captureId } = req.body || {};
+  const { imageBase64, app: appName, hostname, windowTitle, userId, ts, trigger, captureId, excel, lastClick } = req.body || {};
   if (!imageBase64 || !userId) return res.status(400).json({ error: 'imageBase64, userId required' });
   try {
     const dir = _spoolUserDir(userId);
@@ -4737,6 +4737,9 @@ app.post('/api/vision/spool', async (req, res) => {
     while (files.length >= VISION_SPOOL_MAX_PER_USER) { try { fs.unlinkSync(path.join(dir, files.shift())); } catch { break; } }
     const id = String(captureId || Date.now()).replace(/[^A-Za-z0-9._-]/g, '_');
     const meta = { app: appName || '', windowTitle: windowTitle || '', hostname: hostname || '', userId, ts: ts || new Date().toISOString(), trigger: trigger || '', imageBase64 };
+    // [2026-10-05 어디에넣음] 엑셀 시트·셀주소·수식줄값 + 직전 클릭 좌표(있을 때만, 짧게 잘라 보관)
+    if (excel && typeof excel === 'object') { const ex = {}; for (const [k, n] of [['workbook', 160], ['sheet', 60], ['cell', 40], ['formula', 120]]) if (typeof excel[k] === 'string' && excel[k]) ex[k] = excel[k].slice(0, n); if (Object.keys(ex).length) meta.excel = ex; }
+    if (lastClick && Number.isFinite(+lastClick.x) && Number.isFinite(+lastClick.y)) meta.lastClick = { x: Math.round(+lastClick.x), y: Math.round(+lastClick.y), agoMs: Number.isFinite(+lastClick.agoMs) ? Math.round(+lastClick.agoMs) : null };
     await fs.promises.writeFile(path.join(dir, `${id}.json`), JSON.stringify(meta));
     res.json({ ok: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
@@ -4864,11 +4867,14 @@ app.get('/api/vision/work-records', async (req, res) => {
       `SELECT id, timestamp, data_json->>'app' AS app, data_json->>'screen' AS screen, data_json->>'activity' AS activity,
               data_json->>'actionDone' AS done, data_json->>'purpose' AS purpose, data_json->>'changeFromPrev' AS change,
               data_json->>'nextLikely' AS next, data_json->'workflow' AS workflow, data_json->>'businessStage' AS stage,
-              data_json->'fields' AS fields, data_json->'entities' AS entities, (data_json->>'thumbnail') IS NOT NULL AS thumb
+              data_json->'fields' AS fields, data_json->'entities' AS entities, (data_json->>'thumbnail') IS NOT NULL AS thumb,
+              COALESCE(data_json->>'rawWindowTitle', data_json->>'windowTitle') AS raw_title, data_json->'excel' AS excel,
+              data_json->'lastClick' AS last_click, data_json->'clicks' AS clicks
          FROM events WHERE ${where} ORDER BY timestamp DESC LIMIT $${params.length}`, params);
     res.json({ ok: true, records: rows.map((r) => ({
       id: r.id, timestamp: r.timestamp, app: r.app, screen: r.screen, activity: r.activity, done: r.done, purpose: r.purpose, change: r.change, next: r.next,
       workflow: r.workflow || null, stage: r.stage, thumb: !!r.thumb, entities: r.entities || null,
+      rawWindowTitle: r.raw_title || null, excel: r.excel || null, lastClick: r.last_click || null, clicks: Array.isArray(r.clicks) ? r.clicks.slice(-8) : null,
       fields: (Array.isArray(r.fields) ? r.fields : []).slice(0, 12).map((f) => ({ name: f.name, type: f.type, value: f.currentValue ?? null, click: Array.isArray(f.clickXY) || !!f.clickXY, human: !!f.humanRequired, why: f.humanReason || null,
         box: Array.isArray(f.box) && f.box.length === 4 && f.box.every((v) => Number.isFinite(+v)) ? f.box.map((v) => Math.max(0, Math.min(1000, Math.round(+v)))) : null,
         order: Number.isFinite(+f.order) && +f.order > 0 ? +f.order : null })),

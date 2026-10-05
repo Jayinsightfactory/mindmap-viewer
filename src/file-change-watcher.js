@@ -14,15 +14,42 @@ let _callback = null;
 const MAX_CHANGES = 100;
 const POLL_INTERVAL = 5000; // 5초마다 체크 (fs.watch 대체)
 
-// 감시 대상 폴더
-function _getWatchDirs() {
-  const home = os.homedir();
-  return [
-    path.join(home, 'Desktop'),
-    path.join(home, 'Documents'),
-    path.join(home, 'Downloads'),
-  ].filter(d => { try { fs.accessSync(d); return true; } catch { return false; } });
+// 대상 폴더
+// [2026-10-05] Google Drive/OneDrive 동기화 폴더 추가 — 엑셀을 드라이브에서 바로 열어 저장하는 PC는
+// 바탕화면/문서/다운로드만 보면 파일 저장이 0건으로 잡혔다. 동기화 루트 + 바로 아래 하위폴더(최대 40개)만,
+// 문서 확장자만 본다(깊은 재귀·대용량 스캔 금지). 폴더 목록은 10분마다 갱신, 새로 생긴 폴더는 조용히 기준점만 잡음.
+const _DOC_EXT = /\.(xlsx|xlsm|xlsb|xls|csv|docx?|pptx?|pdf|hwpx?)$/i;
+function _cloudRoots() {
+  const home = os.homedir(); const out = [];
+  const cands = [process.env.OneDrive, process.env.OneDriveCommercial, process.env.OneDriveConsumer,
+    path.join(home, 'OneDrive'), path.join(home, 'Google Drive'), path.join(home, '내 드라이브'), path.join(home, 'My Drive')];
+  for (const L of 'DEFGHI') { cands.push(L + ':\\내 드라이브', L + ':\\My Drive', L + ':\\공유 드라이브', L + ':\\Shared drives'); } // 구글드라이브 가상드라이브(기본 G:)
+  try { for (const f of fs.readdirSync(home)) if (/^OneDrive - /i.test(f)) cands.push(path.join(home, f)); } catch {}
+  for (const d of cands) { if (!d) continue; try { if (fs.statSync(d).isDirectory() && !out.some(o => o.toLowerCase() === d.toLowerCase())) out.push(d); } catch {} }
+  return out;
 }
+let _dirCache = null, _dirCacheAt = 0, _cloudSet = new Set();
+function _getWatchDirs() {
+  if (_dirCache && Date.now() - _dirCacheAt < 10 * 60 * 1000) return _dirCache;
+  const home = os.homedir();
+  const base = [path.join(home, 'Desktop'), path.join(home, 'Documents'), path.join(home, 'Downloads')]
+    .filter(d => { try { fs.accessSync(d); return true; } catch { return false; } });
+  const cloud = [];
+  try {
+    for (const r of _cloudRoots()) {
+      cloud.push(r);
+      try { let n = 0; for (const e of fs.readdirSync(r, { withFileTypes: true })) { if (n >= 40) break; if (e.isDirectory() && !e.name.startsWith('.')) { cloud.push(path.join(r, e.name)); n++; } } } catch {}
+    }
+  } catch {}
+  _cloudSet = new Set(cloud);
+  const all = [...base, ...cloud.filter(c => !base.includes(c))];
+  // 새로 추가된 폴더는 기존 파일을 '신규'로 쏟아내지 않도록 기준점만 저장
+  if (_dirCache) for (const d of all) if (!_dirCache.includes(d)) _seed(d);
+  _dirCache = all; _dirCacheAt = Date.now();
+  return all;
+}
+function _skip(f, dir) { return f.startsWith('.') || f.startsWith('~$') || f.endsWith('.tmp') || (_cloudSet.has(dir) && !_DOC_EXT.test(f)); }
+function _seed(dir) { for (const { f, full } of _scanDir(dir)) { if (_skip(f, dir)) continue; try { _snapshot[full] = fs.statSync(full).mtimeMs; } catch {} } }
 
 function _scanDir(dir) {
   try {
@@ -36,8 +63,8 @@ function _poll() {
 
   for (const dir of dirs) {
     for (const { f, full } of _scanDir(dir)) {
-      // 임시 파일·시스템 파일 무시
-      if (f.startsWith('.') || f.startsWith('~$') || f.endsWith('.tmp')) continue;
+      // 임시 파일·시스템 파일 무시 (동기화 폴더는 문서 확장자만)
+      if (_skip(f, dir)) continue;
       try {
         const stat = fs.statSync(full);
         next[full] = stat.mtimeMs;
@@ -90,19 +117,14 @@ function start(onFileChange) {
   _callback = onFileChange;
   // 초기 스냅샷 (기준점)
   const dirs = _getWatchDirs();
-  for (const dir of dirs) {
-    for (const { f, full } of _scanDir(dir)) {
-      if (f.startsWith('.') || f.startsWith('~$') || f.endsWith('.tmp')) continue;
-      try { _snapshot[full] = fs.statSync(full).mtimeMs; } catch {}
-    }
-  }
+  for (const dir of dirs) _seed(dir);
   _pollTimer = setInterval(_poll, POLL_INTERVAL);
   console.log(`[file-change-watcher] 폴링 시작 (${dirs.length}개 폴더, 5초 간격) — 핸들 고정 없음`);
 }
 
 function stop() {
   if (_pollTimer) { clearInterval(_pollTimer); _pollTimer = null; }
-  _snapshot = {};
+  _snapshot = {}; _dirCache = null;
 }
 
 function getRecentChanges(count = 20) {

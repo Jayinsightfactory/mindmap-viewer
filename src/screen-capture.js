@@ -666,6 +666,7 @@ async function uploadPendingToSpool(limit = 30) { // [2026-09-14] 15→30: 3분�
       const base64 = fs.readFileSync(filepath).toString('base64');
       const ok = await _postSpool(serverUrl, token, {
         imageBase64: base64, app: meta.app || '', windowTitle: meta.windowTitle || '',
+        excel: meta.excel || undefined, lastClick: meta.lastClick || undefined,
         hostname: os.hostname(), userId, ts: new Date(epoch).toISOString(), trigger, captureId: f.replace(/\.png$/i, ''),
       });
       if (ok) { sentSet.add(f); count++; }
@@ -922,7 +923,15 @@ function capture(trigger = 'manual') {
     // PNG 파일명엔 app/창제목이 없어 백로그 분석이 메타를 잃는다. 캡처 시점 컨텍스트를 옆에 남긴다.
     try {
       const _mc = _resolveCaptureContext(_lastActiveApp, _lastWindowTitle);
-      fs.writeFileSync(filepath.replace(/\.png$/i, '.json'), JSON.stringify({ app: _mc.app || '', windowTitle: _mc.title || '', trigger }));
+      const _side = { app: _mc.app || '', windowTitle: _mc.title || '', trigger };
+      // [2026-10-05 어디에넣음] 캡처 직전 클릭 좌표(30초 내) + 엑셀이면 시트·셀주소·수식줄값(UIA, 실패 시 생략)
+      if (_lastClick && now - _lastClick.t <= 30000) _side.lastClick = { x: _lastClick.x, y: _lastClick.y, agoMs: now - _lastClick.t };
+      const _sidePath = filepath.replace(/\.png$/i, '.json');
+      fs.writeFileSync(_sidePath, JSON.stringify(_side));
+      try {
+        const _xc = require('./excel-cell-context');
+        if (_xc.isExcel(_mc.app, _mc.title)) _xc.probe(_mc.title, (ex) => { if (ex) { try { fs.writeFileSync(_sidePath, JSON.stringify({ ..._side, excel: ex })); } catch {} } });
+      } catch {}
     } catch {}
 
     // ── 인텔리전스: 이미지 전송 여부 판단 ──
@@ -1060,7 +1069,9 @@ function onKeyBurst() {
 // 트리거 5-A: 마우스 클릭 단일 → 2초 후 캡처 (버튼/메뉴 클릭 결과)
 // 핵심: 클릭 1번만으로 트리거 (기존엔 20번 필요)
 let _clickSingleTimer = null;
-function onMouseClick() {
+let _lastClick = null; // [2026-10-05] 최근 클릭 좌표 1건 — 사이드카에 실어 '어디를 눌렀나' 보존
+function onMouseClick(pos) {
+  try { if (pos && Number.isFinite(pos.x) && Number.isFinite(pos.y)) _lastClick = { x: Math.round(pos.x), y: Math.round(pos.y), t: Date.now() }; } catch {}
   if (!_running) return;
   _noteHookTrigger();
   _lastInputTime = Date.now();

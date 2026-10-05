@@ -1019,7 +1019,7 @@ function _handleMousedown(e) {
   _mouseClickPositions.push({ x: e.x, y: e.y, t: Date.now(), app: getActiveApp(), win: getActiveWindowTitle() });
   if (_mouseClickPositions.length > 200) _mouseClickPositions = _mouseClickPositions.slice(-200);
   if (_screenCapture?.onMouseBurst) _screenCapture.onMouseBurst();
-  if (_screenCapture?.onMouseClick) _screenCapture.onMouseClick(); // 클릭 1번 → 2초 후 캡처
+  if (_screenCapture?.onMouseClick) _screenCapture.onMouseClick({ x: e.x, y: e.y }); // 클릭 1번 → 2초 후 캡처
   // 워크플로우 학습: 클릭 기록 (좌표 포함)
   try {
     const wf = require('./workflow-learner');

@@ -108,6 +108,7 @@ async function _emitAnalyzed(item, analysis) {
       app: item.app || '', windowTitle: item.windowTitle || '',
       trigger: item.trigger || '', userId: item.userId || '',
       ...analysis,
+      ...(item.windowTitle ? { rawWindowTitle: String(item.windowTitle).slice(0, 200) } : {}), // [2026-10-05] 원문 창제목 보존
     },
   };
   try { await Promise.resolve(_insertEvent(event)); } catch (e) {
