@@ -31,6 +31,16 @@ if ($siblings) { exit 0 }
 
 $dlogPath = "$env:USERPROFILE\.orbit\daemon.log"
 
+# ── 급사 진단 파일 (boot-diag와 쌍) ─────────────────────────────────────────
+# worker-stderr.log : 워커 stdout+stderr 원문(네이티브 abort 메시지가 여기 남는다)
+# crash-moment.log  : 워커 종료코드/수명/마지막 boot-stage → 다음 기동 때 boot-diag가 서버로 업로드
+# boot-stage.log    : 워커가 각 init 단계를 동기 flush. 마지막 줄 = 죽은 모듈.
+$stderrLog        = "$env:USERPROFILE\.orbit\worker-stderr.log"
+$crashMoment      = "$env:USERPROFILE\.orbit\crash-moment.log"
+$bootStageLog     = "$env:USERPROFILE\.orbit\boot-stage.log"
+$STDERR_KEEP      = 2000
+$CRASHMOMENT_KEEP = 500
+
 # ── Crash-loop circuit breaker (2026-10-05) ─────────────────────────────────
 # 문제: personal-agent가 시작 직후 네이티브 종료(AV kill / OOM abort / 중복감시)로
 #       죽으면 JS crash-reporter가 못 잡고(스택 없음), 이 루프는 10초 간격으로 영원히
@@ -54,6 +64,10 @@ while ($true) {
   if ((Get-Item $dlogPath -ErrorAction SilentlyContinue).Length -gt 5MB) {
     try { Move-Item $dlogPath "$dlogPath.bak" -Force -ErrorAction SilentlyContinue } catch {}
   }
+  # worker-stderr.log 가 한 번의 긴 런에서 비대해지면(워커가 안 죽어 아래 트림이 안 돌 때) 선제 트림
+  if ((Get-Item $stderrLog -ErrorAction SilentlyContinue).Length -gt 5MB) {
+    try { Move-Item $stderrLog "$stderrLog.bak" -Force -ErrorAction SilentlyContinue } catch {}
+  }
 
   $alive = Get-WmiObject Win32_Process -Filter "Name='node.exe'" | Where-Object {
     $_.CommandLine -like '*personal-agent*'
@@ -64,10 +78,37 @@ while ($true) {
   }
 
   "[$ts] worker start" | Out-File -Append -Encoding utf8 -FilePath $dlogPath
+  # 워커 stdout+stderr → worker-stderr.log (daemon.log 는 start/exit/breaker 북마크만 유지)
   & $nodeExe "$repoDir\daemon\personal-agent.js" 2>&1 |
-    Out-File -Append -Encoding utf8 -FilePath $dlogPath
+    Out-File -Append -Encoding utf8 -FilePath $stderrLog
+  $exitCode = $LASTEXITCODE
   $ranSec = [int]((Get-Date) - $startAt).TotalSeconds
-  "[$ts] worker exit (ran ${ranSec}s)" | Out-File -Append -Encoding utf8 -FilePath $dlogPath
+  "[$ts] worker exit (ran ${ranSec}s, code=$exitCode)" | Out-File -Append -Encoding utf8 -FilePath $dlogPath
+
+  # ── 급사 순간 보존: 종료코드/수명/마지막 단계 → crash-moment.log ───────────────
+  # JS crash-reporter 가 못 잡는 네이티브 종료(프로세스 소멸)도 종료코드로 식별된다:
+  #   3221225477(=0xC0000005) access violation, -1073740791(=0xC0000409) stack buffer overrun,
+  #   -1073741819 등 음수 = 네이티브 abort / 0 = 정상 graceful exit / 1 = main() throw.
+  # lastStage = boot-stage.log 마지막 줄 = 워커가 마지막으로 진입한 init 단계(죽은 모듈).
+  $lastStage = ''
+  try { $lastStage = (Get-Content $bootStageLog -Tail 1 -ErrorAction SilentlyContinue) } catch {}
+  if (-not $lastStage) { $lastStage = '(none)' }
+  $exitTs = (Get-Date).ToUniversalTime().ToString('o')
+  try { "[exit] code=$exitCode ts=$exitTs ranMs=$($ranSec*1000) lastStage=$lastStage" | Out-File -Append -Encoding utf8 -FilePath $crashMoment } catch {}
+
+  # 로그 꼬리만 유지 (무한 성장 방지) — worker-stderr 최근 $STDERR_KEEP 줄, crash-moment 최근 $CRASHMOMENT_KEEP 줄
+  try {
+    if (Test-Path $stderrLog) {
+      $sl = @(Get-Content $stderrLog -ErrorAction SilentlyContinue)
+      if ($sl.Count -gt $STDERR_KEEP) { $sl[($sl.Count - $STDERR_KEEP)..($sl.Count - 1)] | Set-Content $stderrLog -Encoding utf8 }
+    }
+  } catch {}
+  try {
+    if (Test-Path $crashMoment) {
+      $cm = @(Get-Content $crashMoment -ErrorAction SilentlyContinue)
+      if ($cm.Count -gt $CRASHMOMENT_KEEP) { $cm[($cm.Count - $CRASHMOMENT_KEEP)..($cm.Count - 1)] | Set-Content $crashMoment -Encoding utf8 }
+    }
+  } catch {}
 
   if ($ranSec -lt $FAST_EXIT_SEC) {
     if ($fastCount -eq 0) { $firstFastAt = $startAt }

@@ -3,6 +3,18 @@
 if (typeof WScript !== 'undefined') { WScript.Echo('오류: 이 파일은 Node.js로 실행해야 합니다.\n\n해결방법:\n1. 시작 메뉴 > orbit-daemon.bat 확인\n2. 또는 PowerShell에서: node daemon\\personal-agent.js\n\n설치코드를 다시 실행하면 자동 해결됩니다.'); WScript.Quit(1); }
 'use strict';
 
+// ── boot-diag: 급사(native crash/startup abort) 순간 보존 + 다음 기동 때 업로드 ──
+// 가장 먼저 로드해 이번 런의 boot-stage.log 를 연다(이전 런 흔적은 .prev 로 보존).
+// stage() 호출이 '죽은 모듈'을 동기 flush 로 남긴다 — try/catch 가 못 잡는 네이티브 abort 대비.
+let _bootDiag = null;
+try {
+  _bootDiag = require('../src/boot-diag');
+  _bootDiag.beginRun();
+} catch (e) {
+  try { console.error('[orbit] boot-diag 로드 실패(계속 진행):', e && e.message); } catch {}
+}
+function _stage(name) { try { _bootDiag && _bootDiag.stage(name); } catch {} }
+
 /**
  * daemon/personal-agent.js
  * 개인 학습 에이전트 데몬
@@ -92,8 +104,11 @@ process.on('exit', (code) => {
   console.log(`[orbit] 프로세스 종료 (exit code: ${code}, ${new Date().toISOString()})`);
 });
 
+_stage('single-instance-ok');
+
 // ── 크래시 리포터 설치 (크래시 추적 + 서버 전송 + 3회/1h → safe-mode 자동 진입) ──
 // 대체: 기존 inline 핸들러 → src/crash-reporter.js (Claude 분석 파이프라인 연동)
+_stage('crash-reporter');
 try {
   require('../src/crash-reporter').installHandlers();
 } catch (e) {
@@ -720,6 +735,14 @@ async function main() {
   // 시작 로그 최소화 — 내부 상태 노출 방지
   console.log(`[orbit] 시작 (${new Date().toISOString()})`);
   writePid();
+
+  // ── 급사 진단 업로드: 위험 모듈(uiohook/캡처) 로드 전에, 직전 런의 crash-moment/boot-stage/stderr
+  //   꼬리를 서버로 올리고(성공 시 crash-moment.log 비움) 계속 진행. 네트워크/서버 실패해도 데몬엔 무영향.
+  _stage('flush-crashmoment');
+  try {
+    const r = await _bootDiag?.flushOnBoot?.();
+    if (r?.hadData) console.log(`[orbit] crashmoment 업로드: uploaded=${r.uploaded}`);
+  } catch (e) { try { console.warn('[orbit] crashmoment flush 실패:', e.message); } catch {} }
   // 로그 스냅샷: 모든 워처 시작 직후(3초) + 이후 5분 주기
   // 3초 지연으로 mouse-watcher 등 모든 워처의 시작/실패 로그가 캡처됨
   setTimeout(_sendLogSnapshot, 3000);
@@ -734,6 +757,7 @@ async function main() {
   // 크래시 루프(~20초 후 crash) 탈출: 8초 버전체크가 crash 전에 먼저 실행됨
   let daemonUpdater = null;
   try {
+    _stage('daemon-updater');
     daemonUpdater = require(path.join(ROOT, 'src/daemon-updater'));
     daemonUpdater.start();
   } catch (err) {
@@ -754,6 +778,7 @@ async function main() {
 
   // ① keyboard-watcher 시작 (module-scope 변수에 재할당 — heartbeat에서 참조)
   try {
+    _stage('keyboard-watcher(uiohook)');
     keyboardWatcher = require(path.join(ROOT, 'src/keyboard-watcher'));
     keyboardWatcher.start({ port: PORT });
   } catch (err) {
@@ -763,6 +788,7 @@ async function main() {
 
   // ①-a mouse-watcher 시작 (uiohook singleton에 listener 추가, 60초마다 mouse.chunk 전송)
   try {
+    _stage('mouse-watcher');
     mouseWatcher = require(path.join(ROOT, 'src/mouse-watcher'));
     mouseWatcher.start({
       getActiveApp:    keyboardWatcher?.getActiveApp?.bind(keyboardWatcher),
@@ -838,6 +864,7 @@ async function main() {
   // ② file-learner 시작
   let fileLearner = null;
   try {
+    _stage('file-learner');
     fileLearner = require(path.join(ROOT, 'src/file-learner'));
     fileLearner.start({ port: PORT });
   } catch (err) {
@@ -847,6 +874,7 @@ async function main() {
 
   // ②-b PC 부하에 따라 캡처/입력 수집 설정 자동 조정
   try {
+    _stage('resource-governor');
     resourceGovernor = require(path.join(ROOT, 'src/resource-governor'));
     resourceGovernor.start();
   } catch (err) {
@@ -856,6 +884,7 @@ async function main() {
 
   // ②-c screen-capture 시작 + keyboard-watcher 연결
   try {
+    _stage('screen-capture');
     screenCapture = require(path.join(ROOT, 'src/screen-capture'));
     screenCapture.start();
     // 키보드 와처 → 스크린 캡처 이벤트 연결 (앱 전환/idle 시 캡처)
@@ -924,6 +953,7 @@ async function main() {
   // ②-e 클립보드 캡처
   let clipboardWatcher = null;
   try {
+    _stage('clipboard-watcher');
     clipboardWatcher = require(path.join(ROOT, 'src/clipboard-watcher'));
     // 알고리즘 A: 카카오톡 주문 자동 감지
     let orderDetector = null;
@@ -1011,6 +1041,7 @@ async function main() {
   // ②-i 카카오톡 자동 캡처
   let kakaoCapture = null;
   try {
+    _stage('kakao-capture');
     kakaoCapture = require(path.join(ROOT, 'src/kakao-capture'));
     kakaoCapture.start(screenCapture, keyboardWatcher?.getActiveApp?.bind(keyboardWatcher));
     // 앱 전환 시 카카오톡 캡처 트리거
@@ -1040,6 +1071,7 @@ async function main() {
   // ②-g' 발주서 xlsx 셀값 수집기 (원본 파일 → 서버 파싱). 발주서만 선별 업로드.
   let excelCollector = null;
   try {
+    _stage('excel-collector');
     excelCollector = require(path.join(ROOT, 'src/excel-collector'));
     excelCollector.init({ serverUrl: REMOTE_URL, token: REMOTE_TOKEN });
   } catch (err) {
@@ -1188,6 +1220,7 @@ async function main() {
   }
 
   // 상태 로그 — 내부 상태 노출 없이 최소 출력
+  _stage('ready');
   console.log(`[orbit] 준비 완료`);
 
   // ── keep-alive: Node.js 이벤트 루프 유지 (이 타이머 없으면 프로세스 자동 종료) ──
