@@ -105,6 +105,8 @@ const TRIGGER_PRIORITY = {
   tool_end:        'high',
   file_write:      'high',
   manual:          'high',
+  'fallback-appchange': 'high',   // 훅 차단 PC: 창/앱 전환 (폴링 감지)
+  'fallback-timer':     'medium', // 훅 차단 PC: 활성 중 주기
 };
 
 const TRIGGER_QUALITY_POLICY = {
@@ -115,6 +117,8 @@ const TRIGGER_QUALITY_POLICY = {
   keyboard_flush:  { cooltime: 90000,  imageEvery: 2,  reason: 'stable_after_input_upload' },
   app_switch:      { cooltime: 120000, imageEvery: 3,  reason: 'app_switch_duplicates' },
   startup:         { cooltime: 6 * 60 * 60 * 1000, sendImage: false, reason: 'startup_noise' },
+  'fallback-appchange': { cooltime: 30000, reason: 'hook_blocked_fallback' },
+  'fallback-timer':     { cooltime: 60000, reason: 'hook_blocked_fallback' },
   kakao_periodic:  { cooltime: 5 * 60 * 1000, imageEvery: 4, reason: 'kakao_periodic_noise' },
 };
 
@@ -200,7 +204,7 @@ function _shouldCapture(trigger, app) {
   }
 
   // idle 상태에서 연속 캡처 방지 (첫 1회 후 5분마다)
-  if (_activityState === ACTIVITY_STATES.IDLE && trigger !== 'app_switch' && trigger !== 'startup') {
+  if (_activityState === ACTIVITY_STATES.IDLE && trigger !== 'app_switch' && trigger !== 'startup' && trigger !== 'fallback-appchange') {
     if (_consecutiveIdleCaptures > 0) {
       return (now - _lastCaptureTime) >= 5 * 60 * 1000;
     }
@@ -598,7 +602,7 @@ async function uploadPendingToServer(limit = 20) {
 // 트리거·상태 기반 사전 선별(분석 전, 파일명만으로 공짜) — "필요없는 것부터 안 올린다".
 // 유휴/쿨다운 화면은 새 정보가 거의 없어 제외. 의도적 작업 트리거(클릭·타이핑·인쇄 등)는 유지.
 // 향후 학습 루프(앱×트리거×상태별 유용도)로 이 규칙을 데이터 기반으로 정교화(v2).
-const _SPOOL_KEEP_TRIGGERS = new Set(['mouse_click', 'click', 'ui_click', 'click_burst', 'keyboard_flush', 'keyboard_done', 'keyboard_input', 'key_burst', 'excel_formula', 'print', 'ctrl_print', 'file_write', 'tool_end']);
+const _SPOOL_KEEP_TRIGGERS = new Set(['mouse_click', 'click', 'ui_click', 'click_burst', 'keyboard_flush', 'keyboard_done', 'keyboard_input', 'key_burst', 'excel_formula', 'print', 'ctrl_print', 'file_write', 'tool_end', 'fallback-appchange']);
 function _spoolWorthUploading(trigger, stateLabel) {
   if (trigger === 'low_quality_click_burst') return false;              // 명시적 저품질
   if (_SPOOL_KEEP_TRIGGERS.has(trigger)) return true;                    // 의도적 작업 트리거 → 상태 무관 유지
@@ -966,6 +970,7 @@ function getStatus() {
     paused:       _paused,
     state,
     captureCount: _scCaptureCount,
+    fallback:     (() => { try { return getFallbackStatus(); } catch { return null; } })(), // 훅 차단 폴백 진단
     lastCaptureAt:  _scLastCaptureAt ? new Date(_scLastCaptureAt).toISOString() : null,
     secondsSinceCapture: sinceLast,
     errorCount:   _scErrorCount,
@@ -1011,6 +1016,7 @@ function onWindowTitleChange(title) {
 // 키 입력 멈춘 직후 = 뭔가 입력 완료 = 그 화면이 중요한 순간
 function onKeyActivity() {
   if (!_running) return;
+  _noteHookTrigger();
   _keyActivityCount++;
   _lastKeyTime = Date.now();
   _lastInputTime = Date.now();
@@ -1027,6 +1033,7 @@ function onKeyActivity() {
 let _flushCaptureTimer = null;
 function onKeyboardFlush() {
   if (!_running) return;
+  _noteHookTrigger();
   if (_idleTimer) { clearTimeout(_idleTimer); _idleTimer = null; }
   if (_flushCaptureTimer) clearTimeout(_flushCaptureTimer);
   // 3초 후 캡처 (입력 결과가 화면에 렌더링될 시간 확보)
@@ -1040,6 +1047,7 @@ function onKeyboardFlush() {
 let _burstTimer = null;
 function onKeyBurst() {
   if (!_running) return;
+  _noteHookTrigger();
   if (_keyActivityCount > 15 && !_burstTimer) { // 기존 50 → 15
     _burstTimer = setTimeout(() => {
       capture('key_burst');
@@ -1053,6 +1061,7 @@ function onKeyBurst() {
 let _clickSingleTimer = null;
 function onMouseClick() {
   if (!_running) return;
+  _noteHookTrigger();
   _lastInputTime = Date.now();
   _inputCountWindow++;
   if (_clickSingleTimer) clearTimeout(_clickSingleTimer);
@@ -1068,6 +1077,7 @@ let _clickBurstCount = 0;
 let _clickBurstTimer = null;
 function onMouseBurst() {
   if (!_running) return;
+  _noteHookTrigger();
   _clickBurstCount++;
   _lastInputTime = Date.now();
   _inputCountWindow++;
@@ -1145,6 +1155,8 @@ function _getTriggerDescription(trigger) {
     tool_end:        '도구/명령 완료',
     file_write:      '파일 저장 감지',
     manual:          '수동 캡처',
+    'fallback-appchange': '입력훅 차단 PC — 창/앱 전환(폴링)',
+    'fallback-timer':     '입력훅 차단 PC — 활성 중 주기 캡처',
   };
   return descriptions[trigger] || trigger;
 }
@@ -1249,6 +1261,138 @@ function _runStartupSelfTest() {
   }, 9000);
 }
 
+// ══════════════════════════════════════════════════════════════════════════════
+// [2026-10-05] 훅 차단 PC 폴백 캡처 (은행보안 등으로 키보드/마우스 후킹이 막힌 PC)
+//  - 입력훅 트리거(keyboard_*/mouse_click/burst)가 FALLBACK.starveMs 동안 0건이거나
+//    bank-safe-collector(훅 결과 비어있음 감지)가 돌고 있을 때만 동작 → 정상 PC 동작 불변
+//  - 신규 프로세스 없음: keyboard-watcher의 30초 창 폴링 캐시(setForegroundProvider)를 재사용
+//  - 앱/창제목 변경 → 'fallback-appchange', 활성 중 주기 → 'fallback-timer'(75초)
+//  - 은행 창은 메타도 없이 스킵. 개인정보 게이트·쿨타임·이미지선별은 capture() 그대로 적용
+//  - 활성 판정: GetLastInputInfo(훅 아님, win-shell 상주 PS 재사용). 실패 시 창 변경 시각으로 대체
+// ══════════════════════════════════════════════════════════════════════════════
+const FALLBACK = { tickMs: 30000, starveMs: 10 * 60 * 1000, timerMs: 75000, activeMs: 3 * 60 * 1000 };
+const BANKING_WINDOW_RE = /은행|뱅킹|bank|공동인증|공인인증|인증서|\botp\b|nprotect|ahnlab|touchen|veraport|inisafe|ipinside|delfino|anysign|magicline|kbstar|wooribank|shinhan|hanabank|kebhana|nonghyup|nhbank|\bibk\b/i;
+let _fbTimer = null;
+let _fgProvider = null;           // () => ({ app, title })
+let _lastHookTriggerAt = Date.now();
+let _fbLastFgKey = '';
+let _fbLastFgChangeAt = 0;
+let _fbLastTimerAt = 0;
+let _fbIdleMs = null;             // GetLastInputInfo 결과 (null=미측정/실패)
+let _fbIdleDisabled = false;
+let _fbStats = { appchange: 0, timer: 0, bankSkip: 0, active: false };
+let _fbCaptureFn = (t) => capture(t); // 테스트에서 교체 가능
+
+function setForegroundProvider(fn) { _fgProvider = typeof fn === 'function' ? fn : null; }
+function _noteHookTrigger() { _lastHookTriggerAt = Date.now(); }
+
+function _bankSafeRunning() {
+  try {
+    const m = require.cache[require.resolve('./bank-safe-collector')]; // 이미 로드된 경우만 조회 (새로 로드 안 함)
+    return !!(m && m.exports && typeof m.exports.isRunning === 'function' && m.exports.isRunning());
+  } catch { return false; }
+}
+
+function _isHookStarved(now) {
+  return (now - _lastHookTriggerAt) >= FALLBACK.starveMs || _bankSafeRunning();
+}
+
+function _isBankingWindow(app, title) {
+  return BANKING_WINDOW_RE.test(String(app || '')) || BANKING_WINDOW_RE.test(String(title || ''));
+}
+
+// 포그라운드 창(실제 GetForegroundWindow) + 마지막 입력 경과(GetLastInputInfo) — 훅 아님, 상주 PS 1회 호출/틱
+const PS_FG_IDLE = "[Console]::OutputEncoding=[System.Text.Encoding]::UTF8; if (-not ('OrbitFgFb' -as [type])) { Add-Type -TypeDefinition 'using System;using System.Text;using System.Runtime.InteropServices;public static class OrbitFgFb{[StructLayout(LayoutKind.Sequential)]public struct L{public uint s;public uint t;}[DllImport(\"user32.dll\")]static extern bool GetLastInputInfo(ref L l);[DllImport(\"user32.dll\")]public static extern IntPtr GetForegroundWindow();[DllImport(\"user32.dll\",CharSet=CharSet.Unicode)]static extern int GetWindowText(IntPtr h,StringBuilder s,int n);[DllImport(\"user32.dll\")]public static extern uint GetWindowThreadProcessId(IntPtr h,out uint p);public static uint Idle(){var l=new L();l.s=(uint)Marshal.SizeOf(l);GetLastInputInfo(ref l);return (uint)Environment.TickCount-l.t;}public static string Title(IntPtr h){var b=new StringBuilder(512);GetWindowText(h,b,512);return b.ToString();}}' }; $h=[OrbitFgFb]::GetForegroundWindow(); [uint32]$fp=0; [void][OrbitFgFb]::GetWindowThreadProcessId($h,[ref]$fp); $fn=''; try { $fn=(Get-Process -Id $fp -ErrorAction Stop).ProcessName } catch {}; ([string][OrbitFgFb]::Idle()) + [char]9 + $fn + [char]9 + ([OrbitFgFb]::Title($h) -replace '[\\t\\r\\n]',' ')";
+let _fbFg = null;                 // { app, title, at } — 실제 포그라운드 (없으면 provider 캐시 사용)
+function _parseFgIdle(out) {
+  const parts = String(out || '').trim().split('\t');
+  const n = parseInt(parts[0], 10);
+  return { idleMs: Number.isFinite(n) && n >= 0 ? n : null, app: (parts[1] || '').trim(), title: (parts[2] || '').trim() };
+}
+function _refreshIdleMs() {
+  if (process.platform !== 'win32' || _fbIdleDisabled) return;
+  let ws = null;
+  try { ws = require('./win-shell'); } catch { _fbIdleDisabled = true; return; }
+  if (!ws || !ws.isAvailable || !ws.isAvailable()) return;
+  Promise.resolve(ws.exec(PS_FG_IDLE, 15000)).then(out => {
+    const r = _parseFgIdle(out);
+    _fbIdleMs = r.idleMs;
+    _fbFg = r.app ? { app: r.app, title: r.title, at: Date.now() } : null;
+  }).catch(() => { _fbIdleMs = null; });
+}
+
+function _fallbackTick(nowArg) {
+  const now = nowArg || Date.now();
+  if (!_running || _paused) return null;
+  if (!_fgProvider) _fgProvider = () => null; // provider 미주입이어도 실제 포그라운드(PS)로 동작
+  if (!_isHookStarved(now)) { _fbStats.active = false; return null; }
+  _fbStats.active = true;
+  _refreshIdleMs(); // 비동기 — 다음 틱에 반영
+  let fg = null;
+  if (_fbFg && (now - _fbFg.at) < 2 * FALLBACK.tickMs) fg = _fbFg; // 실제 포그라운드 우선
+  else { try { fg = _fgProvider(); } catch { return null; } }
+  const app = normalizeAppName((fg && fg.app) || '', '');
+  const title = sanitizeWindowTitle((fg && fg.title) || '');
+  if (!app) return null;
+  if (_isBankingWindow(app, title)) { _fbStats.bankSkip++; return 'bank-skip'; }
+
+  // 실제 입력 신호(GetLastInputInfo)가 있으면 활동상태에 반영 (훅 없이도 idle/active 구분)
+  if (_fbIdleMs != null && _fbIdleMs < FALLBACK.activeMs) {
+    _lastInputTime = Math.max(_lastInputTime, now - _fbIdleMs);
+  }
+
+  const key = app + '|' + title.replace(/[\d:/.]+/g, '').trim();
+  // 유휴(입력 3분+ 없음)면 창 목록 흔들림(CPU순 폴링)을 전환으로 오인하지 않도록 키만 갱신
+  if (key !== _fbLastFgKey && _fbIdleMs != null && _fbIdleMs >= FALLBACK.activeMs) { _fbLastFgKey = key; return null; }
+  if (key !== _fbLastFgKey) {
+    const appChanged = app !== _lastActiveApp;
+    _fbLastFgKey = key;
+    _fbLastFgChangeAt = now;
+    _lastActiveApp = app;
+    _lastWindowTitle = title;
+    if (appChanged) _sameAppStartTime = now;
+    _lastInputTime = Math.max(_lastInputTime, now); // 창 전환 = 사용자 활동
+    try { _updateActivityLevel(app, title); } catch {}
+    const r = _fbCaptureFn('fallback-appchange');
+    if (r) { _fbStats.appchange++; _fbLastTimerAt = now; }
+    return r ? 'fallback-appchange' : null;
+  }
+
+  const userActive = (_fbIdleMs != null)
+    ? _fbIdleMs < FALLBACK.activeMs
+    : (now - _fbLastFgChangeAt) < FALLBACK.activeMs;
+  if (!userActive) return null;
+  if ((now - _fbLastTimerAt) < FALLBACK.timerMs) return null;
+  _lastActiveApp = app;
+  _lastWindowTitle = title;
+  const r = _fbCaptureFn('fallback-timer');
+  if (r) { _fbStats.timer++; _fbLastTimerAt = now; }
+  return r ? 'fallback-timer' : null;
+}
+
+function _startFallback() {
+  if (_fbTimer) return;
+  _lastHookTriggerAt = Date.now();
+  _fbTimer = setInterval(() => { try { _fallbackTick(); } catch {} }, FALLBACK.tickMs);
+  if (_fbTimer.unref) _fbTimer.unref();
+}
+function _stopFallback() { if (_fbTimer) { clearInterval(_fbTimer); _fbTimer = null; } }
+function getFallbackStatus() {
+  return { ..._fbStats, lastHookTriggerAt: new Date(_lastHookTriggerAt).toISOString(), idleMs: _fbIdleMs, provider: !!_fgProvider };
+}
+// 테스트 전용
+function _fallbackTestHooks() {
+  return {
+    tick: _fallbackTick, FALLBACK, BANKING_WINDOW_RE,
+    setHookAt: (t) => { _lastHookTriggerAt = t; },
+    setIdleMs: (v) => { _fbIdleMs = v; _fbIdleDisabled = true; },
+    parseFgIdle: _parseFgIdle, PS_FG_IDLE,
+    setRunning: (v) => { _running = v; },
+    setCapture: (fn) => { _fbCaptureFn = fn || ((t) => capture(t)); },
+    reset: () => { _fbFg = null; _fbLastFgKey = ''; _fbLastFgChangeAt = 0; _fbLastTimerAt = 0; _lastCaptureTime = 0; _fbStats = { appchange: 0, timer: 0, bankSkip: 0, active: false }; },
+  };
+}
+
 function start(opts) {
   if (_running) return;
   _running = true;
@@ -1266,10 +1410,12 @@ function start(opts) {
   if (!_spoolTimer) _spoolTimer = setInterval(() => { uploadPendingToSpool().catch(() => {}); }, 3 * 60 * 1000);
   try { setTimeout(() => pruneOldCaptures(), 20 * 1000); } catch {}
   if (!_pruneTimer) _pruneTimer = setInterval(() => pruneOldCaptures(), 10 * 60 * 1000);
+  _startFallback();
 }
 
 function stop() {
   _running = false;
+  _stopFallback();
   if (_spoolTimer) { clearInterval(_spoolTimer); _spoolTimer = null; }
   if (_pruneTimer) { clearInterval(_pruneTimer); _pruneTimer = null; }
   if (_idleTimer) { clearTimeout(_idleTimer); _idleTimer = null; }
@@ -1326,6 +1472,7 @@ module.exports = {
   onKeyBurst, onMouseBurst, onMouseClick, onPrint, onExcelFormula,
   uploadPendingToServer, uploadPendingToSpool,
   pause, resume, isPaused,
+  setForegroundProvider, getFallbackStatus, _fallbackTestHooks,
   getStatus,
   CAPTURE_DIR,
 };

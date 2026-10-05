@@ -135,7 +135,11 @@ let _screenCapture   = null;        // 스크린 캡처 모듈 연결
 let _lastDetectedApp = '';          // 앱 전환 감지용
 
 // 스크린 캡처 연결 (personal-agent에서 주입)
-function setScreenCapture(sc) { _screenCapture = sc; }
+function setScreenCapture(sc) {
+  _screenCapture = sc;
+  // [2026-10-05] 훅 차단 PC 폴백: 30초 창 폴링 캐시를 스크린캡처에 공유 (새 프로세스 없음)
+  if (sc && typeof sc.setForegroundProvider === 'function') sc.setForegroundProvider(() => ({ app: getActiveApp(), title: getActiveWindowTitle() }));
+}
 
 // ── 분석 주기 (밀리초) ──────────────────────────────────────────────────────
 const ANALYSIS_INTERVAL_MS = 60 * 1000;  // 1분 (개발 단계 — 실시간 수집)

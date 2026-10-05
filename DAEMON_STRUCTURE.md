@@ -66,3 +66,4 @@ PC 모듈 → POST /api/hook → 서버(PG events)
 5. **코드 push ≠ 데몬 반영** — 재시작/CodeSync 전까지 구코드. owner repo는 CodeSync가 git reset(편집→commit→push 한 호흡).
 6. **잦은 push = 재배포 502** — 설치/명령 중 register 실패. 모아서 push.
 7. **키보드 내용은 통계 아니라 inputText**(payload). 한글은 QWERTY 물리키라 work-logs 두벌식 역변환 토글로 봄.
+8. **[2026-10-05] 훅 차단 PC = 캡처가 startup만** (은행보안이 키보드/마우스 후킹을 막음, 박성수 DESKTOP-HGNEA1S): `screen-capture.js` 폴백이 자동 동작. 조건=입력훅 트리거(keyboard_*/mouse_click/burst) 10분 0건 **또는** bank-safe-collector 실행 중. 30초 틱에 상주 win-shell PS로 **실제 GetForegroundWindow+GetLastInputInfo**(훅 아님, COM 없음) → 창/앱 바뀌면 `fallback-appchange`, 같은 창이라도 입력 3분 이내면 75초마다 `fallback-timer`. 은행 창(은행/뱅킹/인증서/nProtect 등) 메타도 없이 스킵, 은행보안 pause 중 정지, 개인정보 게이트·쿨타임·이미지선별은 capture() 그대로. 상태=heartbeat `modules.screen.fallback`. 정상 PC는 훅 트리거가 계속 있어 무변화.

@@ -186,3 +186,7 @@ TOK  = 마스터 분석토큰 (orbit_ 프리픽스, /api/learning·admin 조회�
 - 실제 창 제목 확인: `GET /api/learning/logs?type=screen.capture&from=YYYY-MM-DD&to=...&limit=2000`(+`keyboard.chunk`)에서 app=kakaotalk 인 windowTitle 집계.
 - ⚠️ `/api/kakao/messages`(kakao_messages)는 **nenovakakao 브릿지 9개 방만** 들어온다(chatroom 그 외는 Vision 앱 라벨). 거래처방·스페인어방 0건 = 정상(수집기 한계). 그 방 내용은 데몬 screen.capture→Vision 경로로만 옴.
 - 정책 적용 확인: `GET /api/daemon/privacy-policy` 의 version.
+
+## [2026-10-05] 캡처가 startup/idle 뿐이고 click/keyboard 트리거 0 = 입력훅 차단 PC
+- 판정: learning/logs `type=screen.capture` trigger 분포가 startup·kakao_periodic 뿐, app 공란, `bank-safe.activity` 5분마다 → 후킹 차단(은행보안).
+- 조치: 코드 폴백 자동(`fallback-appchange`/`fallback-timer`). 확인=daemon-health `modules.screen.fallback`(active·appchange·timer·bankSkip·idleMs) + capture 트리거 분포에 fallback-* 등장. ⚠️ logs limit 크게(5000) 주면 서버 502 났음 → 500 이하로.

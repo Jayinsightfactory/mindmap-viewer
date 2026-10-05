@@ -1961,3 +1961,12 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 - 정책: 53→83개(키워드를 30일 실측 창 제목 전체로 교체). 실측 창제목 498개 중 통과 129→84, 탈락 45=ERP/엑셀 제목·Vision 앱라벨·직원 1:1·알림팝업(의도). 기존 53개 항목 전부 최소 1개 실제 제목이 여전히 통과. '네노바&선율'(실제 제목, 정책엔 '네노바&선율방')은 신규 통과.
 - 0건 38(+)개 원인: 이름 불일치 아님 — kakao_messages 는 nenovakakao 브릿지 9개 방만 적재(수집기 한계). 44개 비브릿지 항목 모두 직원 PC 창 제목에서 실측됨(설연주·김원영·정재훈·조현욱·박성수·아드리아나). 스페인어방도 카톡(아드리아나 PC), WhatsApp/웍스 아님.
 - 기각: kakao_messages chatroom 으로 실제 방 이름 판단 → 그 외 값은 Vision 앱 이름이라 불가.
+
+## 2026-10-05 입력훅 차단 PC 캡처 폴백 (fallback-appchange / fallback-timer)
+- 검색어: 훅차단, 은행보안, bank-safe, fallback-appchange, fallback-timer, 박성수 캡처 startup만, DESKTOP-HGNEA1S, GetForegroundWindow, GetLastInputInfo, setForegroundProvider
+- 요청(사장 승인): 박성수 PC 7일 캡처 60건 전부 startup/idle, click/keyboard 트리거 0, keyboard 6건/2일, bank-safe.activity 5분마다 → 훅 없이도 창전환·주기 캡처.
+- 실측(전): DESKTOP-HGNEA1S userId MN9B6750A0A37D561D, 9/28~10/5 screen.capture 65건 = startup 63·app_switch 1·kakao_periodic 1, 전부 app 공란. keyboard-watcher 창 캐시는 "CPU 최다 창 프로세스"라 explorer로 고정(실제 포그라운드 아님). daemon-health screen 모듈 running:false(healer 재시작 반복, daemon.healed 13).
+- 수정: src/screen-capture.js 폴백 블록(_fallbackTick 30초, starve 10분 or bank-safe 실행중, 은행창 스킵, 유휴면 전환 무시, pause 존중, getStatus.fallback) / src/keyboard-watcher.js setScreenCapture에서 창 캐시 provider 주입(보조) / tests/unit/screen-capture-fallback.test.js 11케이스.
+- 검증: jest tests/unit 163 pass, privacy-gate.check ALL PASS, 로컬 PS 실측 첫 호출 0.7s(Add-Type)·이후 10ms.
+- 기각: 이체/송금 키워드 은행창 판정(ERP 송금기록 화면까지 막음) / 키보드 캐시만 사용(실제 포그라운드 아님).
+- 다음에 볼 곳: daemon-health modules.screen.fallback, learning/logs type=screen.capture trigger 분포.
