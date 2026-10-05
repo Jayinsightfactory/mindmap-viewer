@@ -7,9 +7,9 @@ test('hides 임재용 by id and name, keeps others', () => {
   expect(Object.keys(out.byUser)).toEqual(['MNIAFICB3DC88DCB34']);
   expect(h.isHiddenValue('MNSKAQSQ649D9E5936')).toBe(true);
 });
-test('middleware blocks userId query and skips other paths', () => {
+test('middleware blocks userId query and skips other paths', async () => {
   let code; const res = { status: (c) => { code = c; return res; }, json: () => res };
-  h.middleware({ method: 'GET', path: '/api/timetable/day', query: { userId: 'MNH03H73690BB2CD82' } }, res, () => { throw new Error('should block'); });
+  await h.middleware({ method: 'GET', path: '/api/timetable/day', query: { userId: 'MNH03H73690BB2CD82' } }, res, () => { throw new Error('should block'); });
   expect(code).toBe(404);
   let called = false; h.middleware({ method: 'GET', path: '/api/auth/me', query: {} }, {}, () => { called = true; });
   expect(called).toBe(true);
@@ -20,4 +20,12 @@ test('drops string list items naming hidden user', () => {
 test('owner renamed: new display name also hidden', () => {
   h._reset();
   expect(h.isHiddenValue('사장님(owner)')).toBe(true);
+});
+test('owner token querying own userId passes', async () => {
+  jest.resetModules();
+  jest.doMock('../../src/auth', () => ({ verifyToken: () => null, verifyTokenAsync: async () => ({ id: 'MNH03H73690BB2CD82' }) }));
+  const hm = require('../../src/hidden-users');
+  let passed = false;
+  await hm.middleware({ method: 'GET', path: '/api/timetable/day', query: { userId: 'MNH03H73690BB2CD82' }, headers: { authorization: 'Bearer x' } }, {}, () => { passed = true; });
+  expect(passed).toBe(true);
 });

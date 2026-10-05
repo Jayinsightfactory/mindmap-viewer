@@ -62,21 +62,26 @@ const PREFIXES = ['/api/flow', '/api/timetable', '/api/work-flow', '/api/vision/
   '/api/vision/screen-input', '/api/learning', '/api/purposes', '/api/admin/all-users', '/api/workspace/',
   '/api/work-analysis', '/api/intelligence', '/api/mining', '/api/replay', '/api/recordings'];
 
-function requesterId(req) {
+async function requesterId(req) {
   try {
     const raw = String((req.headers && req.headers.authorization) || '').replace('Bearer ', '').trim();
     if (!raw) return null;
-    const u = require('./auth').verifyToken(raw);
+    const a = require('./auth');
+    const u = a.verifyToken(raw) || (a.verifyTokenAsync ? await a.verifyTokenAsync(raw) : null);
     return (u && (u.id || u.userId)) || null;
   } catch { return null; }
 }
 
-function middleware(req, res, next) {
+async function middleware(req, res, next) {
   if (req.method !== 'GET' || !PREFIXES.some((p) => req.path.startsWith(p))) return next();
   // 진단용 우회(화면엔 안 씀): ?showHidden=1 또는 X-Orbit-Show-Hidden: 1
   if ((req.query && req.query.showHidden === '1') || (req.headers && req.headers['x-orbit-show-hidden'] === '1')) return next();
   const q = req.query || {};
   if ([q.userId, q.user_id, q.uid].some((v) => v != null && isHiddenValue(v))) {
+    // [2026-10-05] 숨김 사용자 본인(사장님 토큰)이 자기 userId로 조회 = '내 데이터' → 그대로 통과
+    const qIds = [q.userId, q.user_id, q.uid].filter((v) => v != null).map((v) => String(v).trim());
+    const self = await requesterId(req);
+    if (self && qIds.includes(self)) return next();
     return res.status(404).json({ error: 'hidden_user', hidden: true });
   }
   const orig = res.json.bind(res);
