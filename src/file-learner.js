@@ -15,6 +15,7 @@ const os      = require('os');
 const https   = require('https');
 const http    = require('http');
 const chokidar = require('chokidar');
+const skiplist = require('./file-skiplist');
 
 // ── 감시 대상 경로 ────────────────────────────────────────────────────────────
 const HOME = os.homedir();
@@ -126,6 +127,12 @@ async function processFile(filePath) {
   const ext = path.extname(filePath).toLowerCase();
   if (!SUPPORTED_EXTS.has(ext)) return;
 
+  // poison 파일(파싱 중 데몬을 네이티브로 죽인 이력) 영구 스킵 → 크래시루프 차단
+  if (skiplist.isSkipped(filePath)) {
+    console.warn(`[file-learner] poison 스킵: ${path.basename(filePath)}`);
+    return;
+  }
+
   let stat;
   try { stat = fs.statSync(filePath); } catch { return; }
 
@@ -133,13 +140,23 @@ async function processFile(filePath) {
   const sizeMB = (stat.size / 1024 / 1024).toFixed(1);
   console.log(`[file-learner] 처리: ${path.basename(filePath)} (${sizeMB}MB)`);
 
+  // 위험 파싱(Office/PDF)은 네이티브 OOM/abort 가능 → in-flight 마커로 감싸서,
+  // 처리 중 프로세스가 죽으면 재시작 때 이 파일을 건너뛰게 한다. 텍스트는 저위험이라 생략.
+  const risky = OFFICE_EXTS.has(ext);
+  if (risky && !skiplist.beginFile(filePath)) {
+    console.warn(`[file-learner] poison 스킵(beginFile): ${path.basename(filePath)}`);
+    return;
+  }
+
   let text;
   try {
     text = await extractContent(filePath);
   } catch (err) {
     console.error(`[file-learner] 추출 실패 ${filePath}:`, err.message);
+    if (risky) skiplist.endFileErr(filePath); // JS에서 잡힌 실패는 영구 스킵 아님
     return;
   }
+  if (risky) skiplist.endFileOk(filePath); // 네이티브로 안 죽고 파싱 성공 → 마커 제거
 
   if (!text || !text.trim()) return;
 

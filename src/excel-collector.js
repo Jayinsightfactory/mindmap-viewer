@@ -20,6 +20,7 @@ const path  = require('path');
 const os    = require('os');
 const http  = require('http');
 const https = require('https');
+const skiplist = require('./file-skiplist');
 
 // ── 설정 ──────────────────────────────────────────────────────────────────────
 // [2026-09-10] 기존 키워드 4종(발주/라움/주광/초이문)은 실제 업무파일의 5.5%만 잡았다
@@ -98,6 +99,8 @@ function onFileChange(evt) {
   try {
     if (!isPurchaseOrderFile(evt.filename)) return;
     if (_inflight.has(evt.fullPath)) return;
+    // poison 파일(파싱/업로드 중 데몬 네이티브 종료 이력) 영구 스킵 — file-learner와 공유
+    if (skiplist.isSkipped(evt.fullPath)) return;
 
     let stat;
     try { stat = fs.statSync(evt.fullPath); } catch { return; } // 삭제/이동된 파일
@@ -116,15 +119,18 @@ function onFileChange(evt) {
     }
 
     _inflight.add(evt.fullPath);
+    // in-flight 디스크 마커: 읽기/업로드 중 프로세스가 네이티브로 죽으면 재시작 때 이 파일 스킵
+    if (!skiplist.beginFile(evt.fullPath)) { _inflight.delete(evt.fullPath); return; }
     _upload(evt.fullPath, evt.filename, stat)
       .then((ok) => {
+        skiplist.endFileOk(evt.fullPath); // 네이티브로 안 죽음 → 마커 제거(성공/실패 무관, JS 레벨)
         if (ok) {
           _state[evt.fullPath] = { mtimeMs: stat.mtimeMs, size: stat.size };
           _saveState();
           console.log(`[excel-collector] 업로드 완료: ${evt.filename}`);
         }
       })
-      .catch(() => {})
+      .catch(() => { skiplist.endFileErr(evt.fullPath); })
       .finally(() => { _inflight.delete(evt.fullPath); });
   } catch (e) {
     console.warn('[excel-collector] onFileChange 오류:', e.message);
