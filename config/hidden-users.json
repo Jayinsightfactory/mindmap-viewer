@@ -2,5 +2,13 @@
   "_note": "직원 목록(/api/flow/vision-quality → work-daylog, /my-work 탭들)에서 숨길 계정. 데이터는 지우지 않고 수집도 계속한다 — 화면 목록에서만 뺀다. 값이 객체면 names(표시명·별칭)도 함께 숨긴다. 적용=src/hidden-users.js",
   "MNSKAQSQ649D9E5936": "Luke — 퇴사 (2026-09-28 사장님 확인)",
   "MNMR52IIBE1A1E37A2": "박성수 옛 계정 — 재설치로 MN9B6750A0A37D561D 로 교체됨 (2026-09-28)",
-  "MNH03H73690BB2CD82": "사장님(owner) — 사장님 PC(DESKTOP-S4S2HMU) 계정. 직원 아님 → 직원 목록에서 숨김(옛 표시명 임재용은 오표기, 2026-10-05 사장님 승인)"
+  "MNH03H73690BB2CD82": {
+    "reason": "사장님(owner) — 사장님 PC(DESKTOP-S4S2HMU) 계정, 직원 아님. 직원 목록(/my-work)에서 제외, 수집 유지. 옛 표시명 임재용은 오표기(2026-10-05 사장님 승인으로 이름 정정)",
+    "names": [
+      "사장님(owner)",
+      "임재용",
+      "jaeyong lim",
+      "dlaww584"
+    ]
+  }
 }

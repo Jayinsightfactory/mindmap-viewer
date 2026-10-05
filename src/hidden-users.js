@@ -62,6 +62,15 @@ const PREFIXES = ['/api/flow', '/api/timetable', '/api/work-flow', '/api/vision/
   '/api/vision/screen-input', '/api/learning', '/api/purposes', '/api/admin/all-users', '/api/workspace/',
   '/api/work-analysis', '/api/intelligence', '/api/mining', '/api/replay', '/api/recordings'];
 
+function requesterId(req) {
+  try {
+    const raw = String((req.headers && req.headers.authorization) || '').replace('Bearer ', '').trim();
+    if (!raw) return null;
+    const u = require('./auth').verifyToken(raw);
+    return (u && (u.id || u.userId)) || null;
+  } catch { return null; }
+}
+
 function middleware(req, res, next) {
   if (req.method !== 'GET' || !PREFIXES.some((p) => req.path.startsWith(p))) return next();
   // 진단용 우회(화면엔 안 씀): ?showHidden=1 또는 X-Orbit-Show-Hidden: 1
