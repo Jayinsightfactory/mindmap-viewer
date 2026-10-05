@@ -466,6 +466,7 @@ app.use('/api/', (req, res, next) => {
 // Stripe Webhook은 서명 검증을 위해 원본 바디(Buffer)가 필요 — JSON 파싱 전에 처리
 app.use('/api/payment/webhook', express.raw({ type: 'application/json' }));
 app.use(express.json({ limit: '2mb' }));
+app.use(require('./src/hidden-users').middleware); // [2026-10-05] /my-work 목록 숨김(config/hidden-users.json)
 // 프로덕션: 압축된 JS 우선 사용
 if (process.env.NODE_ENV === 'production') {
   // 개발 단계: 원본 JS 사용 (minified에서 TDZ 에러 발생)
