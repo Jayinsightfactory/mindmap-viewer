@@ -6,9 +6,9 @@
  * 설정: Orbit 서버 GET /api/daemon/nenova-ingest-config (url·token·내 이름). 서버에 미설정이면 조용히 무동작.
  *
  * 개인 파일은 여기서 원천 차단한다(서버에 도달하지 않음). 올리는 조건은 전부 AND:
- *   ① 확장자 화이트리스트(xlsx/xls/xlsm/csv/pdf/docx/doc/hwp/pptx) — 사진·영상·압축은 올리지 않는다
+ *   ① 확장자 화이트리스트(xlsx/xls/xlsm/csv/pdf/docx/doc/hwp/pptx/zip/html/htm) — 사진·영상은 올리지 않는다
  *   ② 1KB ≤ 크기 ≤ 25MB, 임시파일(~$·.tmp·.) 아님, 실제 존재(삭제 이벤트 제외)
- *   ③ 업무 신호가 있다: 파일명에 차수(38-2/3802/38차…) 또는 업무 키워드(발주·입고·출고·원가·운임·견적·명세·결의·송금·인보이스·proforma·order·packing·불량…)
+ *   ③ 업무 신호가 있다: 승인된 업무 도구 파일명 또는 차수(38-2/3802/38차…) 또는 업무 키워드(발주·입고·출고·원가·운임·견적·명세·결의·송금·인보이스·proforma·order·packing·불량…)
  *   ④ 개인 신호가 없다: 계약·contrato·이력서·급여·연봉·개인·사진·가족·병원·보험·여권·주민·통장·카드명세·연말정산·KakaoTalk_ 이미지·스크린샷…
  * 분류(차수·단계·부서·민감)는 네노바웹이 최종 판단. 같은 파일은 sha256 로 한 번만, 저장 직후 연타는 90초 디바운스.
  */
@@ -17,7 +17,14 @@ const path = require('path');
 const os = require('os');
 const crypto = require('crypto');
 
-const EXT_OK = /\.(xlsx|xlsm|xls|csv|pdf|docx|doc|hwp|pptx)$/i;
+const EXT_OK = /\.(xlsx|xlsm|xls|csv|pdf|docx|doc|hwp|pptx|zip|html|htm)$/i;
+// 승인된 업무 도구 파일명은 파일명 업무 신호가 없어도 허용한다.
+const APPROVED_BUSINESS_TOOLS = new Set([
+  'generador_pedidos.zip',
+  'nenova.html',
+  'nenova_app.zip',
+  'import_team_checklist_diario_2.html',
+]);
 const MIN_BYTES = 1024, MAX_BYTES = 25 * 1024 * 1024;
 const CYCLE_RE = /(?:^|[^\d])\d{2}\s*[-_]\s*0?\d(?!\d)|(?:^|[^\dA-Za-z])\d{2}0?\d(?=차|_|\s|\.)|(?:^|[^\d])\d{2}\s*차(?!수)/; // 영문 뒤 숫자(무작위 ID 'G547')는 차수 아님
 const WORK_RE = /발주|입고|출고|분배|원가|운임|견적|명세|결의|송금|외화|정산|매출|재고|물량|취합|인보이스|invoice|proforma|packing|order|pedido|awb|phyto|불량|quality|claim|클레임|holex|farm|농장|수국|장미|카네이션|알스트로|출고내역|거래명세|세금계산|면장|통관|도착원가|freight|arrival/i;
@@ -59,10 +66,12 @@ async function _config() {
 // 올릴지 결정 — 이유를 돌려준다(로그·통계용). 내용은 읽지 않고 이름·크기만 본다.
 function decide(evt) {
   const name = String(evt.filename || '');
-  if (!EXT_OK.test(name)) return 'ext';
+  const isApprovedTool = APPROVED_BUSINESS_TOOLS.has(name.toLowerCase());
+  if (!isApprovedTool && !EXT_OK.test(name)) return 'ext';
   if (name.startsWith('~$') || name.startsWith('.') || /\.tmp$/i.test(name)) return 'temp';
-  if (JUNK_RE.test(name)) return 'junk';
+  if (!isApprovedTool && JUNK_RE.test(name)) return 'junk';
   if (PERSONAL_RE.test(name)) return 'personal';
+  if (isApprovedTool) return 'ok';
   if (!CYCLE_RE.test(name) && !WORK_RE.test(name)) return 'no-signal';
   return 'ok';
 }

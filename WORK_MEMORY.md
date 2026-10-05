@@ -1971,3 +1971,11 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 - 기각: 이체/송금 키워드 은행창 판정(ERP 송금기록 화면까지 막음) / 키보드 캐시만 사용(실제 포그라운드 아님).
 - 다음에 볼 곳: daemon-health modules.screen.fallback, learning/logs type=screen.capture trigger 분포.
 - 후속(라이브 실측): 배포 직후 박성수 PC lastHookTriggerAt가 90초마다 갱신 → 원인=keyboard-watcher 원격 배치 flush가 입력 없이도 onKeyboardFlush 호출. 훅 생존 신호에서 제외.
+
+## 2026-10-05 업무 드라이브 HTML·ZIP 업로드 허용
+- 요청: 업무용 ZIP/HTML 업로드 지원 및 가브리엘 도구 4개 수신, 개인 파일 제외 유지.
+- 원인: src/work-file-uploader.js의 EXT_OK가 HTML/HTM/ZIP을 제외. Nenovaweb 수신 ingestFile은 확장자 제한이 없고 인증된 첨부 다운로드를 사용.
+- 변경: zip/html/htm을 허용 확장자에 추가. generador_pedidos.zip, Nenova.html, nenova_app.zip, Import_Team_Checklist_Diario_2.html은 확인된 업무 도구명으로 업무 신호 인정.
+- 보존: 개인정보 파일명 제외, 임시 파일 제외, 일반 파일 업무 신호, 1KB~25MB, 기존 감시 폴더, 중복·재시도·권한. privacy-gate와 원격 설정은 변경하지 않음.
+- 한계: 개인정보 판정은 파일명 기준이며 HTML 본문·ZIP 내부의 개인정보 부재를 보장하지 않음. 파일 실제 존재와 해당 PC 업데이트·수신 여부는 별도 확인 필요.
+- 회귀 검증: node tests/work-file-uploader.check.js; node tests/privacy-gate.check.js; node --check src/work-file-uploader.js.
