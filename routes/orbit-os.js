@@ -428,7 +428,7 @@ function createOrbitOS({ getDb }) {
         'MNMRVD11EDCCF6E7CE', // wbk 원빈킴
         'MNMR8568CC8950F81D', // hoon J 현욱
         'MNMSAQJD78E544A631', // 강명훈
-        'MNH03H73690BB2CD82', // 이재만 (임재용)
+        'MNH03H73690BB2CD82', // 사장님(owner)
       ];
       const targetUsers = req.query.users
         ? req.query.users.split(',').map(s => s.trim()).filter(Boolean)
@@ -488,7 +488,7 @@ function createOrbitOS({ getDb }) {
         'MNMRVD11EDCCF6E7CE': 'wbk(원빈킴)',
         'MNMR8568CC8950F81D': 'hoon J(현욱)',
         'MNMSAQJD78E544A631': '강명훈',
-        'MNH03H73690BB2CD82': '이재만(임재용)',
+        'MNH03H73690BB2CD82': '사장님(owner)',
       };
 
       const result = targetUsers.map(uid => {
