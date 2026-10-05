@@ -14,3 +14,6 @@ test('middleware blocks userId query and skips other paths', () => {
   let called = false; h.middleware({ method: 'GET', path: '/api/auth/me', query: {} }, {}, () => { called = true; });
   expect(called).toBe(true);
 });
+test('drops string list items naming hidden user', () => {
+  expect(h.scrub({ handsTo: ['설연주(5건)', 'jaeyong lim', '임재용(2건)', '임재용씨아님X'] }).handsTo).toEqual(['설연주(5건)', '임재용씨아님X']);
+});

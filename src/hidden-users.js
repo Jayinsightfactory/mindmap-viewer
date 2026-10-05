@@ -29,7 +29,16 @@ function isHiddenValue(v) {
   const { ids, names } = load();
   return ids.has(s) || names.has(s.toLowerCase());
 }
+// 문자열 항목: '임재용', 'jaeyong lim(3건)' 처럼 숨김 이름으로 시작하는 목록 원소
+function isHiddenString(str) {
+  const t = String(str).trim().toLowerCase();
+  const { ids, names } = load();
+  if (ids.has(String(str).trim())) return true;
+  for (const n of names) if (t === n || (t.startsWith(n) && /^[\s(（:,·-]/.test(t.slice(n.length)))) return true;
+  return false;
+}
 function isHiddenEntry(o) {
+  if (typeof o === 'string') return isHiddenString(o);
   if (!o || typeof o !== 'object' || Array.isArray(o)) return false;
   for (const k of ID_KEYS) if (typeof o[k] === 'string' && isHiddenValue(o[k])) return true;
   if (typeof o.id === 'string' && load().ids.has(o.id)) return true;
@@ -66,4 +75,4 @@ function middleware(req, res, next) {
   next();
 }
 
-module.exports = { load, isHiddenValue, isHiddenEntry, scrub, middleware, PREFIXES, _reset };
+module.exports = { isHiddenString, load, isHiddenValue, isHiddenEntry, scrub, middleware, PREFIXES, _reset };
