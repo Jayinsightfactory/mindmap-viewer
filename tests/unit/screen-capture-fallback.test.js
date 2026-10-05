@@ -110,3 +110,11 @@ test('트리거 설명·상태 노출', () => {
   expect(st.provider).toBe(true);
   expect(typeof st.lastHookTriggerAt).toBe('string');
 });
+
+test('주기적 keyboard flush는 훅 생존 신호가 아니다 (훅 차단 PC에서도 배치 flush는 돈다)', () => {
+  const before = Date.parse(sc.getFallbackStatus().lastHookTriggerAt);
+  T.setHookAt(1000);
+  sc.onKeyboardFlush();
+  expect(Date.parse(sc.getFallbackStatus().lastHookTriggerAt)).toBe(1000);
+  expect(before).toBeGreaterThan(0);
+});

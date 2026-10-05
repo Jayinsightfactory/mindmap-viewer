@@ -1970,3 +1970,4 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 - 검증: jest tests/unit 163 pass, privacy-gate.check ALL PASS, 로컬 PS 실측 첫 호출 0.7s(Add-Type)·이후 10ms.
 - 기각: 이체/송금 키워드 은행창 판정(ERP 송금기록 화면까지 막음) / 키보드 캐시만 사용(실제 포그라운드 아님).
 - 다음에 볼 곳: daemon-health modules.screen.fallback, learning/logs type=screen.capture trigger 분포.
+- 후속(라이브 실측): 배포 직후 박성수 PC lastHookTriggerAt가 90초마다 갱신 → 원인=keyboard-watcher 원격 배치 flush가 입력 없이도 onKeyboardFlush 호출. 훅 생존 신호에서 제외.

@@ -1033,7 +1033,7 @@ function onKeyActivity() {
 let _flushCaptureTimer = null;
 function onKeyboardFlush() {
   if (!_running) return;
-  _noteHookTrigger();
+  // 주의: 원격 배치 flush는 입력 없어도 주기적으로 불림 → 훅 생존 신호로 쓰지 않음(_noteHookTrigger 제외)
   if (_idleTimer) { clearTimeout(_idleTimer); _idleTimer = null; }
   if (_flushCaptureTimer) clearTimeout(_flushCaptureTimer);
   // 3초 후 캡처 (입력 결과가 화면에 렌더링될 시간 확보)
