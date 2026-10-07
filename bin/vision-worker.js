@@ -1049,6 +1049,37 @@ const SERVER_QUEUE_MODE = process.argv.includes('--server-queue') || !process.en
 const SERVER_QUEUE_POLL_MS = parseInt(process.env.VISION_POLL_MS) || 10 * 60 * 1000;
 const QUEUE_BATCH_N = parseInt(process.env.VISION_BATCH_N) || 24;
 
+// [2026-10-07] 코드 갱신 자동 반영 — 상주 워커가 옛 코드로 계속 돌던 사고(9/29 기동 → 10/5 5f183eb의 _whereCtx 미적용,
+// rawWindowTitle/excel/lastClick 0건) 재발 방지. 틱마다 git HEAD를 보고 바뀌었으면 같은 인자·환경으로
+// 창 없이(detached, windowsHide) 자기 자신을 재기동하고 종료. 배치 처리 중이면 다음 틱으로 미룸.
+function _codeRev() {
+  try {
+    const gitDir = path.join(__dirname, '..', '.git');
+    const head = fs.readFileSync(path.join(gitDir, 'HEAD'), 'utf8').trim();
+    if (!head.startsWith('ref:')) return head;
+    const ref = head.slice(4).trim();
+    try { return fs.readFileSync(path.join(gitDir, ref), 'utf8').trim(); } catch {}
+    const packed = fs.readFileSync(path.join(gitDir, 'packed-refs'), 'utf8').split(String.fromCharCode(10)).map(l => l.trim()).find(l => l.endsWith(' ' + ref));
+    return packed ? packed.split(' ')[0] : null;
+  } catch { return null; }
+}
+const _BOOT_REV = _codeRev();
+function _reloadIfCodeChanged() {
+  if (process.env.VISION_NO_SELF_RELOAD === '1' || !_BOOT_REV) return false;
+  if (_spoolBusy || _localBusy) return false;
+  const now = _codeRev();
+  if (!now || now === _BOOT_REV) return false;
+  console.log(`[vision-worker] 코드 갱신 감지 ${_BOOT_REV.slice(0, 8)} → ${now.slice(0, 8)} — 새 코드로 재기동`);
+  try {
+    const { spawn } = require('child_process');
+    const child = spawn(process.execPath, process.argv.slice(1), { cwd: process.cwd(), env: process.env, detached: true, windowsHide: true, stdio: 'inherit' });
+    child.unref();
+    setTimeout(() => process.exit(0), 500);
+    return true;
+  } catch (e) { console.error('[vision-worker] 재기동 실패(옛 코드로 계속):', e.message); return false; }
+}
+function _loop(fn, ms) { setInterval(() => { if (!_reloadIfCodeChanged()) fn(); }, ms); }
+
 async function main() {
   console.log('[vision-worker] Claude Vision 분석 워커');
   if (!ANTHROPIC_KEY && !CLAUDE_CLI) {
@@ -1069,7 +1100,7 @@ async function main() {
     const first = await processSpool();
     console.log(`[vision-spool] 첫 배치: ${first}건`);
     if (process.argv.includes('--once')) { process.exit(0); }
-    setInterval(processSpool, SERVER_QUEUE_POLL_MS);
+    _loop(processSpool, SERVER_QUEUE_POLL_MS);
   } else if (LOCAL_MODE) {
     // 로컬 폴더 모드: PNG 백로그 소급 분석 (무과금 CLI). 사용자 ID 없으면 결과 귀속 불가.
     if (!LOCAL_USER) console.warn('  ⚠ userId 없음(.orbit-config.json) — 분석결과 귀속 안 됨');
@@ -1077,13 +1108,13 @@ async function main() {
     const first = await processLocalDir();
     console.log(`[vision-local] 첫 배치: ${first}건`);
     if (process.argv.includes('--once')) { process.exit(0); }
-    setInterval(processLocalDir, SERVER_QUEUE_POLL_MS);
+    _loop(processLocalDir, SERVER_QUEUE_POLL_MS);
   } else if (SERVER_QUEUE_MODE) {
     // 서버 큐 모드: SERVER_QUEUE_POLL_MS마다 서버에서 이미지 가져와 CLI 분석
     const first = await processServerQueue();
     console.log(`[vision] 첫 배치: ${first}건`);
     if (process.argv.includes('--once')) { process.exit(0); }
-    setInterval(processServerQueue, SERVER_QUEUE_POLL_MS);
+    _loop(processServerQueue, SERVER_QUEUE_POLL_MS);
   } else {
     // Google Drive 모드
     if (!(await loadGoogleConfig())) { console.error('Google Drive 설정 실패'); process.exit(1); }
