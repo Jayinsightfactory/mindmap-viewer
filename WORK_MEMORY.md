@@ -1979,3 +1979,43 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 - 보존: 개인정보 파일명 제외, 임시 파일 제외, 일반 파일 업무 신호, 1KB~25MB, 기존 감시 폴더, 중복·재시도·권한. privacy-gate와 원격 설정은 변경하지 않음.
 - 한계: 개인정보 판정은 파일명 기준이며 HTML 본문·ZIP 내부의 개인정보 부재를 보장하지 않음. 파일 실제 존재와 해당 PC 업데이트·수신 여부는 별도 확인 필요.
 - 회귀 검증: node tests/work-file-uploader.check.js; node tests/privacy-gate.check.js; node --check src/work-file-uploader.js.
+
+## 2026-10-07 — 채택 장부(adoption-ledger) 가동 + 07:00 크래시 2건 수정
+검색어: adoption-ledger 채택장부 기준선 self-tune 크래시 matching-suggestions UTC 날짜 KST 함정 records 가드
+- 사장님 "지표 지금부터 쌓게": nenova-work-features/adoption-ledger.js 신설 → ~/.orbit/adoption-ledger.json 매일 1줄(문제등록부 자동측정분·증명기준 지표·자기성장 산출·운영신호). run-all 끝에 연결. 기준선 2026-10-07: 직원 확증% 평균 34.2, 근거확증 595건(전산240/파일247/카톡201), 별칭0·제안0, 카톡규칙124·승격0, persona 37·죽음0. experiments[]·radar 는 사람 편집칸(스크립트 보존).
+- ★사고1: 어제 만든 observed/matching-suggestions.json 을 self-tune.js·build-observed-workflows.js 가 직원 파일로 오인→둘 다 크래시→07:00 관찰 절차 전체 "수집 실패"(LLM 재생성 누락). prep 쪽은 10:11에 matching- 제외가 이미 반영돼 있었음(다른 작업). self-tune 은 이름 제외(matching-|adoption-)+records 배열 가드로 수정. 교훈: observed/ 에 새 산출물 json 을 두면 모든 직원-목록 필터를 같이 고쳐야 — 가드는 "records 있나"로.
+- ★사고2(재발): self-tune·kakao-intel-grow·rule-ledger 의 today 가 UTC → 07:06 KST 실행이 전날(10-06)로 찍혀 어제 항목 덮어씀(카톡 장부 "신규 100" 오해). 세 곳 KST(Date.now()+9h)로 수정. 메모리 nenova-my-work-refresh 의 getUTCHours 함정과 동일 계열.
+- 카톡 장부 "사라짐 26·신규 24"는 롤업이 kind당 top-40 캡이라 주변부 규칙이 매일 교체되는 정상 churn. 꾸준히 top-40 인 규칙만 days 누적→승격.
+- 최저 직원 산정은 단계≥5 만(손지윤 첫날 0% 제외).
+
+## 2026-10-07 (2) — 사장님 결정 4건 확정·착수(A 탐색스크립트 / B 레이더 탭 PR / C 정산 탭 PR)
+검색어: 결정 탐색 허용 레이더 my-work 정산탭 adoption-scout 실험 등록 exp-001
+- 결정: 1 허용 / 2 a(/my-work 관리자 탭) / 3 합치기(정산 탭, 옛 화면 2주 병행) / 4 첫 월요일. 장부 decisions·experiments 3건(exp-001 self-tune, exp-002 카톡 승격, exp-003 정산 탭) 기준선 10/7 등록.
+
+## 2026-10-07 (3) — 탐색·적합 스크립트 가동(adoption-scout.js) + B/C 에이전트 발사
+검색어: adoption-scout 탐색 적합 일요일 게이트 hada Atom anthropic-docs 고유URL candidates p7 headroom
+- nenova-work-features/adoption-scout.js: 5소스(Claude Code CHANGELOG raw·Anthropic 릴리스노트 HTML·Codex GitHub releases·GitHub 검색 3쿼리(7초 간격, 비인증 한도)·hada Atom) → ~/.orbit/adoption-feed.jsonl(URL 중복제거) → 신규만 sonnet 1회 적합 판정(문제등록부 p1~p7, fit>=3=assess) → ledger.candidates. quota-hold 시 판정 생략. run-all 일요일 게이트(WF_SCOUT=1 강제).
+- 첫 실행: 신규 45 → 판정 40 → assess 3(전부 p7 사용량절감: headroomlabs/headroom 툴출력 압축, Claude Code 2.1.292 effort 파라미터, codebase-memory-mcp). 함정: hada 는 Atom(<entry>)이라 0건→파서 수정 / anthropic-docs 항목이 같은 페이지 URL 이라 1건으로 뭉개짐→제목 fragment 로 고유화.
+- B(레이더 탭 PR)·C(정산 탭 PR) general-purpose 에이전트 백그라운드 진행 중(worktree wt-radar / wt-settle, PR 까지, 머지·배포 금지).
+
+## 2026-10-07 (4) — PR 2건 생성(#945 정산 탭, #947 레이더 탭) + CRLF 함정 수정
+검색어: PR 945 947 정산탭 레이더탭 CRLF autocrlf 줄끝 diff 1500줄 SettlementTab adoption-radar
+- #947 feat/adoption-radar: pages/my-work.js RadarTab(+95), api/my-work/feature name=adoption-ledger(5분 캐시), lib/workFeatureData FEATURE_NAMES, docs/contracts/adoption-radar.json, 테스트 2. 관리자 게이트=lib/orbitReportAccess.isOrbitReportViewer(nenovaSS3 화이트리스트) 재사용, 비관리자 SSR 404. 빌드·게이트 전부 통과(에이전트 실측). 업로드 upload-adoption.js + run-all 57행. 서버가 이 PR 배포 전엔 400(매일 재시도).
+- #945 feat/import-settlement-tab: components/import/SettlementTab.js 신설(4구역: 송금확정 remit-inbox / 송금수기 incoming-price/remit / 크레딧 incoming-price PUT / 클레임 stats/pivot-import POST), pages/import/index.js 탭 추가(수입부·경영지원 공통), 옛 화면 2곳 링크 1줄. 비USD=confirmInbox 기존 파라미터 amountUSD 로 환산액 입력(스키마 불변). 골든: pivot GET 전후 바이트 동일(144행), 빌드·ui-layout·erp-write-guard 통과. 부수효과: 공유된 '송금 확인' 탭도 비USD 확정 가능.
+- ★함정: 저장소 블롭은 LF 인데 에이전트 커밋이 CRLF → 옛 화면 2파일이 +929/-928, +574/-573 로 잡힘(실제 1줄). 진단은 `git diff --ignore-space-at-eol --stat`(1줄만) + node 로 CRLF 바이트 집계(grep $'\r' 는 Git Bash 에서 오판). 수정: 4파일 LF 변환 후 `git -c core.autocrlf=false add/commit` 새 커밋 push. 교훈: Windows 에이전트 PR 은 머지 전 `--ignore-space-at-eol` 대조 필수.
+
+## 2026-10-07 (5) — PR #947·#945 머지·배포 완료, 라이브 검증
+검색어: 머지 배포 Cafe24 247 945 레이더탭 정산탭 라이브 upload-adoption 200 deploy cancelled 8d2029f
+- 사장님 "해줘" → gh pr merge --merge 순서 #947(06:12:31Z)→#945(06:12:44Z). Deploy to Cafe24 는 최신 push 가 이전 실행 취소(47a20a3 run cancelled) → 다른 작업의 #950(8d2029f) push 가 두 머지를 포함해 06:22:43Z success. 검증: 8d2029f 가 253acd5·47a20a3 의 후손(merge-base --is-ancestor).
+- 라이브: upload-adoption.js → "adoption-ledger 200 ok 10.2KB days=1"(서버가 이름 인식, 400 재시도 종료). /import 200, /my-work·feature API 비로그인 404(설계대로). 브라우저 실클릭은 미검증(직원 첫 사용 후 사용 로그).
+- 장부: exp-003 trial(deployedAt 10/7), exp-004 레이더 탭 추가, radar.trial 2건, deployments 기록. 지도 아티팩트 v3 PR 카드→배포됨.
+- 다음: 직원 공지(정산 탭 안내, 옛 화면 2주 병행 후 숨김 PR), 내일 07:00 무인 실행 전체 통과 확인, 일요일 첫 자동 탐색.
+
+## 2026-10-08 — 설연주·강명훈 업무흐름 분석 보고서
+검색어: 설연주 강명훈 워크플로우 분석 핸드오프 견적방 이카운트 계산기 자동화 후보 측정 공백
+- 아티팩트 https://claude.ai/artifact/UoQYnvSNe72M4X5J895L4M (10/8 07:33 재생성 workflows 기준, 설연주 477건·강명훈 457건).
+- 설연주(영업지원): 20단계 중 확증 10(전산5·파일2·카톡3)=50%, high 3. 핵심=카톡 현장방 변경→네노바웹 견적서 수량·단가 수정(전산 확증)→영업방/현장추가취소방 복사 전달→견적방 판매등록·세금계산서 요청→라움 손익 저장. LLM-전산 일치 40%(단가 입력 목적지가 재고관리로 오귀속), 앱불일치 차단 6(카톡 보며 바로 전산 입력).
+- 강명훈(경영지원): 23단계 중 확증 1=4.3%. 원인=측정 공백: 앱 분포 이카운트102·브라우저(홈택스·은행·포털)124·엑셀91·네이버웍스75·네노바웹5·카톡1, 전산 쓰기 0건. 레코드 레벨 파일31·카톡8 확증은 있으나 LLM 단계가 미인용(p2). 핵심=세금계산서 PDF→견적방, 이카운트 차수 매출액(계산기), 주광농원 입금 대조(계산기), 해외송금(메일→구글시트→환율표→지출결의서→하나은행→견적방), CI 엑셀→PDF.
+- 핸드오프: 설연주 견적방 요청 → 강명훈 매출액·세금계산서·입금 보고(견적→거래처전달→입금→해외송금 구간).
+- 자동화 후보 8: 설연주 ①현장방 메시지→견적 수량 변경 제안(전산확증, parse-paste 재사용) ②두 방 동시 전송(KakaoOutbox) ③라움 매입단가 자동 제안 ④발주서 부족수량(관찰 보강 먼저); 강명훈 ⑤차수 매출액·주광 대조 자동(★네노바웹 ECOUNT 자동대사·채권현황 메뉴 이미 있음→왜 안 쓰나 확인 먼저, 이카운트 판매현황 API 없음) ⑥해외송금→정산 탭 첫 사용자 온보딩 ⑦세금계산서 진행단계 메뉴와 겹침 확인 ⑧CI→PDF 일괄.
+- 측정 보강 순서: 단계 생성 시 파일 근거 우선 인용 → 이카운트 화면 수집(4화면) → 웍스 메일·드라이브(게이트 검토).

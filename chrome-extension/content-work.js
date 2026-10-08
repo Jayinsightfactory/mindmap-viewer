@@ -16,7 +16,9 @@
 
   // ── 민감 페이지/자격증명 차단 (로그인 ID/회사코드/비밀번호 등 절대 미수집) ──
   function isSensitivePage() {
-    const u = location.href.toLowerCase();
+    // 경로만 검사한다(호스트 제외). ECOUNT ERP 는 호스트가 logincc.ecount.com 이라 href 전체를 검사하면
+    // 모든 업무 화면이 로그인 페이지로 오판돼 한 건도 수집되지 않았다(2026-10-08 실측).
+    const u = (location.pathname + location.search).toLowerCase();
     if (/login|signin|sign-in|auth|logon|password|계정/.test(u)) return true;
     // 비밀번호 입력이 있는 페이지(=로그인/인증 폼)는 통째로 캡처 제외
     if (document.querySelector('input[type="password"]')) return true;
@@ -40,8 +42,10 @@
   const SEND = (step) => {
     try {
       if (isSensitivePage()) return; // 로그인/인증 페이지는 캡처 안 함
+      // url 에서 쿼리(세션 ID 등)는 떼고 보낸다. 해시의 ec_req_sid 도 제거(ECOUNT 세션 키 비수집, 2026-10-08)
+      const safeUrl = location.origin + location.pathname + location.hash.replace(/([?&#])ec_req_sid=[^&#]*/g, '$1').replace(/[?&#]$/, '');
       chrome.runtime.sendMessage({ type: 'orbit-work-step', step: {
-        ...step, url: location.href, title: document.title, t: new Date().toISOString(),
+        ...step, url: safeUrl, title: document.title, t: new Date().toISOString(),
       } }).catch(() => {});
     } catch (_) {}
   };
@@ -122,7 +126,9 @@
     const menu = clean(
       (document.querySelector('.tab.active, .menu.active, [aria-selected="true"]') || {}).innerText ||
       (document.querySelector('h1, .page-title, .title') || {}).innerText || '');
-    SEND({ action: 'navigate', context: { menu } });
+    // ECOUNT: 주소(해시/쿼리)의 prgId·menuSeq 가 메뉴 식별자. 서버에서 메뉴명으로 바꾼다(2026-10-08)
+    const idm = (location.hash + location.search).match(/prgId=([A-Za-z0-9_]+)/), msm = (location.hash + location.search).match(/menuSeq=([A-Za-z0-9_]+)/);
+    SEND({ action: 'navigate', context: { menu, prgId: idm ? idm[1] : undefined, menuSeq: msm ? msm[1] : undefined } });
     setTimeout(scanTable, 1200); // 페이지 로드 후 테이블 스캔
   }
   setInterval(onNav, 800);
