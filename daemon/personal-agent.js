@@ -1278,27 +1278,31 @@ async function main() {
   // 2026-06-09 added: 메모리 모니터링 + graceful restart (OOM kill 방지)
   // 2026-08-19: 한도를 600MB로 두면 RSS 1.3GB 안정 상태에서도 15분마다 재시작 → 화면 끊김.
   // 성장분(누수)만 재시작한다. 모듈 로드 후 높은 RSS 자체는 재시작 대상이 아님.
-  const MEM_LIMIT_MB = 1800;
+  // 2026-10-09 사장님 PC 실측: 재시작 후 13분 만에 RSS 2.1GB·Private 7GB·OS 핸들 82만(초당 +120) → 하루 18~52회 memory_limit 재시작, RAM 99%.
+  //   5분 간격·3회 경고(최소 15분)로는 그 사이 RAM이 바닥남. 1분 간격으로 보고, 핸들·리소스 종류별 수를 로그에 남겨 누수 원인을 다음 재시작 로그에서 바로 읽게 한다.
+  const MEM_LIMIT_MB = 2500, MEM_HARD_MB = 3000;
   let memWarnCount = 0;
   let memFloorMB = 0;
+  const _resHist = () => { try { const h = {}; for (const t of process.getActiveResourcesInfo()) h[t] = (h[t] || 0) + 1; return Object.entries(h).sort((a, b) => b[1] - a[1]).slice(0, 8).map(([k, v]) => `${k}:${v}`).join(' '); } catch { return '?'; } };
   setInterval(() => {
     try {
-      const rssMB = Math.round(process.memoryUsage().rss / 1024 / 1024);
+      const mu = process.memoryUsage();
+      const rssMB = Math.round(mu.rss / 1024 / 1024), heapMB = Math.round(mu.heapUsed / 1024 / 1024), extMB = Math.round((mu.external + (mu.arrayBuffers || 0)) / 1024 / 1024);
       if (!memFloorMB || rssMB < memFloorMB) memFloorMB = rssMB;
       const growing = rssMB > memFloorMB + 300;
-      if (rssMB > MEM_LIMIT_MB && growing) {
+      if (rssMB > MEM_LIMIT_MB) {
         memWarnCount++;
-        console.warn(`[orbit] 메모리 ${rssMB}MB > ${MEM_LIMIT_MB}MB 이고 +${rssMB - memFloorMB}MB 성장 (warning ${memWarnCount}/3)`);
-        if (memWarnCount >= 3) {
-          console.warn('[orbit] 메모리 누수 의심 → graceful restart (ps1 loop가 재시작)');
-          _reportError('memory_graceful_restart', `${rssMB}MB > ${MEM_LIMIT_MB}MB`);
+        console.warn(`[orbit] 메모리 ${rssMB}MB(heap ${heapMB} ext ${extMB}) > ${MEM_LIMIT_MB}MB ${growing ? '+' + (rssMB - memFloorMB) + 'MB 성장' : ''} (warning ${memWarnCount}/3) 리소스: ${_resHist()}`);
+        if (memWarnCount >= 3 || rssMB > MEM_HARD_MB) {
+          console.warn(`[orbit] 메모리 누수 → graceful restart (ps1 loop가 재시작). 리소스: ${_resHist()}`);
+          _reportError('memory_graceful_restart', `${rssMB}MB heap ${heapMB} ext ${extMB} res ${_resHist()}`);
           shutdown('memory_limit').catch(()=>{});
         }
       } else if (memWarnCount > 0) {
         memWarnCount = 0;
       }
     } catch {}
-  }, 5 * 60 * 1000); // 5분마다 체크
+  }, 60 * 1000); // 1분마다 체크
 }
 
 main().catch(err => {
