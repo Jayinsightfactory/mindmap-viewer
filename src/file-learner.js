@@ -205,7 +205,10 @@ function start(opts = {}) {
     // 숨김 + Windows 특수폴더 + [2026-09-10] 오피스 임시/락 파일 제외.
     // 엑셀은 저장할 때 `~$파일.xlsx`(락)와 임의이름 `.tmp`를 만들었다 지우는데,
     // 그 찰나에 감시가 붙으면 EBUSY가 난다. 애초에 보지 않는 것이 근본 해결.
-    ignored:          /(^|[/\\])\.|(^|[/\\])~\$|\.tmp$|\.temp$|\.crdownload$|\.partial$|My Music|My Videos|My Pictures/i,
+    // [2026-10-09] ★메모리 폭주 근본원인: Documents 44,500·Desktop 10,840 디렉토리(node_modules 53그루 포함)를 깊이 제한 없이 감시해
+    //   fs.watch 핸들(FSEventWrap)이 26만 개까지 쌓이고 RSS 2~7GB → 하루 18~52회 memory_limit 재시작. 개발 저장소 폴더 제외 + 깊이 4.
+    ignored:          /(^|[/\\])\.|(^|[/\\])~\$|\.tmp$|\.temp$|\.crdownload$|\.partial$|My Music|My Videos|My Pictures|(^|[/\\])(node_modules|\.git|dist|build|out|\.next|__pycache__|venv|\.venv|site-packages|coverage|target|\.cache)([/\\]|$)/i,
+    depth:            4,
     persistent:       true,
     ignoreInitial:    true,
     ignorePermissionErrors: true, // Windows EPERM 무시
