@@ -2019,3 +2019,11 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 - 핸드오프: 설연주 견적방 요청 → 강명훈 매출액·세금계산서·입금 보고(견적→거래처전달→입금→해외송금 구간).
 - 자동화 후보 8: 설연주 ①현장방 메시지→견적 수량 변경 제안(전산확증, parse-paste 재사용) ②두 방 동시 전송(KakaoOutbox) ③라움 매입단가 자동 제안 ④발주서 부족수량(관찰 보강 먼저); 강명훈 ⑤차수 매출액·주광 대조 자동(★네노바웹 ECOUNT 자동대사·채권현황 메뉴 이미 있음→왜 안 쓰나 확인 먼저, 이카운트 판매현황 API 없음) ⑥해외송금→정산 탭 첫 사용자 온보딩 ⑦세금계산서 진행단계 메뉴와 겹침 확인 ⑧CI→PDF 일괄.
 - 측정 보강 순서: 단계 생성 시 파일 근거 우선 인용 → 이카운트 화면 수집(4화면) → 웍스 메일·드라이브(게이트 검토).
+
+## 2026-10-09 — Nenova 현장 추가취소방 읽기 피드
+- 요청: 영업방 원문과 현장 추가취소방 전달 근거를 비교할 수 있게 읽기 전용 `/api/kakao/nenova-delivery-feed` 추가. 메시지 발송·ERP 쓰기·기존 영업방 피드 변경 금지.
+- 사전 검색: `scripts/prework-search.ps1 "nenova" "sales-feed" "현장 추가취소방"`; CLAUDE/WORKSPACE/PROGRESS/DATA_CHECK 및 WORK_MEMORY 관련 기록, 기존 sales 라우트/테스트/계약 확인. 기존 기능은 영업방 고정 피드뿐이며 전달방 전용 피드는 없었음.
+- 수정: `routes/kakao-decrypt.js`에 GET만 추가, `tests/unit/nenova-delivery-feed.test.js`, `docs/NENOVA_DELIVERY_FEED_CONTRACT.md`.
+- 계약: 기존 salesReadTokenSha256 인증 재사용, 정확한 현장 추가취소방+nenovakakao에서 DISTINCT chat_id 1개일 때만 조회(없음/복수/NULL/빈 값 503). 요청 room/source override 차단, chat_id 지정 금지. 7일/200건/external keyset/근사시각 원형 보존. SELECT only, `_ensureTables` 미호출.
+- 검증: `npm ci --ignore-scripts` 후 `node node_modules/jest/bin/jest.js --runInBand tests/unit/nenova-delivery-feed.test.js tests/unit/nenova-sales-feed.test.js tests/unit/kakao-import.test.js` — 3 suites, 23 tests 통과. `node --check routes/kakao-decrypt.js` 및 신규 테스트 syntax 통과. 잘못된 DB 응답 테스트의 고정 오류 로그는 의도된 출력.
+- 한계: 실제 운영 DB 읽기·배포·인증 설정은 메인 작업이 수행. 하위 작업에서 커밋/PR/배포/발송하지 않음. 재발 시 신규 계약/라우트의 DISTINCT 조회와 기존 sales 인증 설정부터 확인.

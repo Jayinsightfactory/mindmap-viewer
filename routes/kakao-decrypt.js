@@ -411,6 +411,133 @@ function createKakaoDecryptRouter({
     }
   });
 
+  // ── Nenova 현장 추가취소방 전용 읽기 피드 (수신은 ERP 등록 승인이 아님) ──
+  router.get('/nenova-delivery-feed', async (req, res) => {
+    res.set('Cache-Control', 'no-store');
+
+    const bearer = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '');
+    const providedToken = bearer || String(req.headers['x-nenova-sales-read-token'] || '');
+    const configuredHash = String(salesReadTokenSha256 || '');
+
+    if (!/^[a-f0-9]{64}$/i.test(configuredHash)) {
+      return res.status(503).json({ error: 'Nenova delivery feed is not configured' });
+    }
+
+    const providedHash = crypto.createHash('sha256').update(providedToken).digest('hex');
+    const expectedBytes = Buffer.from(configuredHash, 'hex');
+    const providedBytes = Buffer.from(providedHash, 'hex');
+    if (!providedToken || expectedBytes.length !== providedBytes.length || !crypto.timingSafeEqual(expectedBytes, providedBytes)) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const { from, to, afterId, afterKey, limit, chat_id: requestedChatId, chatroom: requestedChatroom, source: requestedSource } = req.query;
+    const isIsoWithOffset = value => typeof value === 'string'
+      && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/.test(value)
+      && !Number.isNaN(Date.parse(value));
+    const parseBoundedInteger = (value, fallback, min, max) => {
+      if (value === undefined) return fallback;
+      if (typeof value !== 'string' || !/^\d+$/.test(value)) return null;
+      const parsed = Number(value);
+      return Number.isSafeInteger(parsed) && parsed >= min && parsed <= max ? parsed : null;
+    };
+    const isValidExternalKey = value => typeof value === 'string'
+      && value.length > 0
+      && value.length <= 512
+      && !/[\u0000-\u001f\u007f-\u009f]/.test(value);
+
+    if (
+      requestedChatId !== undefined
+      || (requestedChatroom !== undefined && requestedChatroom !== '현장 추가취소방')
+      || (requestedSource !== undefined && requestedSource !== 'nenovakakao')
+    ) {
+      return res.status(400).json({ error: 'Room selection is fixed' });
+    }
+
+    if (!isIsoWithOffset(from) || !isIsoWithOffset(to)) {
+      return res.status(400).json({ error: 'from and to must be ISO timestamps with timezone offsets' });
+    }
+
+    const fromMs = Date.parse(from);
+    const toMs = Date.parse(to);
+    if (toMs <= fromMs || toMs - fromMs > 7 * 24 * 60 * 60 * 1000) {
+      return res.status(400).json({ error: 'Requested period must be greater than zero and at most 7 days' });
+    }
+
+    const parsedAfterId = parseBoundedInteger(afterId, 0, 0, Number.MAX_SAFE_INTEGER);
+    const parsedLimit = parseBoundedInteger(limit, 100, 1, 200);
+    const parsedAfterKey = afterKey === undefined || afterKey === ''
+      ? ''
+      : (isValidExternalKey(afterKey) ? afterKey : null);
+    if (
+      parsedAfterId === null
+      || parsedAfterId !== 0
+      || parsedAfterKey === null
+      || parsedLimit === null
+      || (parsedAfterKey !== '' && afterId !== undefined)
+    ) {
+      return res.status(400).json({ error: 'Invalid pagination parameters' });
+    }
+
+    const db = getDb();
+    if (!db?.query) return res.status(503).json({ error: 'Service unavailable' });
+
+    try {
+      // Fixed room discovery is read-only and fails closed on identity conflicts.
+      const rooms = await db.query(
+        'SELECT DISTINCT chat_id FROM kakao_messages WHERE chatroom = $1 AND source = $2 LIMIT 2',
+        ['현장 추가취소방', 'nenovakakao']
+      );
+      if (!rooms || !Array.isArray(rooms.rows)) throw new Error('Invalid delivery room query result');
+      if (rooms.rows.length !== 1 || typeof rooms.rows[0].chat_id !== 'string' || !rooms.rows[0].chat_id.trim()) {
+        return res.status(503).json({ error: 'Nenova delivery room is unavailable or ambiguous' });
+      }
+      const configuredRoomId = rooms.rows[0].chat_id;
+      const result = await db.query(
+        `SELECT id, external_message_id, chat_id, chatroom, sender, message, message_type, source,
+                created_at, imported_at, timestamp_approximate
+         FROM kakao_messages
+         WHERE chat_id = $1
+           AND chatroom = $2
+           AND source = $3
+           AND created_at >= $4
+           AND created_at < $5
+           AND ($6::text = '' OR external_message_id COLLATE "C" > $6::text COLLATE "C")
+         ORDER BY external_message_id COLLATE "C" ASC
+         LIMIT $7`,
+        [configuredRoomId, '현장 추가취소방', 'nenovakakao', from, to, parsedAfterKey, parsedLimit + 1]
+      );
+      if (!result || !Array.isArray(result.rows)) throw new Error('Invalid delivery feed query result');
+      const rows = result.rows;
+      if (rows.some(row => !isValidExternalKey(row.external_message_id))) {
+        return res.status(500).json({ error: 'Delivery feed contains an invalid external message key' });
+      }
+      const messages = rows.slice(0, parsedLimit).map(row => ({
+        id: row.id,
+        external_message_id: row.external_message_id,
+        chat_id: row.chat_id,
+        chatroom: row.chatroom,
+        sender: row.sender,
+        message: row.message,
+        message_type: row.message_type,
+        source: row.source,
+        created_at: row.created_at,
+        imported_at: row.imported_at,
+        timestamp_approximate: row.timestamp_approximate,
+      }));
+
+      res.json({
+        ok: true,
+        messages,
+        hasMore: rows.length > parsedLimit,
+        nextAfterKey: messages.length > 0 ? messages[messages.length - 1].external_message_id : null,
+        nextAfterId: null,
+      });
+    } catch {
+      console.error('[NenovaDeliveryFeed] read failed');
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  });
+
   // ═══════════════════════════════════════════════════════════════
   // GET /api/kakao/messages — 메시지 조회 (필터 지원)
   // ═══════════════════════════════════════════════════════════════
