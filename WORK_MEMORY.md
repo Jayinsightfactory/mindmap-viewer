@@ -2057,3 +2057,9 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 - node 메모리: personal-agent.js 재시작 13분 만에 RSS 2.1GB·Private 7GB·OS 핸들 82만(+120/s), 하루 18~52회 memory_limit 재시작(10/8 52회). 자식 좀비 없음, 10/5 커밋(UIA 엑셀 셀/폴백 캡처/boot-stage)이 의심 구간. 원인 미확정.
 - 조치: 가드 1분 주기·2500 경고·3000 즉시 재시작 + getActiveResourcesInfo 히스토그램 로그(fafb1f1, push). 다음 재시작 로그에서 리소스 종류로 원인 특정할 것.
 - ★사고: mindmap-viewer 에서 git reset --hard origin/main 실행 → 미커밋 변경(WORK_MEMORY.md 오늘 항목, bin/vision-worker.js, routes/kakao-decrypt.js, tests, docs/NENOVA_DELIVERY_FEED_CONTRACT.md) 유실. WORK_MEMORY 는 대화에서 복원, 나머지는 복구 불가(15:30 커밋 4500786 이후분). 다시는 reset --hard 금지 — 패치는 브랜치/커밋 위에 적용.
+
+## 2026-10-09 (7) node 메모리 폭주 근본 수정 — file-learner chokidar 무제한 감시(fs.watch 26만) → depth 4·개발 폴더 제외 (06dcaeb)
+검색어: file-learner chokidar FSEventWrap depth node_modules 메모리 폭주 핸들 memory_limit 재시작 가드 getActiveResourcesInfo
+- 가드 로그(fafb1f1 추가)가 원인 지목: `리소스: FSEventWrap:260894 FSReqCallback:70472` (RSS 2.9GB). file-learner 가 Documents(44,500 dir)·Desktop(10,840 dir, node_modules 53그루)를 깊이 제한 없이 chokidar 감시 → 디렉토리마다 fs.watch 핸들.
+- 수정: ignored 에 node_modules/.git/dist/build/.next/venv/site-packages/coverage/target/.cache 추가 + depth 4. 재시작 3분 후 WS 161MB·핸들 10,911(전: 10분 1.6GB·13.7만). RAM 99→71%.
+- 함정: 셸 heredoc/sed 로 백슬래시 정규식 수정 3번 실패 → Edit 도구로 직접 수정할 것.
