@@ -8346,7 +8346,7 @@ app.use('/api', createSecurityRouter({
   db: dbDeps,
   shadowAiDetector: { detectShadowAI, getApprovedSources, addApprovedSource, removeApprovedSource },
   auditLog: { queryAuditLog, verifyIntegrity, renderAuditHtml },
-  getEventsForUser, resolveUserId,
+  getEventsForUser, resolveUserId, optionalAuth: require('./src/auth').optionalAuth, isAdminReq: isAdminReqAsync,
 }));
 
 app.use('/api', createReportsRouter({
@@ -8540,7 +8540,13 @@ app.use('/api', createRegionalInsightRouter({ getAllEvents }));
 app.use('/api', createPointsRouter({ getAllEvents, getSessions, optionalAuth, getEventsForUser, getSessionsForUser, resolveUserId }));
 
 // ─── Orbit Certificate & Score ───────────────────────────────────────────────
-app.use('/api', createCertificateRouter({ getAllEvents, getSessions, optionalAuth, getEventsForUser, getSessionsForUser, resolveUserId }));
+// 직원별 인증서·점수 = 본인(req.user.id) 또는 관리자만. userId=null이면 관리자 전용 판정.
+async function canAccessCertUser(req, userId) {
+  if (await isAdminReqAsync(req)) return true;
+  const me = req.user && req.user.id;
+  return !!(userId && me && me !== 'local' && me === userId);
+}
+app.use('/api', createCertificateRouter({ getAllEvents, getSessions, optionalAuth, getEventsForUser, getSessionsForUser, resolveUserId, canAccessUser: canAccessCertUser }));
 
 // ─── MCP 서버 (Claude Desktop 연동) ─────────────────────────────────────────
 app.use('/api', createMcpRouter({

@@ -229,21 +229,51 @@ function makeCertSvg({ userId, score, grade, certId, issuedAt, breakdown }) {
 
 // ─── 인증서 서명 ──────────────────────────────────────────────────────────────
 
-function signCert(data) {
-  const payload = JSON.stringify(data, Object.keys(data).sort());
-  return crypto.createHash('sha256').update(payload + (process.env.CERT_SECRET || 'orbit-secret-2025')).digest('hex').slice(0, 32);
+// [2026-10-01] fail-closed: CERT_SECRET 없으면 발급·검증 거부. 코드에 박힌 기본키는 공개 저장소에서
+// 누구나 읽을 수 있어 위조 서명이 가능했음. 비밀값 자체는 절대 로그/응답에 내지 않는다.
+const CERT_SECRET_MIN_LEN = 16;
+function getCertSecret() {
+  const s = process.env.CERT_SECRET;
+  return (typeof s === 'string' && s.length >= CERT_SECRET_MIN_LEN) ? s : null;
 }
+
+function signCert(data) {
+  const secret = getCertSecret();
+  if (!secret) return null;
+  const payload = JSON.stringify(data, Object.keys(data).sort());
+  return crypto.createHmac('sha256', secret).update(payload).digest('hex').slice(0, 32);
+}
+
+function sigEquals(a, b) {
+  if (typeof a !== 'string' || typeof b !== 'string' || a.length !== b.length) return false;
+  return crypto.timingSafeEqual(Buffer.from(a), Buffer.from(b));
+}
+
+const CERT_DISABLED = { error: '인증서 서명키(CERT_SECRET)가 설정되지 않아 발급·검증이 비활성화되었습니다.', code: 'CERT_SECRET_MISSING' };
 
 // ─── 라우터 팩토리 ────────────────────────────────────────────────────────────
 
-function createCertificateRouter({ getAllEvents, getSessions, optionalAuth, getEventsForUser, getSessionsForUser, resolveUserId } = {}) {
+function createCertificateRouter({ getAllEvents, getSessions, optionalAuth, getEventsForUser, getSessionsForUser, resolveUserId, canAccessUser } = {}) {
   const router = express.Router();
+  // 직원별 점수·라벨·인증서는 본인 또는 관리자만. canAccessUser 미주입이면 전부 거부(fail-closed).
+  const guardUser = async (req, res, next) => {
+    try {
+      if (canAccessUser && await canAccessUser(req, req.params.userId)) return next();
+    } catch { /* 거부로 처리 */ }
+    return res.status(403).json({ error: 'forbidden' });
+  };
+  const guardAdmin = async (req, res, next) => {
+    try {
+      if (canAccessUser && await canAccessUser(req, null)) return next();
+    } catch { /* 거부로 처리 */ }
+    return res.status(403).json({ error: 'forbidden' });
+  };
   const noAuth = (req, res, next) => next();
   const auth   = optionalAuth || noAuth;
   const labelsOf = (userId) => labelStore.get(userId) || [];
 
   // [v2.3] 사람 라벨 제출/조회 — 프록시 축을 실측으로 승격하는 루프
-  router.post('/certificate/:userId/label', auth, (req, res) => {
+  router.post('/certificate/:userId/label', auth, guardUser, (req, res) => {
     const { userId } = req.params;
     const { kind, value, instance } = req.body || {};
     if (kind !== 'verify' && kind !== 'helpful') return res.status(400).json({ error: "kind는 'verify' 또는 'helpful'" });
@@ -254,14 +284,14 @@ function createCertificateRouter({ getAllEvents, getSessions, optionalAuth, getE
     res.json({ ok: true, total: arr.length, verify, helpful, needed: LABEL_MEASURED_MIN,
       note: verify >= LABEL_MEASURED_MIN ? '비판·메타인지 축이 실측(measured)으로 승격됨' : `검증 라벨 ${verify}/${LABEL_MEASURED_MIN} — ${LABEL_MEASURED_MIN - verify}건 더 필요` });
   });
-  router.get('/certificate/:userId/labels', (req, res) => {
+  router.get('/certificate/:userId/labels', auth, guardUser, (req, res) => {
     const arr = labelsOf(req.params.userId);
     res.json({ total: arr.length, verify: arr.filter(l => l.kind === 'verify').length, helpful: arr.filter(l => l.kind === 'helpful').length, needed: LABEL_MEASURED_MIN, recent: arr.slice(-10) });
   });
 
   // ── AI 점수 계산 ──────────────────────────────────────────────────────
   // [2026-07-16] getEventsForUser/getSessions는 async(PG) — await 누락으로 500나던 것 수정
-  router.get('/certificate/:userId/score', async (req, res) => {
+  router.get('/certificate/:userId/score', auth, guardUser, async (req, res) => {
    try {
     const { userId } = req.params;
     const events   = ((getEventsForUser ? await getEventsForUser(userId) : (getAllEvents ? await getAllEvents() : [])) || []).filter(e => userId === 'all' || (e.userId || 'local') === userId);
@@ -279,7 +309,7 @@ function createCertificateRouter({ getAllEvents, getSessions, optionalAuth, getE
   });
 
   // ── 인증서 SVG ────────────────────────────────────────────────────────
-  router.get('/certificate/:userId/svg', async (req, res) => {
+  router.get('/certificate/:userId/svg', auth, guardUser, async (req, res) => {
    try {
     const { userId } = req.params;
     const events   = (getEventsForUser ? await getEventsForUser(userId) : (getAllEvents ? await getAllEvents() : [])) || [];
@@ -306,7 +336,7 @@ function createCertificateRouter({ getAllEvents, getSessions, optionalAuth, getE
   });
 
   // ── 인증서 JSON ───────────────────────────────────────────────────────
-  router.get('/certificate/:userId/json', async (req, res) => {
+  router.get('/certificate/:userId/json', auth, guardUser, async (req, res) => {
    try {
     const { userId } = req.params;
     const events   = (getEventsForUser ? await getEventsForUser(userId) : (getAllEvents ? await getAllEvents() : [])) || [];
@@ -334,7 +364,7 @@ function createCertificateRouter({ getAllEvents, getSessions, optionalAuth, getE
   });
 
   // ── 인증서 발급 ───────────────────────────────────────────────────────
-  router.post('/certificate/:userId/issue', auth, async (req, res) => {
+  router.post('/certificate/:userId/issue', auth, guardUser, async (req, res) => {
    try {
     const { userId } = req.params;
     const events   = (getEventsForUser ? await getEventsForUser(userId) : (getAllEvents ? await getAllEvents() : [])) || [];
@@ -342,6 +372,7 @@ function createCertificateRouter({ getAllEvents, getSessions, optionalAuth, getE
     const result   = computeScore(events, sessions, labelsOf(userId));
     const grade    = getGrade(result.total);
 
+    if (!getCertSecret()) return res.status(503).json(CERT_DISABLED);
     if (result.total < 200) {
       return res.status(400).json({
         error: `점수가 부족합니다. (현재: ${result.total}/200 최소 필요)`,
@@ -384,6 +415,7 @@ function createCertificateRouter({ getAllEvents, getSessions, optionalAuth, getE
 
   // ── 인증서 검증 ───────────────────────────────────────────────────────
   router.get('/certificate/verify/:certId', (req, res) => {
+    if (!getCertSecret()) return res.status(503).json({ valid: false, ...CERT_DISABLED });
     const cert = certStore.get(req.params.certId);
     if (!cert) return res.status(404).json({ valid: false, error: '인증서를 찾을 수 없습니다.' });
 
@@ -395,7 +427,7 @@ function createCertificateRouter({ getAllEvents, getSessions, optionalAuth, getE
     // 서명 검증
     const { signature, ...dataWithoutSig } = cert;
     const expectedSig = signCert(dataWithoutSig);
-    const valid = signature === expectedSig;
+    const valid = !!expectedSig && sigEquals(signature, expectedSig);
 
     res.json({
       valid,
@@ -409,7 +441,7 @@ function createCertificateRouter({ getAllEvents, getSessions, optionalAuth, getE
   });
 
   // ── 인증서 목록 ───────────────────────────────────────────────────────
-  router.get('/certificate', (req, res) => {
+  router.get('/certificate', auth, guardAdmin, (req, res) => {
     const { limit = 20 } = req.query;
     const certs = [...certStore.values()]
       .sort((a, b) => new Date(b.issuedAt) - new Date(a.issuedAt))
@@ -429,6 +461,8 @@ function createCertificateRouter({ getAllEvents, getSessions, optionalAuth, getE
 }
 
 module.exports = {
+  signCert,
+  getCertSecret,
   computeScore,
   getGrade,
   makeCertSvg,
