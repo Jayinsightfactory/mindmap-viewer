@@ -2027,3 +2027,33 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 - 계약: 기존 salesReadTokenSha256 인증 재사용, 정확한 현장 추가취소방+nenovakakao에서 DISTINCT chat_id 1개일 때만 조회(없음/복수/NULL/빈 값 503). 요청 room/source override 차단, chat_id 지정 금지. 7일/200건/external keyset/근사시각 원형 보존. SELECT only, `_ensureTables` 미호출.
 - 검증: `npm ci --ignore-scripts` 후 `node node_modules/jest/bin/jest.js --runInBand tests/unit/nenova-delivery-feed.test.js tests/unit/nenova-sales-feed.test.js tests/unit/kakao-import.test.js` — 3 suites, 23 tests 통과. `node --check routes/kakao-decrypt.js` 및 신규 테스트 syntax 통과. 잘못된 DB 응답 테스트의 고정 오류 로그는 의도된 출력.
 - 한계: 실제 운영 DB 읽기·배포·인증 설정은 메인 작업이 수행. 하위 작업에서 커밋/PR/배포/발송하지 않음. 재발 시 신규 계약/라우트의 DISTINCT 조회와 기존 sales 인증 설정부터 확인.
+
+## 2026-10-08 (5)~(9) 복원 요약 — 이카운트 데몬 자가복구·오픈뱅킹 패키지·판정표 3탭·지출결의서 PR #983
+검색어: ecount daemon 자동로그인 ec_req_sid base=null relaunch 로그온 예약작업 NenovaEcountDaemon 오픈뱅킹 금결원 판정표 설연주 강명훈 명세 #983 #986 #989
+- (10/9 git reset --hard 로 원본 유실, 대화 기록에서 복원) 이카운트 상주 데몬: 판매현황 60s 대기·Excel 재시도·실패 스크린샷(#986), 세션 URL 재사용(base=null 원인)·브라우저 닫힘 exit 2·런처 60초 재기동 30/일·로그온 2분 후 예약작업·07:00 run-all 데몬 생존확인(#989). 자동 로그인은 브라우저가 채운 com_code/id/passwd 있을 때 #save 클릭만.
+- 금결원 오픈뱅킹 신청 패키지 Docs(자격 조건부 불가, 대안 신한 API+은행채널+팝빌). 이카운트 기능 전수 판정표 Docs 3탭(88화면 판정·강명훈 화면별 명세 C1~C9·설연주 업무 단위 B1~B13).
+- 지출결의서·전표 1단계 PR #983(하위세션, CI 통과, SSMS 마이그레이션 필요해 미머지).
+
+## 2026-10-09 (1) 이카운트 데몬 현황 — 08:52 사망 재기동, run-all `$_` 이스케이프, PR #990(ingest 20mb·Excel 재시도 4회) 머지
+검색어: ecount daemon 413 Excel 버튼 못 찾음 run-all $_ scraper-resilience-3 숨김 VBS
+- 밤새 15사이클 중 12회 완전·3회 부분누락·1회 413(8,157행). 08:54 창 닫힘→bash 셸 자식이던 런처도 사망 → 숨김 VBS 런처 필수. run-all 데몬확인 스텝은 bash `$_` 치환으로 항상 실패했음(수정). 판매현황 5001/8157행 변동 원인 미확인.
+
+## 2026-10-09 (2)(3) 자가수정 보고 — self-tune-report.js + /my-work 도입 레이더 탭(PR #993) + 카톡 09:00 보고(NenovaKakaoReport)
+검색어: self-tune-report 자가수정 보고 도입 레이더 카톡 보고 send_report kakao-report-room 임재용대리 pyautogui
+- self-tune 은 파일만 갱신하고 보고 채널 0 → 일일 보고 json/md + 웹 탭 + 카톡 방 '임재용대리' 09:00(nenovakakao/send_report.py, Store Python3.13+pywin32). learned-aliases 최상위 메타키 함정. 머지 기본 규칙(사장님: CI 통과 시 항상 머지).
+
+## 2026-10-09 (4) 신뢰도 분석 → erp-match 상태 후보 — 확증률 19.6%→37.1%
+검색어: erp-match 상태 후보 state links 후보0 recText 확증률 exp-002 WebEcountRow
+- 10/6~10/9 확증률 22.2→20.7% 하락, self-tune 효과 0(활성 별칭 0). 미확증 90%가 "후보 0"(같은 계정 ±10분 쓰기만 후보). 상태 후보(차수+거래처 3자↑/농장 실재, 69,247건)+이카운트 GREEN 행(거래처+금액)으로 37.1%. 차수+품목만은 과매칭(53.6%→기각). 백업 observed/_bak-1009, erp-match.js.bak-1009. 장부 exp-001 invalidated, exp-002 신설.
+
+## 2026-10-09 (5) 자가수정 v2 self-tune-flow.js — 플로우 사전·조작 지도·관계·핸드오프, prep 프롬프트 주입, 손지윤 제외
+검색어: self-tune-flow flow-knowledge flow-history hintForPrompt 드리프트 핸드오프 excluded 손지윤
+- 기준선: 이름 부여율 83.3%, 사전 62/원이름 437(드리프트 375, 김도준 107→9), 조작 지도 34화면 8.5%, 관계 거래처 174·농장 141, 핸드오프 20쌍. build-observed-workflows.js 는 CRLF — 템플릿 안 '\n' 은 raw 로.
+- 사장님께 솔직 보고: 지표로 증명된 로직은 3개(상태 후보·이카운트 데몬·보고 경로), self-tune 효과 0, 나머지 18단계 대부분 미측정. 앞으로 지표·기준선 먼저.
+
+## 2026-10-09 (6) owner PC cmd 깜빡임=ChatGPT 앱 Codex MCP 루프 / node 메모리 폭주=Orbit personal-agent 핸들 누수(미해결, 가드 강화)
+검색어: cmd 창 깜빡임 codex launch_code_review_mcp ChatGPT 앱 personal-agent 메모리 핸들 82만 getActiveResourcesInfo memory_limit 재시작 reset --hard 유실
+- cmd 깜빡임: ChatGPT 앱 codex app-server 가 없는 스크립트(launch_code_review_mcp.cmd 등)를 2초마다 cmd 로 재실행. 앱 종료로 해결(자동시작 없음). 사용자가 16:46 다시 켬 → cua_node 서버 10개 ~1GB.
+- node 메모리: personal-agent.js 재시작 13분 만에 RSS 2.1GB·Private 7GB·OS 핸들 82만(+120/s), 하루 18~52회 memory_limit 재시작(10/8 52회). 자식 좀비 없음, 10/5 커밋(UIA 엑셀 셀/폴백 캡처/boot-stage)이 의심 구간. 원인 미확정.
+- 조치: 가드 1분 주기·2500 경고·3000 즉시 재시작 + getActiveResourcesInfo 히스토그램 로그(fafb1f1, push). 다음 재시작 로그에서 리소스 종류로 원인 특정할 것.
+- ★사고: mindmap-viewer 에서 git reset --hard origin/main 실행 → 미커밋 변경(WORK_MEMORY.md 오늘 항목, bin/vision-worker.js, routes/kakao-decrypt.js, tests, docs/NENOVA_DELIVERY_FEED_CONTRACT.md) 유실. WORK_MEMORY 는 대화에서 복원, 나머지는 복구 불가(15:30 커밋 4500786 이후분). 다시는 reset --hard 금지 — 패치는 브랜치/커밋 위에 적용.
