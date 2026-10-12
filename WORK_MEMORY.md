@@ -2079,3 +2079,11 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 - 아드리아나(DESKTOP-05VLRN1) 재설치 완료: install.complete 13:57 pass 8/8 daemon True, OrbitWatchdogSvc=Running/Automatic, 예약작업 OrbitDaemon·Run키 True. 5중 안전망 전부 복구. (중복 등록 row 1개 stale=hostname 대소문자, 무해)
 - ★owner PC cmd 창은 Orbit 아님: ChatGPT 앱 Codex가 launch_code_review_mcp.cmd 등을 30초간 1178회(초당 ~39) 재실행 = cmd 깜빡임. 앱 종료로만 멎음(전에 껐으나 사용자가 재실행). 직원 PC와 무관.
 - owner 데몬 git remote 정상(이전 EBUSY 는 update 루프 중 폴더 잠금 일시현상). state 'dead' 표시되나 hb 7s 라 실제 생존 — state 계산 지연.
+
+## 2026-10-12 (3) 약점 보완 — 이름 드리프트·조작 지도 (self-tune-flow v2.1, pull-observed 정규화, vision 카탈로그 확장)
+검색어: 드리프트 canonicalMap rawName operationsByWork 작업단위 조작 지도 appName isOperated PLACEHOLDER upload-catalog workflow-catalog HEDGE 꼬리표
+- 진단 정정: "조작 지도 커버리지 10%"는 분모 착시(화면키 2,986개 중 95%=1회성). 3건↑ 화면만 보면 97.5%. 진짜 약점=화면 제목 키가 쪼개져 조작이 누적 안 됨.
+- 보완: ① 조작 지도를 (정규 업무명, 앱) 작업단위로도 집계(operationsByWork, 앱명 통일 APP_ALIAS) → 144단위·조작 칸 수백개. 조작 판정 확장(값 들어간 입력칸·엑셀 셀, 자리표시 '비어 있음' 제외). 커버리지 분모=누적가능(3건↑)으로 정직화 + opsUnitCoverage.
+  ② 이름 드리프트: self-tune-flow 가 canonicalMap(원이름→정식명) 산출, 정식명은 꼬리표("(전산 로그 기반 추정)")·긴 변형 대신 깨끗한 짧은 이름(HEDGE 규칙). pull-observed 가 수집 시 적용(rawName 보존, 드리프트 측정은 rawName 기준). upload-catalog 가 사전 이름(기록 3건↑, 최대 12/인)을 vision 워커 카탈로그에 합침(27건) → 해독 원천에서 드리프트 억제.
+- 함정: pull-observed 단독 실행은 erpLinks 없는 원자료로 덮어써 관계 지표가 떨어짐(김도준 관계 소실 5건 오경보) → 백업 복원 후 정규명만 적용. 파이프라인 순서(pull→erp-match→link-match→self-tune→flow) 밖에서 pull 만 돌리지 말 것.
+- 백업: *.bak-1012 (4 스크립트), observed/_bak-1012-김도준.json. 효과 측정은 10/13 07:00 이후(vision 카탈로그 반영은 워커 1시간 캐시).
