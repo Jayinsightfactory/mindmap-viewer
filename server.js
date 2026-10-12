@@ -2670,7 +2670,7 @@ app.get('/api/daemon/commands', async (req, res) => {
     const _pool = dbModule.getDb ? dbModule.getDb() : null;
     if (_pool) {
       const { rows } = await _pool.query(
-        `SELECT action, command, data_json, ts FROM orbit_daemon_commands
+        `SELECT id, action, command, data_json, ts FROM orbit_daemon_commands
          WHERE hostname = $1 AND consumed_at IS NULL AND ts <= NOW()
          ORDER BY
            CASE action WHEN 'restart' THEN 1 WHEN 'exec' THEN 2 WHEN 'update' THEN 3 WHEN 'reinstall' THEN 4 ELSE 10 END ASC,
@@ -2680,8 +2680,10 @@ app.get('/api/daemon/commands', async (req, res) => {
       );
       if (rows.length > 0) {
         pgCmds = rows.map(r => ({ action: r.action, command: r.command, data: r.data_json, ts: r.ts }));
-        const tsList = rows.map(r => r.ts);
-        _pool.query(`UPDATE orbit_daemon_commands SET consumed_at = NOW() WHERE hostname = $1 AND ts = ANY($2)`, [hostname, tsList]).catch(() => {});
+        // [2026-10-12 사고] ts 동등 비교(timestamptz ↔ JS Date 마이크로초 손실)로 UPDATE 가 0행 → 'update' 명령이 매 폴링(60s)마다 재전달
+        //   → 10/9 force-update-all 이후 3일간 전 PC 데몬이 1분마다 재시작(daemon.crash 950건·재설치 39회·nssm 창). id 로 소비 처리한다.
+        const idList = rows.map(r => r.id);
+        _pool.query(`UPDATE orbit_daemon_commands SET consumed_at = NOW() WHERE id = ANY($1)`, [idList]).catch(() => {});
       }
     }
   } catch {}

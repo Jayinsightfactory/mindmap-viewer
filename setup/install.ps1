@@ -621,28 +621,33 @@ if (-not (Test-Path $nssmPath)) {
   }
 }
 
+# [2026-10-12] nssm.exe 는 콘솔 앱이라 wscript/숨김 PS 에서 '& nssm' 으로 부르면 호출마다 'nssm' 콘솔 창이 깜빡인다(사용자 PC 보고).
+#   창 없이 실행(-WindowStyle Hidden -Wait). 출력이 필요한 status 조회 1곳은 그대로 둔다.
+function Invoke-NssmHidden { param([Parameter(ValueFromRemainingArguments=$true)][string[]]$a)
+  try { Start-Process -FilePath $nssmPath -ArgumentList $a -WindowStyle Hidden -Wait -ErrorAction Stop } catch {} }
+
 # (2) Service 등록 (관리자 권한 필요)
 if (Test-Path $nssmPath) {
   try {
     # 기존 service 중지/삭제 (재install 대비)
-    & $nssmPath stop OrbitWatchdogSvc confirm 2>&1 | Out-Null
+    Invoke-NssmHidden stop OrbitWatchdogSvc confirm
     Start-Sleep -Milliseconds 800
-    & $nssmPath remove OrbitWatchdogSvc confirm 2>&1 | Out-Null
+    Invoke-NssmHidden remove OrbitWatchdogSvc confirm
     Start-Sleep -Milliseconds 800
 
     # 신규 등록
-    & $nssmPath install OrbitWatchdogSvc $psExe 2>&1 | Out-Null
-    & $nssmPath set OrbitWatchdogSvc AppParameters "-NoProfile -NonInteractive -ExecutionPolicy Bypass -File `"$wdLoopPath`"" 2>&1 | Out-Null
-    & $nssmPath set OrbitWatchdogSvc Description "Orbit Daemon Watchdog (OS-level auto-restart)" 2>&1 | Out-Null
-    & $nssmPath set OrbitWatchdogSvc Start SERVICE_AUTO_START 2>&1 | Out-Null
-    & $nssmPath set OrbitWatchdogSvc AppStdout "$OrbitDir\watchdog-svc.log" 2>&1 | Out-Null
-    & $nssmPath set OrbitWatchdogSvc AppStderr "$OrbitDir\watchdog-svc.log" 2>&1 | Out-Null
+    Invoke-NssmHidden install OrbitWatchdogSvc $psExe
+    Invoke-NssmHidden set OrbitWatchdogSvc AppParameters "-NoProfile -NonInteractive -ExecutionPolicy Bypass -File `"$wdLoopPath`""
+    Invoke-NssmHidden set OrbitWatchdogSvc Description "Orbit Daemon Watchdog (OS-level auto-restart)"
+    Invoke-NssmHidden set OrbitWatchdogSvc Start SERVICE_AUTO_START
+    Invoke-NssmHidden set OrbitWatchdogSvc AppStdout "$OrbitDir\watchdog-svc.log"
+    Invoke-NssmHidden set OrbitWatchdogSvc AppStderr "$OrbitDir\watchdog-svc.log"
     # SYSTEM context인데 USERPROFILE은 install 실행한 user로 override
-    & $nssmPath set OrbitWatchdogSvc AppEnvironmentExtra "USERPROFILE=$env:USERPROFILE" 2>&1 | Out-Null
+    Invoke-NssmHidden set OrbitWatchdogSvc AppEnvironmentExtra "USERPROFILE=$env:USERPROFILE"
     # crash 시 자동 재시작 (5초 후)
-    & $nssmPath set OrbitWatchdogSvc AppExit Default Restart 2>&1 | Out-Null
-    & $nssmPath set OrbitWatchdogSvc AppRestartDelay 5000 2>&1 | Out-Null
-    & $nssmPath start OrbitWatchdogSvc 2>&1 | Out-Null
+    Invoke-NssmHidden set OrbitWatchdogSvc AppExit Default Restart
+    Invoke-NssmHidden set OrbitWatchdogSvc AppRestartDelay 5000
+    Invoke-NssmHidden start OrbitWatchdogSvc
     Start-Sleep -Seconds 2
 
     # 검증
