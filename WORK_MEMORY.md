@@ -2072,3 +2072,10 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 - 재발 방지(3aa5d47): SELECT id … UPDATE WHERE id = ANY($1). install.ps1 nssm 12호출 Invoke-NssmHidden(Start-Process -WindowStyle Hidden -Wait).
 - 별건 미해결: owner PC 데몬의 git fetch/remote get-url 실패(step3 rename EBUSY) → codeVersion unknown. 아드리아나 PC silent.
 - 교훈: 전체 PC 대상 원격 명령은 먼저 1대에 보내고 1시간 뒤 uptime/crash 로 확인한 뒤 확대. 자동화 재설치 경로(guardian 15사이클)는 1시간 내 2회 상한 필요(미구현).
+
+## 2026-10-12 (2) 전 PC nssm/재시작 루프 종료 검증 + 아드리아나 서비스 재설치 완료 (640ca85 배포)
+검색어: nssm 창 cmd 창 Invoke-NssmHidden ctid 미소비 재시작 루프 self-heal 재설치 daemon.crash 급감 아드리아나 OrbitWatchdogSvc ChatGPT Codex
+- 검증(13~14시): 서버 /setup/install.ps1 bare nssm 호출 0·Invoke-NssmHidden 13 → 재설치 나도 nssm 창 안 뜸. 미소비 update/restart/reinstall/exec 0. 전 PC uptime 150분+(루프 종료 실증). daemon.crash UTC 09시 463→14시 5로 급감. self-heal 재설치 10시 이후 없음(아드리아나 13:17은 수동 복구분).
+- 아드리아나(DESKTOP-05VLRN1) 재설치 완료: install.complete 13:57 pass 8/8 daemon True, OrbitWatchdogSvc=Running/Automatic, 예약작업 OrbitDaemon·Run키 True. 5중 안전망 전부 복구. (중복 등록 row 1개 stale=hostname 대소문자, 무해)
+- ★owner PC cmd 창은 Orbit 아님: ChatGPT 앱 Codex가 launch_code_review_mcp.cmd 등을 30초간 1178회(초당 ~39) 재실행 = cmd 깜빡임. 앱 종료로만 멎음(전에 껐으나 사용자가 재실행). 직원 PC와 무관.
+- owner 데몬 git remote 정상(이전 EBUSY 는 update 루프 중 폴더 잠금 일시현상). state 'dead' 표시되나 hb 7s 라 실제 생존 — state 계산 지연.
