@@ -2063,3 +2063,12 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 - 가드 로그(fafb1f1 추가)가 원인 지목: `리소스: FSEventWrap:260894 FSReqCallback:70472` (RSS 2.9GB). file-learner 가 Documents(44,500 dir)·Desktop(10,840 dir, node_modules 53그루)를 깊이 제한 없이 chokidar 감시 → 디렉토리마다 fs.watch 핸들.
 - 수정: ignored 에 node_modules/.git/dist/build/.next/venv/site-packages/coverage/target/.cache 추가 + depth 4. 재시작 3분 후 WS 161MB·핸들 10,911(전: 10분 1.6GB·13.7만). RAM 99→71%.
 - 함정: 셸 heredoc/sed 로 백슬래시 정규식 수정 3번 실패 → Edit 도구로 직접 수정할 것.
+
+## 2026-10-12 (1) ★사고: force-update-all → 전 PC 데몬 3일간 1분마다 재시작 (nssm 창·재설치 루프) — 원인·복구·재발방지 (3aa5d47)
+검색어: nssm 창 force-update-all orbit_daemon_commands consumed_at ts ANY id daemon.crash 950 install.complete 39 pg-commands-purge 데몬 1분 재시작 uptime
+- 증상: 사용자 PC에 nssm 창 반복. 조사: daemon.crash 10/11 72·10/12 882건(전 PC 75~146), install.complete 39회(박성수 17·조현욱 11), 전 데몬 uptime 1분, owner 로그 매분 "update start: server command: update".
+- 원인: 10/9 17:24 내가 /api/admin/force-update-all 실행 → orbit_daemon_commands 에 'update' 15행. GET /api/daemon/commands 가 `UPDATE … WHERE ts = ANY($2)` 로 소비 처리하는데 timestamptz↔JS Date 마이크로초 손실로 0행 → 매 폴링(60s)마다 같은 명령 재전달 → pullAndRestart → 데몬 1분 재시작 → guardian 'dead' 15사이클 → install.ps1 자동 재설치 → nssm 호출마다 콘솔 창. DATA_CHECK.md 가 이미 "force-update는 per-host /api/daemon/command 써라"고 경고했었음.
+- 복구: pg-commands-purge actions=[update,restart,reinstall] 15건 소비(10/12 10:3x) → 3분 뒤 전 데몬 uptime 3~5분 정상.
+- 재발 방지(3aa5d47): SELECT id … UPDATE WHERE id = ANY($1). install.ps1 nssm 12호출 Invoke-NssmHidden(Start-Process -WindowStyle Hidden -Wait).
+- 별건 미해결: owner PC 데몬의 git fetch/remote get-url 실패(step3 rename EBUSY) → codeVersion unknown. 아드리아나 PC silent.
+- 교훈: 전체 PC 대상 원격 명령은 먼저 1대에 보내고 1시간 뒤 uptime/crash 로 확인한 뒤 확대. 자동화 재설치 경로(guardian 15사이클)는 1시간 내 2회 상한 필요(미구현).
