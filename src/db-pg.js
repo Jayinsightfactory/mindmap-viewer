@@ -6,6 +6,7 @@
 const { Pool } = require('pg');
 const { ulid } = require('ulid');
 const { createPgOps } = require('./db-user-ops');
+const { sharedAsyncCache } = require('./shared-async-cache');
 
 let pool = null;
 
@@ -502,11 +503,6 @@ async function getEventsBySession(sessionId) {
   return rows.map(deserializeEvent);
 }
 
-async function getEventsByChannel(channelId) {
-  const { rows } = await pool.query('SELECT * FROM events WHERE channel_id=$1 ORDER BY timestamp ASC LIMIT 2000', [channelId]);
-  return rows.map(deserializeEvent);
-}
-
 async function getEventsByType(type) {
   const { rows } = await pool.query('SELECT * FROM events WHERE type=$1 ORDER BY timestamp DESC LIMIT 500', [type]);
   return rows.map(deserializeEvent).reverse();
@@ -648,36 +644,35 @@ async function clearAll() {
 }
 
 // ─── 통계 ───────────────────────────────────────────
-async function getStats() {
-  const [e, s, f, t, ai] = await Promise.all([
-    pool.query("SELECT COUNT(*) AS c FROM events"),
+const getStats = sharedAsyncCache(async () => {
+  const [ai, s, f] = await Promise.all([
+    pool.query(`
+      SELECT metadata_json->>'aiSource' AS ai_source, COUNT(*) AS cnt,
+             COUNT(*) FILTER (WHERE type LIKE 'tool.%') AS tool_count
+      FROM events GROUP BY metadata_json->>'aiSource'
+    `),
     pool.query("SELECT COUNT(*) AS c FROM sessions"),
     pool.query("SELECT COUNT(*) AS c FROM files"),
-    pool.query("SELECT COUNT(*) AS c FROM events WHERE type LIKE 'tool.%'"),
-    pool.query(`
-      SELECT metadata_json->>'aiSource' AS ai_source, COUNT(*) AS cnt
-      FROM events
-      WHERE metadata_json->>'aiSource' IS NOT NULL
-      GROUP BY ai_source ORDER BY cnt DESC
-    `),
   ]);
 
   const aiSourceStats = {};
+  let eventCount = 0, toolCount = 0;
   for (const row of ai.rows) {
-    if (row.ai_source) aiSourceStats[row.ai_source] = parseInt(row.cnt);
+    const count = Number(row.cnt);
+    eventCount += count;
+    toolCount += Number(row.tool_count);
+    const source = row.ai_source === null ? 'claude' : row.ai_source;
+    if (source) aiSourceStats[source] = (aiSourceStats[source] || 0) + count;
   }
-  const { rows: noAi } = await pool.query("SELECT COUNT(*) AS c FROM events WHERE metadata_json->>'aiSource' IS NULL");
-  const noAiCount = parseInt(noAi[0].c);
-  if (noAiCount > 0) aiSourceStats['claude'] = (aiSourceStats['claude'] || 0) + noAiCount;
 
   return {
-    eventCount:   parseInt(e.rows[0].c),
+    eventCount,
     sessionCount: parseInt(s.rows[0].c),
     fileCount:    parseInt(f.rows[0].c),
-    toolCount:    parseInt(t.rows[0].c),
+    toolCount,
     aiSourceStats,
   };
-}
+}, 60_000);
 
 // ─── 직렬화 헬퍼 ────────────────────────────────────
 function deserializeEvent(row) {

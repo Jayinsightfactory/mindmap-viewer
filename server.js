@@ -4210,11 +4210,16 @@ app.post('/api/hook', async (req, res) => {
       const sessionIds = [...new Set(events.map(e => e.sessionId).filter(Boolean))];
       for (const sid of sessionIds) {
         try {
+          // Probe only this session before reading its events. A full recent-
+          // sessions list on every tracker batch repeatedly scans the database.
+          const { rows: titleRows } = await dbModule.getDb().query(
+            'SELECT title FROM sessions WHERE id=$1 LIMIT 1', [sid]
+          );
+          if (titleRows[0]?.title) continue;
           const sesEvents = await Promise.resolve(getEventsBySession(sid));
           if (sesEvents.length >= 3) {
             // 기존 title이 없는 세션만 자동 생성
-            const sessions = await Promise.resolve(getSessions());
-            const ses = sessions.find(s => s.id === sid);
+            const ses = titleRows[0];
             if (!ses?.title) {
               const sessStart = sesEvents.find(e => e.type === 'session.start');
               const projDir = sessStart?.data?.projectDir || sessStart?.data?.cwd || '';
@@ -4330,7 +4335,7 @@ app.post('/api/hook', async (req, res) => {
             // 최근 30분 이벤트 가져와서 분류 태깅
             const { rows } = await _pool.query(`
               SELECT id, type, data_json, timestamp FROM events
-              WHERE user_id = $1 AND timestamp > NOW() - INTERVAL '30 minutes'
+              WHERE user_id = $1 AND timestamp > to_char(NOW() AT TIME ZONE 'UTC' - INTERVAL '30 minutes', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')
               AND type IN ('keyboard.chunk','screen.capture','clipboard.change')
               ORDER BY timestamp DESC LIMIT 100
             `, [hookUserId]);
