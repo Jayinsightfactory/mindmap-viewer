@@ -2087,3 +2087,24 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
   ② 이름 드리프트: self-tune-flow 가 canonicalMap(원이름→정식명) 산출, 정식명은 꼬리표("(전산 로그 기반 추정)")·긴 변형 대신 깨끗한 짧은 이름(HEDGE 규칙). pull-observed 가 수집 시 적용(rawName 보존, 드리프트 측정은 rawName 기준). upload-catalog 가 사전 이름(기록 3건↑, 최대 12/인)을 vision 워커 카탈로그에 합침(27건) → 해독 원천에서 드리프트 억제.
 - 함정: pull-observed 단독 실행은 erpLinks 없는 원자료로 덮어써 관계 지표가 떨어짐(김도준 관계 소실 5건 오경보) → 백업 복원 후 정규명만 적용. 파이프라인 순서(pull→erp-match→link-match→self-tune→flow) 밖에서 pull 만 돌리지 말 것.
 - 백업: *.bak-1012 (4 스크립트), observed/_bak-1012-김도준.json. 효과 측정은 10/13 07:00 이후(vision 카탈로그 반영은 워커 1시간 캐시).
+
+## 2026-10-13 직원 업무데이터 0건 원인=vision 워커 다운(OAuth 만료)+claude 좀비 (검색어: 다쓰고있는데, screen.analyzed 0, vision worker down, OAuth expired, 좀비)
+- 증상: screen.capture 408건 유입되는데 screen.analyzed 0 → "주말 유휴" 가설은 오진(직원 전원 근무 중).
+- 원인: owner PC vision 워커 미기동 + ~/.claude/.credentials.json accessToken 만료(10/12 15:08) + 10/10 생성 claude.exe 좀비 12개가 슬롯 점유(reaper 정지).
+- 조치: OrbitVisionSpool1800 재기동, 6h+ 좀비 Stop-Process(총 14 중 좀비 1 잔존→정리), 백로그 906건 소화 중.
+- 결과: screen.analyzed 5 → 42건(8개 PC: L0C2IOT·F3HGS86·U46T0GG·HGNEA1S·neonva·T09911T·wonyoung·05VLRN1). 신뢰도/디테일 재측정은 백로그 소화 후.
+- 교훈: 업무데이터 0건이면 캡처→분석 단계별 카운트부터(캡처 있고 분석 0 = 워커/CLI 인증). 주말 유휴 단정 금지.
+
+## 2026-10-13 플로우 기준 자가수정 디벨롭(부서 시드·9단계 규칙·농장 정제) (검색어: flow-seeds, 업무파악 정확도, 9단계, 농장 관계 EXCEL, 드리프트, 김원빈, self-tune-flow)
+- 사장님 지적: 확증률이 아니라 업무 플로우(이름 수렴·조작 지도·관계·핸드오프·9단계) 기준으로 분석할 것.
+- 실측: 수입부(김원빈 33→77)·김원영 이름 드리프트, 농장 관계에 'EXCEL 180-20089495'·'Holex PROFORMA' 쓰레기, '기타' 단계 525건(15%), 입금 단계 확증 20%.
+- 조치(nenova-work-features): flow-seeds.js 신설(부서별 표준 업무 시드+별칭 토큰, 9단계 규칙 배정 applyStageRules, cleanFarm). self-tune-flow.js 시드 병합·hintForPrompt 첫줄 주입·농장 정제. pull-observed.js 수집 시 규칙 배정(rawStage 보존). erp-match.js 링크에 farm 필드. restage-observed.js 소급 적용. 백업 *.bak-1013, observed/_bak-1013.
+- 결과: 시드 표준명 적중 1,910/3,482건(55%), 기타 525→254, 농장 관계 쓰레기 제거(김원빈 HUBFRESH·Cloudland·Circasia…). 확증률은 단계 재배정으로 변하지 않음(근거원 문제). 힌트 효과는 다음 해독부터(내일 07:00 이후 측정).
+- 남은 것: exe 작업자 조작지도=DB 변경결과 대체(강현우·정재훈), 후반 단계 근거원(신한 BankTransaction↔입금, WebFarmRemit↔송금, 업무방 발신↔전달).
+
+## 2026-10-13 크롬 확장 work.step 0건 원인=비도메인 PC 강제설치 정책 무시 → UIA 녹화기로 ECOUNT/네노바웹 수집 (검색어: ExtensionInstallForcelist, 확장 미설치, work.step ext-work 0, uia-recorder 브라우저, prgId, WebDoc, ECOUNT 입력 수집)
+- 실측(DESKTOP-HGNEA1S, EncodedCommand exec 회신): HKLM/HKCU ExtensionInstallForcelist·토큰 정책 모두 등록돼 있는데 확장 미설치, PartOfDomain=false, Chrome 154. Chrome 은 비도메인·비CBCM PC에서 사설 update_url 강제설치를 무시 → 전 직원 PC 동일(확장 발신 ws-* 이벤트 10/6 이후 0건, 전부 uiaws).
+- 원격 exec 함정: 데몬 워커가 exec 를 `powershell -Command "<원문>"` 으로 감싸 여러 줄·따옴표 스크립트가 깨져 보고 없이 소비됨 → `powershell -EncodedCommand <b64>` 로 보낼 것(regex $env:|Test-Path|Get-Command 미포함 유지). 가디언 exec 는 30초 타임아웃.
+- 조치: setup/uia-recorder.ps1 — 브라우저(chrome/msedge/whale)도 대상. 포커스 요소의 UIA Document 조상(≤14단계)의 ValuePattern=URL 로 ecount.com/nenovaweb.com 판별(창 제목엔 ECOUNT 없음), app=ecount|nenovaweb, window 라벨=문서제목+[prgId=…]. AutomationId 없는 웹 컨트롤은 같은 Name+값 변경을 input 으로. owner PC 검증: WebDoc depth=5 prgId=E040207, 주소창 비대상. 포커스 루프 자체는 기존 코드.
+- 반영: 데몬 git 동기화 후 녹화기는 뮤텍스 때문에 PC 재부팅(아침)부터 새 코드. 검증=내일 work.step app=ecount 건수(강명훈 DESKTOP-L0C2IOT).
+- 보류: 확장 경로 복구는 CBCM 등록(Google Admin) 또는 웹스토어 비공개 게시+수동 설치 필요 — 당장은 UIA 경로로 대체.

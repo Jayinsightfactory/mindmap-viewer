@@ -49,7 +49,28 @@ $K2 = [string][char]0xCD9C + [char]0xACE0   # chulgo
 $K3 = [string][char]0xAD00 + [char]0xB9AC   # gwanri
 
 $TARGET_PROC = @('excel','winword','powerpnt','hwp')
-$SKIP_PROC   = @('chrome','msedge','firefox','brave','opera','whale','powershell','pwsh','conhost','windowsterminal','cmd','explorer','searchhost','textinputhost','shellexperiencehost','startmenuexperiencehost')
+# 2026-10-13: browsers were left to the Chrome extension, but ExtensionInstallForcelist is ignored on
+# non-domain PCs (all employee PCs) so the extension never installed -> 0 web work-steps since launch.
+# Browser windows whose title matches ECOUNT / nenovaweb are now recorded here (app = ecount / nenovaweb).
+$BROWSER_PROC = @('chrome','msedge','whale')
+$SKIP_PROC   = @('firefox','brave','opera','powershell','pwsh','conhost','windowsterminal','cmd','explorer','searchhost','textinputhost','shellexperiencehost','startmenuexperiencehost')
+# The web app is identified by the URL of the UIA Document ancestor (Chrome exposes it via ValuePattern),
+# not by the window title (ECOUNT tab titles are just the menu name, e.g. "판매현황"). prgId is kept for ECOUNT.
+$WEB_URL_RE = '(?i)https?://[^/]*(ecount\.com|nenovaweb\.com)'
+function WebDoc($el) {
+  $cur = $el
+  for ($i=0; $i -lt 14 -and $cur -ne $null; $i++) {
+    try {
+      if ($cur.Current.ControlType -eq $CT::Document) {
+        $u = ''; try { $u = $cur.GetCurrentPattern($VP::Pattern).Current.Value } catch {}
+        if ($u -match $WEB_URL_RE) { return @{ url = $u; title = $cur.Current.Name } }
+        return $null
+      }
+    } catch {}
+    try { $cur = $walker.GetParent($cur) } catch { break }
+  }
+  return $null
+}
 
 function ParentInfo($el) {
   $parts = @(); $win = ''
@@ -85,11 +106,11 @@ function IsCredential($name, $aid) {
 }
 
 Write-Host "===== UIA recorder start  server=$REMOTE host=$HOST_NAME token=$([bool]$TOKEN) ====="
-Write-Host "  targets: nenova(window), Excel, Word / skip: browsers(handled by extension)+shells"
+Write-Host "  targets: nenova(window), Excel, Word, browser windows ECOUNT/nenovaweb / skip: other browsers+shells"
 Write-Host "  interact with nenova now. Ctrl+C to stop.`n"
 
 $buffer = New-Object System.Collections.ArrayList
-$lastKey = ''; $lastId = ''; $lastVal = ''; $seq = 0
+$lastKey = ''; $lastId = ''; $lastVal = ''; $lastNm = ''; $seq = 0
 $lastFlush = Get-Date
 $deadline = if ($Minutes -gt 0) { (Get-Date).AddMinutes($Minutes) } else { $null }
 
@@ -128,26 +149,37 @@ while ($true) {
     if ($proc -and ($SKIP_PROC -contains $proc)) { Start-Sleep -Milliseconds $PollMs; continue }
     $info = ParentInfo $f
     $isNenova = ($info.window -match "$K1|$K2|$K3")
-    $isTarget = ($TARGET_PROC -contains $proc) -or $isNenova
+    $webDoc = $null
+    if ($BROWSER_PROC -contains $proc) { $webDoc = WebDoc $f }
+    $isWeb = ($webDoc -ne $null)
+    $isTarget = ($TARGET_PROC -contains $proc) -or $isNenova -or $isWeb
     if (-not $isTarget) { Start-Sleep -Milliseconds $PollMs; continue }
     if (IsCredential $nm $aid) { Start-Sleep -Milliseconds $PollMs; continue }
 
     $key = "$aid|$val"
     if ($key -ne $lastKey -and ($aid -or $nm)) {
       # 같은 컨트롤(id)인데 값만 바뀜 = 편집(input), 새 컨트롤 = focus
-      $action = if ($aid -ne '' -and $aid -eq $lastId -and $val -ne $lastVal) { 'input' } else { 'focus' }
-      $appName = if ($isNenova) { 'nenova' } else { $proc }
+      # web controls usually have no AutomationId -> same Name + changed value also counts as input
+      $sameCtl = ($aid -ne '' -and $aid -eq $lastId) -or ($aid -eq '' -and $nm -ne '' -and $nm -eq $lastNm)
+      $action = if ($sameCtl -and $val -ne $lastVal) { 'input' } else { 'focus' }
+      $appName = if ($isNenova) { 'nenova' } elseif ($isWeb) { if ($webDoc.url -match '(?i)ecount') { 'ecount' } else { 'nenovaweb' } } else { $proc }
+      $winLabel = $info.window
+      if ($isWeb) {
+        $prg = ''; if ($webDoc.url -match 'prgId=([A-Za-z0-9_]+)') { $prg = $Matches[1] }
+        $pathPart = ''; try { $pathPart = ([Uri]$webDoc.url).AbsolutePath } catch {}
+        $winLabel = $webDoc.title + $(if ($prg) { " [prgId=$prg]" } elseif ($pathPart) { " [$pathPart]" } else { '' })
+      }
       # 노이즈 컷: ①Excel 셀 단순이동(focus) ②UI chrome(리본/백스테이지/메뉴/편집기) 제외.
       #   → 셀 입력(input)·실 대화상자 버튼·nenova 컨트롤만 남김. (input 판정 위해 last* 는 항상 갱신)
       $skipNav = ($appName -eq 'excel' -and $ct -eq 'DataItem' -and $action -eq 'focus') -or (IsChrome $action $ct $info.path $aid $appName)
       if (-not $skipNav) {
         $seq++
-        $step = @{ seq = $seq; t = (Get-Date).ToUniversalTime().ToString('o'); app = $appName; window = $info.window; action = $action; target = @{ id = $aid; name = $nm; controlType = $ct; path = $info.path; rect = $rect }; value = $val }
+        $step = @{ seq = $seq; t = (Get-Date).ToUniversalTime().ToString('o'); app = $appName; window = $winLabel; action = $action; target = @{ id = $aid; name = $nm; controlType = $ct; path = $info.path; rect = $rect }; value = $val }
         [void]$buffer.Add($step)
         $shown = if ($val.Length -gt 34) { $val.Substring(0,34) } else { $val }
         Write-Host ("[{0}] {1} id={2} '{3}'" -f $seq, $action, $aid, $shown)
       }
-      $lastKey = $key; $lastId = $aid; $lastVal = $val
+      $lastKey = $key; $lastId = $aid; $lastVal = $val; $lastNm = $nm
     }
   } catch {}
   if (((Get-Date) - $lastFlush).TotalSeconds -ge $FlushSec) { Flush; $lastFlush = Get-Date }
