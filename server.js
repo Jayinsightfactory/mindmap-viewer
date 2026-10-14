@@ -4732,8 +4732,7 @@ const EXE_FULLRES_DIR = path.join(__dirname, 'data', 'exe-fullres');
 const EXE_FULLRES_MAX_PER_USER = 300;
 // [2026-10-14 exeFullRes] 원본 exe 캡처 조회 — 목록(메타, 이미지 제외) / 단건(이미지 포함)
 app.get('/api/vision/exe-fullres/list', (req, res) => {
-  const token = (req.headers.authorization || '').replace('Bearer ', '').trim();
-  if (!token.startsWith('orbit_')) return res.status(401).json({ error: 'orbit token required' });
+  if (!resolveAdmin(req).isAdmin) return res.status(403).json({ error: 'admin only' }); // 직원 화면 원본 — 관리자만
   const out = [];
   try {
     for (const u of fs.readdirSync(EXE_FULLRES_DIR)) {
@@ -4747,8 +4746,7 @@ app.get('/api/vision/exe-fullres/list', (req, res) => {
   res.json({ count: out.length, items: out.slice(0, Math.min(parseInt(req.query.n) || 100, 500)) });
 });
 app.get('/api/vision/exe-fullres/file', (req, res) => {
-  const token = (req.headers.authorization || '').replace('Bearer ', '').trim();
-  if (!token.startsWith('orbit_')) return res.status(401).json({ error: 'orbit token required' });
+  if (!resolveAdmin(req).isAdmin) return res.status(403).json({ error: 'admin only' }); // 직원 화면 원본 — 관리자만
   const u = String(req.query.user || '').replace(/[^A-Za-z0-9_-]/g, '_'), f = String(req.query.file || '').replace(/[^A-Za-z0-9._-]/g, '_');
   try { res.type('json').send(fs.readFileSync(path.join(EXE_FULLRES_DIR, u, f), 'utf8')); } catch { res.status(404).json({ error: 'not found' }); }
 });
