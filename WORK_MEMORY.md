@@ -2173,3 +2173,4 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 - 함정: ①capture-timing-learner 가 자동 capture-config 를 넣을 때 같은 host 미소비 capture-config 를 consumed 처리(server.js:2063) → 수동 플래그가 실행 안 되고 사라짐. 하트비트 exeFullRes 키 출현으로 반영 확인, 없으면 재전송. ②정재훈 NENOVA2025 는 오늘 IDLE(부재) → 카나리를 강현우 DESKTOP-T09911T 로 교체, 정재훈은 exeFullRes:false 전송. ③강현우는 update 명령 후 ~25분 뒤 a43eaa5 반영.
 - 실측(16:14 첫 도착): 1928x1040(창 전체, DPI 원본), JPEG q85 133KB(300KB 한참 아래). OmniParser GPU 3.2s, 요소 111(텍스트38/아이콘73), 텍스트 라벨 38개 중 ~29 정확(≈76%; 오독: Pivat·명업·식상·송미·거러처 분버). 파일럿 원본 82%와 동급, 썸네일 6% 대비 압도.
 - 확대: 하지 않음. 남은 위험: 화면 확대/다중모니터 음수 좌표는 0으로 클램프(보조 모니터 창은 잘릴 수 있음), 서버 디스크 PC당 최대 ~90MB.
+- 추가 실측(16:57 마감): 40분간 도착 2장(강현우가 주로 엑셀 사용). 2번째=견적서 관리 1920x1080 260KB q85, 요소 218(텍스트149). 메뉴·칸 라벨(차수/거래처/출고요일/총 합계금액/품목명/공급가액/부가세/비고) 정확, 그리드 데이터(숫자·영문 품목명)는 easyocr 오독 많음(7,754,9DD·CAFIATION) → 칸 라벨용으론 충분, 셀 값 판독은 별도 OCR 필요. 평균 195KB.
