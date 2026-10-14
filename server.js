@@ -4728,6 +4728,30 @@ app.post('/api/vision/queue-push', (req, res) => {
 // 파일로 스풀. owner 워커가 한 건씩 당겨 분석 후 삭제 → 볼륨이 계속 빠짐. 사용자당 상한으로 볼륨 보호.
 const VISION_SPOOL_DIR = path.join(__dirname, 'data', 'vision-spool');
 try { fs.mkdirSync(VISION_SPOOL_DIR, { recursive: true }); } catch {}
+const EXE_FULLRES_DIR = path.join(__dirname, 'data', 'exe-fullres');
+const EXE_FULLRES_MAX_PER_USER = 300;
+// [2026-10-14 exeFullRes] 원본 exe 캡처 조회 — 목록(메타, 이미지 제외) / 단건(이미지 포함)
+app.get('/api/vision/exe-fullres/list', (req, res) => {
+  const token = (req.headers.authorization || '').replace('Bearer ', '').trim();
+  if (!token.startsWith('orbit_')) return res.status(401).json({ error: 'orbit token required' });
+  const out = [];
+  try {
+    for (const u of fs.readdirSync(EXE_FULLRES_DIR)) {
+      for (const f of fs.readdirSync(path.join(EXE_FULLRES_DIR, u)).filter(x => x.endsWith('.json'))) {
+        const st = fs.statSync(path.join(EXE_FULLRES_DIR, u, f));
+        out.push({ userId: u, file: f, fileBytes: st.size, mtime: st.mtime });
+      }
+    }
+  } catch {}
+  out.sort((a, b) => b.mtime - a.mtime);
+  res.json({ count: out.length, items: out.slice(0, Math.min(parseInt(req.query.n) || 100, 500)) });
+});
+app.get('/api/vision/exe-fullres/file', (req, res) => {
+  const token = (req.headers.authorization || '').replace('Bearer ', '').trim();
+  if (!token.startsWith('orbit_')) return res.status(401).json({ error: 'orbit token required' });
+  const u = String(req.query.user || '').replace(/[^A-Za-z0-9_-]/g, '_'), f = String(req.query.file || '').replace(/[^A-Za-z0-9._-]/g, '_');
+  try { res.type('json').send(fs.readFileSync(path.join(EXE_FULLRES_DIR, u, f), 'utf8')); } catch { res.status(404).json({ error: 'not found' }); }
+});
 const VISION_SPOOL_MAX_PER_USER = 300;   // 사용자당 파일 상한(초과 시 오래된 것부터 삭제)
 function _spoolUserDir(uid) { const d = path.join(VISION_SPOOL_DIR, String(uid).replace(/[^A-Za-z0-9_-]/g, '_')); try { fs.mkdirSync(d, { recursive: true }); } catch {} return d; }
 function _spoolSafeFile(name) { return /^[A-Za-z0-9._-]+\.json$/.test(name) ? name : null; } // 경로탈출 방지
@@ -4738,6 +4762,19 @@ app.post('/api/vision/spool', async (req, res) => {
   if (!token.startsWith('orbit_')) return res.status(401).json({ error: 'orbit token required' });
   const { imageBase64, app: appName, hostname, windowTitle, userId, ts, trigger, captureId, excel, lastClick } = req.body || {};
   if (!imageBase64 || !userId) return res.status(400).json({ error: 'imageBase64, userId required' });
+  // [2026-10-14 exeFullRes] nenova.exe 창 원본 JPEG — 비전 스풀(소진·삭제)과 분리해 보관(OmniParser용). 사용자당 300장 상한(≈90MB)
+  if (req.body.fullRes) {
+    try {
+      const dir = path.join(EXE_FULLRES_DIR, String(userId).replace(/[^A-Za-z0-9_-]/g, '_'));
+      fs.mkdirSync(dir, { recursive: true });
+      let files = fs.readdirSync(dir).filter(f => f.endsWith('.json')).sort();
+      while (files.length >= EXE_FULLRES_MAX_PER_USER) { try { fs.unlinkSync(path.join(dir, files.shift())); } catch { break; } }
+      const id = String(captureId || Date.now()).replace(/[^A-Za-z0-9._-]/g, '_');
+      const b = req.body;
+      await fs.promises.writeFile(path.join(dir, `${id}.json`), JSON.stringify({ app: appName || '', windowTitle: windowTitle || '', hostname: hostname || '', userId, ts: ts || new Date().toISOString(), trigger: trigger || '', width: b.width, height: b.height, jpegQuality: b.jpegQuality, windowRect: b.windowRect, lastClick: lastClick || undefined, bytes: Math.round(imageBase64.length * 3 / 4), imageType: 'jpeg', imageBase64 }));
+      return res.json({ ok: true, fullRes: true });
+    } catch (e) { return res.status(500).json({ error: e.message }); }
+  }
   try {
     const dir = _spoolUserDir(userId);
     // 상한 초과 시 오래된 파일부터 정리

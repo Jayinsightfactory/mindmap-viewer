@@ -808,6 +808,68 @@ function _autoInstallPython() {
   } catch (e) { console.warn('[screen-capture] python 자동설치 실패:', e && e.message); }
 }
 
+// ── [2026-10-14 exeFullRes] nenova.exe 창 원본 해상도 캡처 (capture-config.exeFullRes=true 인 PC만, 기본 off) ──
+// 썸네일(900px)은 DevExpress 그리드의 작은 한글 라벨을 OCR 못 함(라벨 6%) → 창 영역만 원본 크기로 잘라 JPEG 품질을 낮춰 300KB 이하로.
+// python 한 번(ctypes GetForegroundWindow/GetWindowRect, COM 없음, windowsHide)으로 크롭+저장, 비동기라 캡처 루프를 막지 않음.
+const EXE_FULLRES_MAX_BYTES = 300 * 1024;
+let _exeFullResLastAt = 0, _exeFullResStats = { sent: 0, fail: 0, lastBytes: 0, lastSize: '' };
+function _isNenovaExeWindow(app, title) {
+  if (getAppProfileKey(app) === 'nenova') return true;
+  return /nenova/i.test(String(app || '')) && /화훼|출고|관리/.test(String(title || ''));
+}
+function _maybeExeFullRes(pngPath, now, trigger) {
+  if (process.platform !== 'win32') return;
+  _loadCaptureConfig();
+  if (!_captureConfig?.exeFullRes) return;
+  if (!_isNenovaExeWindow(_lastActiveApp, _lastWindowTitle)) return;
+  if (now - _exeFullResLastAt < 30000) return; // 30초 1장 상한(서버 디스크·메모리 보호)
+  const _py = _resolvePython();
+  if (!_py) return;
+  _exeFullResLastAt = now;
+  const jpgPath = pngPath.replace(/\.png$/i, '.exe.jpg');
+  const script = [
+    'import ctypes,io,json,sys',
+    'from PIL import ImageGrab',
+    'u=ctypes.windll.user32',
+    'try: ctypes.windll.shcore.SetProcessDpiAwareness(2)',
+    'except Exception: u.SetProcessDPIAware()',
+    'h=u.GetForegroundWindow(); r=(ctypes.c_long*4)(); u.GetWindowRect(h,ctypes.byref(r))',
+    'b=[max(0,r[0]),max(0,r[1]),r[2],r[3]]',
+    'im=ImageGrab.grab(bbox=b if b[2]-b[0]>200 and b[3]-b[1]>150 else None).convert("RGB")',
+    'q=85',
+    'while True:',
+    ' buf=io.BytesIO(); im.save(buf,"JPEG",quality=q,optimize=True)',
+    ` if buf.tell()<=${EXE_FULLRES_MAX_BYTES} or q<=40: break`,
+    ' q-=10',
+    'open(sys.argv[1],"wb").write(buf.getvalue())',
+    'print(json.dumps({"w":im.width,"h":im.height,"q":q,"bytes":buf.tell(),"rect":b}))',
+  ].join('\n');
+  const ctx = { app: _lastActiveApp, windowTitle: _lastWindowTitle };
+  const { execFile } = require('child_process');
+  execFile(_py, ['-c', script, jpgPath], { timeout: 15000, windowsHide: true }, (err, stdout) => {
+    if (err || !fs.existsSync(jpgPath)) { _exeFullResStats.fail++; return; }
+    let info = {};
+    try { info = JSON.parse(String(stdout).trim().split(/\r?\n/).pop()); } catch {}
+    const orbitConfig = (() => { try { let r = fs.readFileSync(path.join(os.homedir(), '.orbit-config.json'), 'utf8'); if (r.charCodeAt(0) === 0xFEFF) r = r.slice(1); return JSON.parse(r); } catch { return {}; } })();
+    const serverUrl = orbitConfig.serverUrl || process.env.ORBIT_SERVER_URL;
+    const userId = orbitConfig.userId || process.env.ORBIT_USER_ID || '';
+    if (!serverUrl || !userId) { try { fs.unlinkSync(jpgPath); } catch {} return; }
+    const mc = _resolveCaptureContext(ctx.app, ctx.windowTitle);
+    let lastClick;
+    if (_lastClick && now - _lastClick.t <= 30000) lastClick = { x: _lastClick.x, y: _lastClick.y, agoMs: now - _lastClick.t };
+    _postSpool(serverUrl, orbitConfig.token || process.env.ORBIT_TOKEN || '', {
+      imageBase64: fs.readFileSync(jpgPath).toString('base64'), fullRes: true, imageType: 'jpeg',
+      width: info.w, height: info.h, jpegQuality: info.q, windowRect: info.rect, lastClick,
+      app: mc.app || '', windowTitle: mc.title || '', hostname: os.hostname(), userId,
+      ts: new Date(now).toISOString(), trigger, captureId: path.basename(jpgPath, '.jpg'),
+    }).then(ok => {
+      if (ok) { _exeFullResStats.sent++; _exeFullResStats.lastBytes = info.bytes || 0; _exeFullResStats.lastSize = `${info.w}x${info.h}`; }
+      else _exeFullResStats.fail++;
+      try { fs.unlinkSync(jpgPath); } catch {} // 로컬엔 원본 PNG가 이미 있음 → JPG는 남기지 않음
+    });
+  });
+}
+
 function capture(trigger = 'manual') {
   // 은행 보안프로그램 일시정지 중이면 캡처 스킵
   if (_paused) return null;
@@ -934,6 +996,9 @@ function capture(trigger = 'manual') {
       } catch {}
     } catch {}
 
+    // [2026-10-14 exeFullRes] nenova.exe 활성 창이면 창 영역 원본 해상도 JPEG(≤300KB)를 별도 업로드 — OmniParser 칸 라벨용
+    try { _maybeExeFullRes(filepath, now, trigger); } catch {}
+
     // ── 인텔리전스: 이미지 전송 여부 판단 ──
     if (!global._captureCounter) global._captureCounter = 0;
     global._captureCounter++;
@@ -981,6 +1046,7 @@ function getStatus() {
     state,
     captureCount: _scCaptureCount,
     fallback:     (() => { try { return getFallbackStatus(); } catch { return null; } })(), // 훅 차단 폴백 진단
+    exeFullRes:   _captureConfig?.exeFullRes ? _exeFullResStats : undefined, // [2026-10-14] exe 원본 캡처 진단
     lastCaptureAt:  _scLastCaptureAt ? new Date(_scLastCaptureAt).toISOString() : null,
     secondsSinceCapture: sinceLast,
     errorCount:   _scErrorCount,
