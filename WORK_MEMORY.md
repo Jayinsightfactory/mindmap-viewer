@@ -2108,3 +2108,68 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 - 조치: setup/uia-recorder.ps1 — 브라우저(chrome/msedge/whale)도 대상. 포커스 요소의 UIA Document 조상(≤14단계)의 ValuePattern=URL 로 ecount.com/nenovaweb.com 판별(창 제목엔 ECOUNT 없음), app=ecount|nenovaweb, window 라벨=문서제목+[prgId=…]. AutomationId 없는 웹 컨트롤은 같은 Name+값 변경을 input 으로. owner PC 검증: WebDoc depth=5 prgId=E040207, 주소창 비대상. 포커스 루프 자체는 기존 코드.
 - 반영: 데몬 git 동기화 후 녹화기는 뮤텍스 때문에 PC 재부팅(아침)부터 새 코드. 검증=내일 work.step app=ecount 건수(강명훈 DESKTOP-L0C2IOT).
 - 보류: 확장 경로 복구는 CBCM 등록(Google Admin) 또는 웹스토어 비공개 게시+수동 설치 필요 — 당장은 UIA 경로로 대체.
+
+## 2026-10-14 과정 체인 신뢰도(전 직원 동일) 신설 (검색어: process-chains, 과정 신뢰도, 인보이스 AI변환 전산업로드 도착원가 전달, 자동화 후보, 세션 45분)
+- 사장님: "인보이스→AI변환→전산 업로드→도착원가→영업 전달" 수준의 과정 분석+신뢰도, 전 직원 동일 적용.
+- nenova-work-features/process-chains.js: 세션(45분 공백)→단계집합(기록2건↑) 체인, 2회·2일↑ 반복=과정. 신뢰도=근거40·이름20·조작20·일관20. 힌트=AI도구 변환/전산업로드 후 전달/엑셀 중간작업. 출력 observed/process-chains.json, run-all 편입(카톡 인텔 앞), self-tune-report 에 로드.
+- 첫 실측: 10명 전원 과정 1~4개, 평균 51~73. 김원빈 '발주+입고+이익'에 AI변환✓→네노바웹 업로드✓→카톡/왓츠앱 전달 흐름 실재. 공통 약점=일관(에피소드 간 업무 구성 13~57%)·근거(강명훈 30%).
+- 10/14 추가: 과정 자가수정 루프 닫음 — process-history.json(하락 감지: 평균 -10·과정수 감소) + 직원별 hint 를 self-tune-flow hintForPrompt 에 주입(procK 는 fs 정의 뒤에 로드해야 함, 처음엔 순서 버그로 미주입) + self-tune-report '과정 체인' 줄·⚠과정 하락. 네노바웹 업로드 name=process-chains(PR feat/process-reliability-radar: FEATURE_NAMES + /my-work 레이더 '과정 신뢰도' 표). 70점↑ 과정 명세 초안 build-process-specs.py → observed/specs/*.md (강현우 2·김도준 1).
+
+## 2026-10-14 과정 체인 세션분할→루틴 추출(논문 기법)로 교체, '일관' 26→46 (검색어: routine-extract, process-chains --legacy, 노이즈 필터, 세그먼트 경계 점수, back-edge, Ruzicka 가중 자카드, 응집 군집, pm4py XES, process-variants, 일관 점수)
+- 배경: process-chains.js 의 45분 공백 세션이 거칠고 잡무·채팅 모니터링이 섞여 '일관'(에피소드 간 단계·업무 자카드) 13~57%로 낮았음.
+- 논문 적용(routine-extract.js 머리 주석 10줄에 요약): Leno·Dumas 2020(arXiv 2008.05782) = ①중복·무가치 UI 제거 ②CFG back-edge(루프 복귀)로 한 실행 경계 ③빈발 폐쇄 순차패턴(CloFast, 지지도 0.1)으로 후보 루틴. de Leoni·Khan·Agostinelli 2025(arXiv 2510.08118) = 루틴 실행을 행동 빈도 벡터로 인코딩 → K-Means/DBSCAN/HDBSCAN 군집, 노이즈 내성.
+- 우리 구현(nenova-work-features/routine-extract.js, 새 파일): (a) 노이즈 필터 — 바탕화면·잠금·받은편지함·채팅목록 등 화면 + 사례키 없음 + 수동적 done, '기타'+이름없음+사례키없음+조작없음, 업무명 '모니터링' & 사례키 없음 → 제외(원자료 불변, 직원당 2~40건). (b) 경계 점수 = 공백(45분 1.0/20분 0.55/10분 0.3) + 사례키 변경 0.5 + 단계 전환 0.2 + 업무 전환 0.2 + 첫 토큰 복귀(back-edge) 0.45, ≥0.6 이면 자름; 1건 조각은 20분 내 이웃에 붙임. (c) 군집 = (단계|업무) 빈도 벡터 Ruzicka 0.7 + 앱군 자카드 0.3, 평균연결 응집, 임계 0.45(과정 0개면 0.35→0.25 완화: 김원영 0.35). 같은 단계집합이라도 업무 토큰이 다르면 다른 과정(서명 중복은 ' #2'). (d) 대표 절차 = 에피소드 30%↑ 에 나오는 (단계·업무·앱) 토큰을 중앙 상대위치 순으로(최빈 순서) — 예전 '가장 긴 에피소드 45단계 나열' 대체.
+- process-chains.js: 기본이 routine-extract, `--legacy` 로 옛 45분 방식, `--out <파일>` 이면 이력·업로드 생략(전후 비교용). 출력 키 유지(top[].sig/episodes/days/medianMinutes/reliability{score,evidence,name,ops,consistency,weakest}/procedure/hints/caseKeys, employees[n].sessions/processes/avgScore/hint) + 추가 키 method, records, noiseDropped, simUsed, allProcesses. run-all 55행·업로드 로직 그대로(업로드는 서버가 name=process-chains 미등록이라 400 → 로그만, 이전과 동일. PR feat/process-reliability-radar 배포 뒤 해소).
+- 전후표(10명, 일관=상위 과정 에피소드 가중 평균):
+  | 직원 | 기록 | 잡음제외 | 세션/세그먼트 | 과정 수 | 평균 신뢰도 | 일관 |
+  |---|---|---|---|---|---|---|
+  | 강명훈 | 590 | 25 | 44→144 | 4→15 | 51→61 | 27→54 |
+  | 강현우 | 156 | 2 | 11→34 | 2→2 | 73→84 | 40→69 |
+  | 김도준 | 443 | 8 | 38→121 | 3→8 | 62→74 | 16→31 |
+  | 김원빈 | 603 | 18 | 49→151 | 4→11 | 59→70 | 17→62 |
+  | 김원영 | 154 | 17 | 39→60 | 1→2 | 55→62 | 19→27 |
+  | 박성수 | 183 | 7 | 27→44 | 1→2 | 65→63 | 23→33 |
+  | 설연주 | 517 | 40 | 45→119 | 1→7 | 52→67 | 22→40 |
+  | 아드리아나 | 482 | 34 | 49→127 | 4→7 | 63→67 | 34→56 |
+  | 정재훈 | 86 | 4 | 25→32 | 1→2 | 47→54 | 18→53 |
+  | 조현욱 | 547 | 22 | 40→106 | 1→6 | 62→71 | 40→36 |
+  | 합계/평균 | | | | 22→62 | 59→67 | 26→46 |
+- 솔직한 해석: 일관 상승의 상당 부분은 '유사한 세그먼트만 한 과정으로 묶는' 군집 정의에서 오는 구조적 효과(기존은 단계집합이 같으면 업무 구성이 달라도 한 과정에 넣었음). 조현욱은 40→36 하락 — 업무명이 '출고 분배·물량 조정' 하나로 거의 전부 붙어 있어 세그먼트가 잘게 나뉘고 토큰 다양성이 사라짐(해독 단계의 업무명 과소 분화가 원인, 추출기로 못 고침). 박성수 평균 신뢰도 65→63 미세 하락(에피소드 2회짜리 과정 2개만 남음). 임계 스윕: 0.35=과정85·일관35, 0.45=과정60·일관43, 0.55=과정31·일관44 → 0.45 채택. 세션 수는 이제 '세그먼트 수'(단일 단계 조각 포함)라 숫자가 커짐.
+- 변형 분석(process-variants.py → observed/process-variants.json, _segments.xes 436 trace): pm4py 는 Store Python 의 Windows 긴 경로 제한으로 설치 파일 누락(pm4py.util 없음) → 동일 정의(trace 의 concept:name 순서 튜플)로 XML 직접 집계(engine 필드에 기록). 결과: (단계·업무) 수준 변형은 세그먼트 수와 거의 같음(강명훈 84→79, 조현욱 54→54) = 정확한 순서 반복은 사실상 없음; 단계만 보면 상위3 비율 7~70%(김원영 70, 강현우 35, 조현욱 7). 순서 기반 루틴 발견은 우리 기록에 안 맞고 집합 유사도(현 방식)가 맞다는 근거.
+- 백업: process-chains.js.bak-1014, observed/process-chains.json.bak-1014, observed/process-history.json.bak-1014. 되돌리기 = `node process-chains.js --legacy`.
+
+## 2026-10-14 인보이스→전산 변환 골든테스트 하네스 (nenova-work-features/invoice)
+- 산출: invoice/{target-schema.md, extract.py, golden.py, golden-report.md, README.md}, observed/invoice-pairs.json(55 후보쌍)
+- 결과: 55쌍 셀 446/4398=10.1%, 총액일치(연도확정) 0쌍 → 정확도 미검증. 데모 합성샘플로 하네스 동작 증명.
+- 막힘: 원본PDF↔결과엑셀 같은 건 대응 불가(연도·PC 다름), 입고 업로드 양식 쌍 0.
+- 재실행: python invoice/build_pairs.py && python invoice/golden.py
+검색어: 인보이스 골든테스트 invoice golden extract.py 도착원가 입고업로드 원가자료 파킹리스트
+
+## 2026-10-14 업무 드라이브 인보이스↔결과엑셀 자동 짝짓기 (nenova-erp-ui PR #1050)
+- lib/workDrivePairs.js: data/drive/index.jsonl 의 인보이스 PDF ↔ 원가자료/도착원가/Packing 입고 엑셀 점수화(업로더25·시간25·차수30(파일명/시트)·농장20·국가5·총액20), 확정≥70/후보40~69, 1:N → data/drive/pairs.json
+- 수신 시 drive-ingest 에서 자동 재계산, 일괄: `node scripts/work-drive-pairs-recompute.mjs` (서버 /var/www/nenova-erp)
+- 다운로드: GET https://nenovaweb.com/api/work/drive-pairs[?status=confirmed] (드라이브 관리자 JWT), 파일 본체는 /api/work/drive?download=<id>
+- 현재 드라이브 쌍 수: 로컬엔 data/drive 없음 → 서버에서 스크립트 1회 실행 필요(미측정)
+검색어: 인보이스 짝짓기, drive-pairs, workDrivePairs, 골든테스트 정답쌍, invoice golden pairs
+
+## 2026-10-14 업무 드라이브 인보이스 PDF↔결과 엑셀 짝짓기 — 중복 작업 정리
+- 같은 기능이 PR #1050(a948cc5f)으로 먼저 master 머지됨: lib/workDrivePairs.js, GET/POST /api/work/drive-pairs(관리자), scripts/work-drive-pairs-recompute.mjs
+- 별도 세션이 만든 PR #1051(동일 기능, CI 통과)은 중복이라 머지 없이 닫음
+- 미검증: 운영 드라이브 기준 확정/후보 쌍 수 — 서버에서 `node scripts/work-drive-pairs-recompute.mjs` 실행 필요
+- 검색어: 업무드라이브 인보이스 짝짓기 drive-pairs workDrivePairs 골든테스트 정답쌍 PR1050 PR1051 중복
+
+## 2026-10-14 (2) 인보이스 골든테스트 — 업무 드라이브 확정 쌍
+- nenova-erp-ui PR #1054 drive-pairs-export.yml(수동, confirmed 쌍 PDF·엑셀만 tar→artifact) 머지·실행 → nenova-work-features/invoice/data/ 보존.
+- 확정 157 → 고유 33쌍(사본 124 제외), 비교 30, 연도확정 11. 일치율 27.6%(확정 11쌍 53.1%), 100% 0쌍. Holex 합산 규칙 개선 시도는 주차별 규칙 달라 순효과 없음(기본 off).
+- 막힘: 품명 매핑(HIPPEASTRUM→Amaryllis), 합산 규칙 주차별 상이, EZ/NENOVA CO 양식 미지원.
+- 재실행: python invoice/golden.py --confirmed invoice/data --report invoice/golden-report-drive.md
+검색어: 인보이스 골든테스트 업무드라이브 확정쌍 Holex drive-pairs-export golden-report-drive
+
+## 2026-10-14 nenova.exe 원본해상도 캡처 플래그(exeFullRes) — 카나리 강현우
+검색어: exeFullRes, exe-fullres, 원본 해상도 캡처, OmniParser, 썸네일 900x506, capture-config 플래그, 창 영역 크롭, _maybeExeFullRes, data/exe-fullres
+- 요청: nenova.exe 활성 창일 때만 원본 해상도로 캡처해 서버로(OmniParser 라벨 6%→82%), 다른 앱은 기존 유지, PC별 플래그·카나리 1대.
+- 해상도 줄어드는 지점: 데몬은 원래 전체화면 원본 PNG를 저장. ①스풀(/api/vision/spool)은 원본이지만 비전 워커가 분석 후 삭제 ②영구 보관물은 screen.analyzed 의 900x506 썸네일뿐 ③express.json 2mb 제한이라 큰 PNG(base64)는 413로 조용히 탈락 가능.
+- 수정(301758a, a43eaa5): src/screen-capture.js `_maybeExeFullRes` — capture-config.exeFullRes=true + 앱키 nenova(또는 nenova+화훼/출고/관리 제목)일 때 python 1회(ctypes GetForegroundWindow/GetWindowRect, COM 없음, windowsHide, 비동기)로 창 영역 크롭→JPEG q85부터 10씩 낮춰 ≤300KB, 30초 1장 상한 → /api/vision/spool 에 fullRes:true 로 전송. heartbeat modules.screen.exeFullRes{sent,fail,lastSize,lastBytes}. server.js: fullRes 는 비전 스풀과 분리해 data/exe-fullres/<uid>/ 저장(사용자당 300장≈90MB 상한), 조회 GET /api/vision/exe-fullres/list·file (resolveAdmin 관리자 전용).
+- 함정: ①capture-timing-learner 가 자동 capture-config 를 넣을 때 같은 host 미소비 capture-config 를 consumed 처리(server.js:2063) → 수동 플래그가 실행 안 되고 사라짐. 하트비트 exeFullRes 키 출현으로 반영 확인, 없으면 재전송. ②정재훈 NENOVA2025 는 오늘 IDLE(부재) → 카나리를 강현우 DESKTOP-T09911T 로 교체, 정재훈은 exeFullRes:false 전송. ③강현우는 update 명령 후 ~25분 뒤 a43eaa5 반영.
+- 실측(16:14 첫 도착): 1928x1040(창 전체, DPI 원본), JPEG q85 133KB(300KB 한참 아래). OmniParser GPU 3.2s, 요소 111(텍스트38/아이콘73), 텍스트 라벨 38개 중 ~29 정확(≈76%; 오독: Pivat·명업·식상·송미·거러처 분버). 파일럿 원본 82%와 동급, 썸네일 6% 대비 압도.
+- 확대: 하지 않음. 남은 위험: 화면 확대/다중모니터 음수 좌표는 0으로 클램프(보조 모니터 창은 잘릴 수 있음), 서버 디스크 PC당 최대 ~90MB.
