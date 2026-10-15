@@ -60,8 +60,13 @@ $WEB_URL_RE = '(?i)https?://[^/]*(ecount\.com|nenovaweb\.com)'
 # Address bar of the top-level browser window that contains $el (Chrome: AutomationId view_1012 / Edit in ToolBar). Cached per window for 2s.
 $script:abCache = @{}
 function AddressBarUrl($el) {
-  $win = $el; $top = $null
-  for ($i=0; $i -lt 30 -and $win -ne $null; $i++) { try { if ($win.Current.ControlType -eq $CT::Window) { $top = $win } } catch {}; try { $win = $walker.GetParent($win) } catch { break } }
+  # top-level browser element = last ancestor before the desktop root (employee Chrome reports its frame as Pane, not Window)
+  $root = $A::RootElement; $win = $el; $top = $null
+  for ($i=0; $i -lt 40 -and $win -ne $null; $i++) {
+    $par = $null; try { $par = $walker.GetParent($win) } catch { break }
+    if ($par -eq $null -or [System.Windows.Automation.Automation]::Compare($par, $root)) { $top = $win; break }
+    $win = $par
+  }
   if (-not $top) { return '' }
   $h = 0; try { $h = $top.Current.NativeWindowHandle } catch {}
   $c = $script:abCache[$h]; if ($c -and ((Get-Date) - $c.t).TotalSeconds -lt 2) { return $c.u }
