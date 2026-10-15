@@ -88,10 +88,13 @@ function NormUrl($u) {
   if ($u -and $u -notmatch '^[a-zA-Z][a-zA-Z0-9+.-]*://') { $u = 'https://' + $u }
   return $u
 }
+$script:wdTrace = ''
 function WebDoc($el) {
+  $script:wdTrace = ''
   $cur = $el
   for ($i=0; $i -lt 14 -and $cur -ne $null; $i++) {
     try {
+      $script:wdTrace += ('' + $cur.Current.ControlType.ProgrammaticName -replace 'ControlType\.', '') + '>'
       if ($cur.Current.ControlType -eq $CT::Document) {
         $u = ''; try { $u = $cur.GetCurrentPattern($VP::Pattern).Current.Value } catch {}
         # 2026-10-15 field diag: employee Chrome gives an empty or scheme-less Document value -> normalize, then fall back to the address bar,
@@ -99,12 +102,13 @@ function WebDoc($el) {
         $u = NormUrl $u
         if ($u -notmatch $WEB_URL_RE) { $u = NormUrl (AddressBarUrl $cur) }
         $ttl = ''; try { $ttl = $cur.Current.Name } catch {}
+        $script:wdTrace += ('U=' + $u.Substring(0, [Math]::Min(40, $u.Length)) + ' M=' + ($u -match $WEB_URL_RE))
         if ($u -match $WEB_URL_RE) { return @{ url = $u; title = $ttl } }
         if ($ttl -match '(?i)nenova ERP') { return @{ url = 'https://nenovaweb.com/'; title = $ttl } }
         if ($ttl -match '(?i)\|\s*ECOUNT|ecount\.com') { return @{ url = 'https://logincc.ecount.com/'; title = $ttl } }
         return $null
       }
-    } catch {}
+    } catch { $script:wdTrace += ('EX:' + $_.Exception.Message.Substring(0, [Math]::Min(60, $_.Exception.Message.Length)) + '>') }
     try { $cur = $walker.GetParent($cur) } catch { break }
   }
   return $null
@@ -197,7 +201,7 @@ while ($true) {
         # field diag v2: what the address-bar fallback returned for this element (empty = lookup failed)
         $abv = ''; try { $abv = (AddressBarUrl $f) -replace '(ec_req_sid=)[^&#]+', '$1x' } catch { $abv = 'ERR ' + $_.Exception.Message }
         $dv = ''; try { $dv = '' + $f.GetCurrentPattern($VP::Pattern).Current.Value } catch {}
-        $dg.samples += ('AB=' + $abv.Substring(0, [Math]::Min(70, $abv.Length)) + ' DV=' + $dv.Substring(0, [Math]::Min(50, $dv.Length)))
+        $dg.samples += ('AB=' + $abv.Substring(0, [Math]::Min(70, $abv.Length)) + ' DV=' + $dv.Substring(0, [Math]::Min(50, $dv.Length)) + ' WD=' + $script:wdTrace.Substring(0, [Math]::Min(120, $script:wdTrace.Length)))
         $dg.samples += ("{0}|{1}|{2}" -f $ct, ($nm -replace '[
 ]', ' ').Substring(0, [Math]::Min(30, $nm.Length)), ($info.path -replace '[
 ]', ' ').Substring(0, [Math]::Min(80, $info.path.Length))) }
