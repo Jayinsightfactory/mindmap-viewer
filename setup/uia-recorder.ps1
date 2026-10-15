@@ -178,7 +178,10 @@ while ($true) {
     if ($BROWSER_PROC -contains $proc) {
       $webDoc = WebDoc $f
       $dg.browserFocus++
-      if ($webDoc) { $dg.webHit++ } elseif ($dg.samples.Count -lt 6) { $dg.samples += ("{0}|{1}|{2}" -f $ct, ($nm -replace '[
+      if ($webDoc) { $dg.webHit++ } elseif ($dg.samples.Count -lt 6) {
+        # field diag v2: what the address-bar fallback returned for this element (empty = lookup failed)
+        $abv = ''; try { $abv = (AddressBarUrl $f) -replace '(ec_req_sid=)[^&#]+', '$1x' } catch { $abv = 'ERR ' + $_.Exception.Message }
+        $dg.samples += ('AB=' + $abv.Substring(0, [Math]::Min(70, $abv.Length))) $dg.samples += ("{0}|{1}|{2}" -f $ct, ($nm -replace '[
 ]', ' ').Substring(0, [Math]::Min(30, $nm.Length)), ($info.path -replace '[
 ]', ' ').Substring(0, [Math]::Min(80, $info.path.Length))) }
     }
