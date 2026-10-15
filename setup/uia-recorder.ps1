@@ -57,12 +57,35 @@ $SKIP_PROC   = @('firefox','brave','opera','powershell','pwsh','conhost','window
 # The web app is identified by the URL of the UIA Document ancestor (Chrome exposes it via ValuePattern),
 # not by the window title (ECOUNT tab titles are just the menu name, e.g. "판매현황"). prgId is kept for ECOUNT.
 $WEB_URL_RE = '(?i)https?://[^/]*(ecount\.com|nenovaweb\.com)'
+# Address bar of the top-level browser window that contains $el (Chrome: AutomationId view_1012 / Edit in ToolBar). Cached per window for 2s.
+$script:abCache = @{}
+function AddressBarUrl($el) {
+  $win = $el; $top = $null
+  for ($i=0; $i -lt 30 -and $win -ne $null; $i++) { try { if ($win.Current.ControlType -eq $CT::Window) { $top = $win } } catch {}; try { $win = $walker.GetParent($win) } catch { break } }
+  if (-not $top) { return '' }
+  $h = 0; try { $h = $top.Current.NativeWindowHandle } catch {}
+  $c = $script:abCache[$h]; if ($c -and ((Get-Date) - $c.t).TotalSeconds -lt 2) { return $c.u }
+  $u = ''
+  try {
+    $e = $top.FindFirst([System.Windows.Automation.TreeScope]::Descendants, (New-Object System.Windows.Automation.PropertyCondition($A::AutomationIdProperty, 'view_1012')))
+    if (-not $e) {
+      $tb = $top.FindFirst([System.Windows.Automation.TreeScope]::Descendants, (New-Object System.Windows.Automation.PropertyCondition($A::ControlTypeProperty, $CT::ToolBar)))
+      if ($tb) { $e = $tb.FindFirst([System.Windows.Automation.TreeScope]::Descendants, (New-Object System.Windows.Automation.PropertyCondition($A::ControlTypeProperty, $CT::Edit))) }
+    }
+    if ($e) { $u = $e.GetCurrentPattern($VP::Pattern).Current.Value }
+  } catch {}
+  if ($u -and $u -notmatch '^https?://') { $u = 'https://' + $u }   # Chrome hides the scheme in the omnibox
+  $script:abCache[$h] = @{ u = $u; t = Get-Date }
+  return $u
+}
 function WebDoc($el) {
   $cur = $el
   for ($i=0; $i -lt 14 -and $cur -ne $null; $i++) {
     try {
       if ($cur.Current.ControlType -eq $CT::Document) {
         $u = ''; try { $u = $cur.GetCurrentPattern($VP::Pattern).Current.Value } catch {}
+        # 2026-10-15 field diag: on employee Chrome the Document often exposes NO url (empty ValuePattern) -> read the window's address bar instead
+        if (-not $u) { $u = AddressBarUrl $cur }
         if ($u -match $WEB_URL_RE) { return @{ url = $u; title = $cur.Current.Name } }
         return $null
       }
