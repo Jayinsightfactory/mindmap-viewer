@@ -111,6 +111,8 @@ Write-Host "  interact with nenova now. Ctrl+C to stop.`n"
 
 $buffer = New-Object System.Collections.ArrayList
 $lastKey = ''; $lastId = ''; $lastVal = ''; $lastNm = ''; $seq = 0
+# 2026-10-15 self-diagnosis: web work-steps stayed 0 on employee PCs -> report what the recorder actually sees in browsers (every 10 min, only when a browser had focus)
+$dg = @{ browserFocus = 0; webHit = 0; samples = @() }; $lastDiag = Get-Date
 $lastFlush = Get-Date
 $deadline = if ($Minutes -gt 0) { (Get-Date).AddMinutes($Minutes) } else { $null }
 
@@ -150,7 +152,13 @@ while ($true) {
     $info = ParentInfo $f
     $isNenova = ($info.window -match "$K1|$K2|$K3")
     $webDoc = $null
-    if ($BROWSER_PROC -contains $proc) { $webDoc = WebDoc $f }
+    if ($BROWSER_PROC -contains $proc) {
+      $webDoc = WebDoc $f
+      $dg.browserFocus++
+      if ($webDoc) { $dg.webHit++ } elseif ($dg.samples.Count -lt 6) { $dg.samples += ("{0}|{1}|{2}" -f $ct, ($nm -replace '[
+]', ' ').Substring(0, [Math]::Min(30, $nm.Length)), ($info.path -replace '[
+]', ' ').Substring(0, [Math]::Min(80, $info.path.Length))) }
+    }
     $isWeb = ($webDoc -ne $null)
     $isTarget = ($TARGET_PROC -contains $proc) -or $isNenova -or $isWeb
     if (-not $isTarget) { Start-Sleep -Milliseconds $PollMs; continue }
@@ -183,6 +191,16 @@ while ($true) {
     }
   } catch {}
   if (((Get-Date) - $lastFlush).TotalSeconds -ge $FlushSec) { Flush; $lastFlush = Get-Date }
+  if (((Get-Date) - $lastDiag).TotalMinutes -ge 10) {
+    if ($dg.browserFocus -gt 0) {
+      try {
+        $ev = @{ id = "uiadiag-$HOST_NAME-$([DateTimeOffset]::Now.ToUnixTimeSeconds())"; type = 'daemon.diag'; source = 'uia-recorder'; sessionId = "daemon-$HOST_NAME"; timestamp = (Get-Date).ToUniversalTime().ToString('o'); data = @{ hostname = $HOST_NAME; kind = 'uia-web'; browserFocus = $dg.browserFocus; webHit = $dg.webHit; samples = ($dg.samples -join ' || ') } }
+        $hd = @{ 'X-Device-Id' = $HOST_NAME }; if ($TOKEN) { $hd['Authorization'] = "Bearer $TOKEN" }
+        Invoke-RestMethod -Uri "$REMOTE/api/hook" -Method POST -ContentType 'application/json; charset=utf-8' -Headers $hd -Body ([System.Text.Encoding]::UTF8.GetBytes((@{ events = @($ev) } | ConvertTo-Json -Depth 6 -Compress))) -TimeoutSec 10 -EA Stop | Out-Null
+      } catch {}
+    }
+    $dg = @{ browserFocus = 0; webHit = 0; samples = @() }; $lastDiag = Get-Date
+  }
   Start-Sleep -Milliseconds $PollMs
 }
 Flush
