@@ -68,7 +68,7 @@ function AddressBarUrl($el) {
     $win = $par
   }
   if (-not $top) { return '' }
-  $h = 0; try { $h = $top.Current.NativeWindowHandle } catch {}
+  $h = 0; try { $h = [int]$top.Current.NativeWindowHandle } catch {}; if ($h -eq $null) { $h = 0 }
   $c = $script:abCache[$h]; if ($c -and ((Get-Date) - $c.t).TotalSeconds -lt 2) { return $c.u }
   $u = ''
   try {
@@ -95,7 +95,7 @@ function WebDoc($el) {
   for ($i=0; $i -lt 14 -and $cur -ne $null; $i++) {
     try {
       $script:wdTrace += ('' + $cur.Current.ControlType.ProgrammaticName -replace 'ControlType\.', '') + '>'
-      if ($cur.Current.ControlType -eq $CT::Document) {
+      if ($cur.Current.ControlType.Id -eq $CT::Document.Id) {
         $u = ''; try { $u = $cur.GetCurrentPattern($VP::Pattern).Current.Value } catch {}
         # 2026-10-15 field diag: employee Chrome gives an empty or scheme-less Document value -> normalize, then fall back to the address bar,
         # then to the tab title ('... - nenova ERP', '... | ECOUNT') as a last resort
@@ -121,7 +121,7 @@ function ParentInfo($el) {
     try {
       $n = $cur.Current.Name
       $t = $cur.Current.ControlType
-      if ($t -eq $CT::Window -and $n) { $win = $n }
+      if ($t.Id -eq $CT::Window.Id -and $n) { $win = $n }
       if ($i -lt 5) { if ($n) { $parts += $n } else { $parts += ($t.ProgrammaticName -replace 'ControlType\.','') } }
     } catch {}
     try { $cur = $walker.GetParent($cur) } catch { break }
