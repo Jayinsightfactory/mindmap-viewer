@@ -79,8 +79,13 @@ function AddressBarUrl($el) {
     }
     if ($e) { $u = $e.GetCurrentPattern($VP::Pattern).Current.Value }
   } catch {}
-  if ($u -and $u -notmatch '^https?://') { $u = 'https://' + $u }   # Chrome hides the scheme in the omnibox
+  $u = NormUrl $u   # Chrome hides the scheme in the omnibox
   $script:abCache[$h] = @{ u = $u; t = Get-Date }
+  return $u
+}
+function NormUrl($u) {
+  $u = ('' + $u).Trim()
+  if ($u -and $u -notmatch '^[a-zA-Z][a-zA-Z0-9+.-]*://') { $u = 'https://' + $u }
   return $u
 }
 function WebDoc($el) {
@@ -89,9 +94,14 @@ function WebDoc($el) {
     try {
       if ($cur.Current.ControlType -eq $CT::Document) {
         $u = ''; try { $u = $cur.GetCurrentPattern($VP::Pattern).Current.Value } catch {}
-        # 2026-10-15 field diag: on employee Chrome the Document often exposes NO url (empty ValuePattern) -> read the window's address bar instead
-        if (-not $u) { $u = AddressBarUrl $cur }
-        if ($u -match $WEB_URL_RE) { return @{ url = $u; title = $cur.Current.Name } }
+        # 2026-10-15 field diag: employee Chrome gives an empty or scheme-less Document value -> normalize, then fall back to the address bar,
+        # then to the tab title ('... - nenova ERP', '... | ECOUNT') as a last resort
+        $u = NormUrl $u
+        if ($u -notmatch $WEB_URL_RE) { $u = NormUrl (AddressBarUrl $cur) }
+        $ttl = ''; try { $ttl = $cur.Current.Name } catch {}
+        if ($u -match $WEB_URL_RE) { return @{ url = $u; title = $ttl } }
+        if ($ttl -match '(?i)nenova ERP') { return @{ url = 'https://nenovaweb.com/'; title = $ttl } }
+        if ($ttl -match '(?i)\|\s*ECOUNT|ecount\.com') { return @{ url = 'https://logincc.ecount.com/'; title = $ttl } }
         return $null
       }
     } catch {}
@@ -186,7 +196,8 @@ while ($true) {
       if ($webDoc) { $dg.webHit++ } elseif ($dg.samples.Count -lt 6) {
         # field diag v2: what the address-bar fallback returned for this element (empty = lookup failed)
         $abv = ''; try { $abv = (AddressBarUrl $f) -replace '(ec_req_sid=)[^&#]+', '$1x' } catch { $abv = 'ERR ' + $_.Exception.Message }
-        $dg.samples += ('AB=' + $abv.Substring(0, [Math]::Min(70, $abv.Length)))
+        $dv = ''; try { $dv = '' + $f.GetCurrentPattern($VP::Pattern).Current.Value } catch {}
+        $dg.samples += ('AB=' + $abv.Substring(0, [Math]::Min(70, $abv.Length)) + ' DV=' + $dv.Substring(0, [Math]::Min(50, $dv.Length)))
         $dg.samples += ("{0}|{1}|{2}" -f $ct, ($nm -replace '[
 ]', ' ').Substring(0, [Math]::Min(30, $nm.Length)), ($info.path -replace '[
 ]', ' ').Substring(0, [Math]::Min(80, $info.path.Length))) }
