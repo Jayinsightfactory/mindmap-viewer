@@ -586,6 +586,17 @@ app.get('/api/install-open.bat', (req, res) => {
   res.setHeader('Content-Type', 'application/x-bat');
   res.sendFile(path.join(__dirname, 'setup', 'install-open.bat'));
 });
+// [2026-10-18 추가] 설치 프로그램 2종 분류 — ① 네노바 직원용 = 위 /api/install-open.bat (그대로)
+// ② MOYI 고객용 = 아래. 고객 PC 는 nowlink 서버·nowlink 코드 번들을 쓰며 이 서버/DB 와 무관.
+// 설치 스크립트 원본은 nowlink 저장소(setup/install-moyi.ps1) 한 곳 — 여기서는 안내·전달만(로직 중복 없음).
+const MOYI_SERVER = 'https://nowlink-api-production.up.railway.app';
+app.get('/api/install-moyi.bat', (req, res) => {
+  res.setHeader('Content-Disposition', 'attachment; filename="MOYI-install.bat"');
+  res.setHeader('Content-Type', 'application/x-bat');
+  res.setHeader('Cache-Control', 'no-store');
+  res.sendFile(path.join(__dirname, 'setup', 'install-moyi.bat'));
+});
+app.get('/api/install-moyi.ps1', (req, res) => res.redirect(302, `${MOYI_SERVER}/api/moyi/install.ps1`));
 // 2026-07-09: 직원 배포 안내 페이지 (설치버튼+기능목록+설치법). 짧은 공유 링크 /guide.
 app.get(['/guide', '/install-guide'], (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'install-guide.html'));
