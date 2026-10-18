@@ -2182,3 +2182,11 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 - P0: ①승인 기반 실행 계층(nenovaweb 미확정 견적부터) ②권한·감사로그 ③테넌트 격리 ④결과 검증 골든셋 ⑤원격 명령 안전 레일. 첫 착수=P0-1.
 - 미검증: /api/scripts 전역 인증 여부.
 검색어: AGENT_GAP_AUDIT, 에이전트 격차, 상용화, 승인 기반 실행 계층, action layer, approve-run, rpa-runner, 멀티테넌시, 감사로그
+
+## 2026-10-18 나우링크(nowlink.kr) 상용 출시 기획 (docs/NOWLINK_PRODUCT_PLAN.md, 문서·점검만)
+- 요청: 사장님 지시 — 데몬 기능 상용화, 3단계 상품(데몬 / +생성형 ERP / +MOYI), 출시 체크리스트·90일 로드맵.
+- 상품: Watch(데몬·동의자 대시보드·승인형 자동화, PC당 1.9만 제안) / Build(+견적·입고/도착원가·차수보드 템플릿 ERP, 4.9만+구축비) / Team(+MOYI 승인·핸드오프, 6.9만).
+- 동의 모델 빈 곳: 초대·항목별 동의 기록·개인 범위·셀프 철회 없음, consentedUsers 는 JSON 수동, share-consent 는 메모리 Map(routes/personal-insights.js:182).
+- 점검: nowlink.kr 이미 Next.js 랜딩(Railway, Cloudflare NS, LE 인증서 ~2027-01-13), /download 404. orbit 4,841회/370파일(UI Orbit 807), nenova 3,391/129, dlaww584 17. /api/scripts 인증 미들웨어 없음(server.js:8846, 라우터 내부 router.use 없음).
+- P0 12항목: 완료0·부분6·미완6. 첫 2주: 승인 API 게이트 / workspace_id 강제 / 동의 테이블·API.
+검색어: NOWLINK_PRODUCT_PLAN, 나우링크, nowlink, 상용 출시, 상품 3단계, Watch Build Team, 동의 모델, 생성형 ERP, 브랜드 교체, 90일 로드맵
