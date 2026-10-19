@@ -18,8 +18,54 @@
  */
 const express = require('express');
 
-function createScriptGenerator({ getDb }) {
+// 승인 게이트(2026-10-19 사장님 승인): draft → tested(dry-run) → approved → deployed(executed), rejected
+// authenticate(req) → { user, isAdmin } | null. 실행 계열(deploy/approve/reject/approve-run)은 admin 만.
+const TRANSITIONS = {
+  deploy:        { from: ['draft', 'tested'], to: 'tested' },
+  approve:       { from: ['tested'],          to: 'approved' },
+  reject:        { from: ['draft', 'tested', 'approved'], to: 'rejected' },
+  'approve-run': { from: ['approved'],        to: 'deployed' },
+};
+
+function createScriptGenerator({ getDb, authenticate }) {
   const router = express.Router();
+
+  // 전 라우트 인증 — 토큰 없거나 무효면 401
+  router.use(async (req, res, next) => {
+    try {
+      const auth = authenticate ? await authenticate(req) : null;
+      if (!auth || !auth.user) return res.status(401).json({ error: 'unauthorized', reason: '로그인 토큰 필요' });
+      req.scriptAuth = auth;
+      next();
+    } catch (e) { res.status(401).json({ error: 'unauthorized', reason: e.message }); }
+  });
+
+  function _requireAdmin(req, res) {
+    if (req.scriptAuth && req.scriptAuth.isAdmin) return true;
+    res.status(403).json({ error: 'forbidden', reason: '지정 승인자(관리자)만 가능' });
+    return false;
+  }
+
+  async function _audit(db, { scriptId, action, req, fromStatus, toStatus, hostname, ok, reason }) {
+    try {
+      const u = (req.scriptAuth && req.scriptAuth.user) || {};
+      await db.query(
+        `INSERT INTO script_audit_log (script_id, action, actor_id, actor_email, from_status, to_status, hostname, ok, reason)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+        [scriptId == null ? null : String(scriptId), action, u.id || null, u.email || null,
+         fromStatus || null, toStatus || null, hostname || null, !!ok, reason || null]);
+    } catch (e) { console.warn('[script-audit] 기록 실패:', e.message); }
+  }
+
+  // 상태 전이 검사 — 위반 시 409 + 감사로그(ok=false)
+  async function _checkTransition(db, req, res, script, action, hostname) {
+    const t = TRANSITIONS[action];
+    if (t.from.includes(script.status)) return true;
+    const reason = `상태 순서 위반: ${script.status} → ${t.to} 불가 (허용 시작상태: ${t.from.join(',')})`;
+    await _audit(db, { scriptId: script.id, action, req, fromStatus: script.status, toStatus: t.to, hostname, ok: false, reason });
+    res.status(409).json({ error: 'invalid_transition', reason, status: script.status });
+    return false;
+  }
 
   // ═══════════════════════════════════════════════════════════════
   // 테이블 초기화
@@ -53,6 +99,22 @@ function createScriptGenerator({ getDb }) {
     // prod SERIAL 기본값 유실로 생긴 id=null 행은 deploy/approve/delete가 모두 id로 동작하므로
     // 영구히 타겟 불가한 깨진 초안 → 배포당 1회 정리(정상행은 id가 있어 영향 없음).
     try { await db.query(`DELETE FROM generated_scripts WHERE id IS NULL`); } catch (_) {}
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS script_audit_log (
+        id SERIAL PRIMARY KEY,
+        script_id TEXT,
+        action TEXT NOT NULL,
+        actor_id TEXT,
+        actor_email TEXT,
+        from_status TEXT,
+        to_status TEXT,
+        hostname TEXT,
+        ok BOOLEAN DEFAULT TRUE,
+        reason TEXT,
+        ts TIMESTAMPTZ DEFAULT NOW()
+      )
+    `);
+    await db.query(`CREATE INDEX IF NOT EXISTS idx_sal_script ON script_audit_log(script_id)`);
     _tablesReady = true;
   }
 
@@ -1077,6 +1139,7 @@ function createScriptGenerator({ getDb }) {
       if (!db?.query) return res.json({ error: 'DB not available' });
 
       const { name, script_content, status } = req.body;
+      if (status) return res.status(409).json({ error: 'invalid_transition', reason: '상태는 deploy/approve/reject/approve-run 으로만 변경' });
       const updates = [];
       const params = [];
 
@@ -1120,8 +1183,10 @@ function createScriptGenerator({ getDb }) {
   // ═══════════════════════════════════════════════════════════════
   router.post('/:id/deploy', async (req, res) => {
     try {
+      if (!_requireAdmin(req, res)) return;
       const db = getDb();
       if (!db?.query) return res.json({ error: 'DB not available' });
+      await _ensureTables(db);
 
       const { hostname } = req.body;
       if (!hostname) return res.status(400).json({ error: 'hostname 필요' });
@@ -1131,6 +1196,7 @@ function createScriptGenerator({ getDb }) {
       if (rows.length === 0) return res.status(404).json({ error: 'Script not found' });
 
       const script = rows[0];
+      if (!(await _checkTransition(db, req, res, script, 'deploy', hostname))) return;
 
       // 데몬 명령 큐잉
       await db.query(`
@@ -1152,6 +1218,7 @@ function createScriptGenerator({ getDb }) {
 
       await db.query('UPDATE generated_scripts SET deploy_count = deploy_count + 1, status = $1, updated_at = NOW() WHERE id = $2',
         ['tested', script.id]);
+      await _audit(db, { scriptId: script.id, action: 'deploy', req, fromStatus: script.status, toStatus: 'tested', hostname, ok: true });
 
       res.json({
         ok: true,
@@ -1168,8 +1235,10 @@ function createScriptGenerator({ getDb }) {
   // ═══════════════════════════════════════════════════════════════
   router.post('/:id/approve-run', async (req, res) => {
     try {
+      if (!_requireAdmin(req, res)) return;
       const db = getDb();
       if (!db?.query) return res.json({ error: 'DB not available' });
+      await _ensureTables(db);
 
       const { hostname, timeoutMs } = req.body;
       if (!hostname) return res.status(400).json({ error: 'hostname 필요' });
@@ -1177,6 +1246,7 @@ function createScriptGenerator({ getDb }) {
       const { rows } = await db.query('SELECT * FROM generated_scripts WHERE id = $1', [req.params.id]);
       if (rows.length === 0) return res.status(404).json({ error: 'Script not found' });
       const script = rows[0];
+      if (!(await _checkTransition(db, req, res, script, 'approve-run', hostname))) return;
 
       await db.query(`
         INSERT INTO orbit_daemon_commands (hostname, action, command, data_json, ts)
@@ -1190,6 +1260,7 @@ function createScriptGenerator({ getDb }) {
           actionType: script.action_type,
           source: 'script-generator-approved',
           approved: true,
+          approvedBy: req.scriptAuth.user.email || req.scriptAuth.user.id,
           mode: 'execute',
           timeoutMs: timeoutMs || 120000,
           ts: new Date().toISOString(),
@@ -1198,12 +1269,49 @@ function createScriptGenerator({ getDb }) {
 
       await db.query('UPDATE generated_scripts SET deploy_count = deploy_count + 1, status = $1, updated_at = NOW() WHERE id = $2',
         ['deployed', script.id]);
+      await _audit(db, { scriptId: script.id, action: 'approve-run', req, fromStatus: 'approved', toStatus: 'deployed', hostname, ok: true });
 
       res.json({
         ok: true,
         queued: { scriptId: script.id, hostname, actionType: script.action_type, mode: 'execute' },
         message: `${hostname}에 승인된 RPA 실행 명령 전달 완료`,
       });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // POST /api/scripts/:id/approve | /reject — 지정 승인자 전용 상태 전이
+  for (const action of ['approve', 'reject']) {
+    router.post(`/:id/${action}`, async (req, res) => {
+      try {
+        if (!_requireAdmin(req, res)) return;
+        const db = getDb();
+        if (!db?.query) return res.json({ error: 'DB not available' });
+        await _ensureTables(db);
+        const { rows } = await db.query('SELECT * FROM generated_scripts WHERE id = $1', [req.params.id]);
+        if (rows.length === 0) return res.status(404).json({ error: 'Script not found' });
+        const script = rows[0];
+        if (!(await _checkTransition(db, req, res, script, action))) return;
+        const to = TRANSITIONS[action].to;
+        await db.query('UPDATE generated_scripts SET status = $1, updated_at = NOW() WHERE id = $2', [to, script.id]);
+        await _audit(db, { scriptId: script.id, action, req, fromStatus: script.status, toStatus: to, ok: true, reason: (req.body && req.body.reason) || null });
+        res.json({ ok: true, scriptId: script.id, status: to });
+      } catch (err) {
+        res.status(500).json({ error: err.message });
+      }
+    });
+  }
+
+  // GET /api/scripts/:id/audit — 감사로그 (admin)
+  router.get('/:id/audit', async (req, res) => {
+    try {
+      if (!_requireAdmin(req, res)) return;
+      const db = getDb();
+      if (!db?.query) return res.json({ error: 'DB not available' });
+      await _ensureTables(db);
+      const { rows } = await db.query('SELECT * FROM script_audit_log WHERE script_id = $1 ORDER BY ts DESC LIMIT 200', [String(req.params.id)]);
+      res.json({ audit: rows });
     } catch (err) {
       res.status(500).json({ error: err.message });
     }

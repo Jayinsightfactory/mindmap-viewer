@@ -266,7 +266,7 @@ function showToast(msg, duration = 3000) {
 async function api(path, opts = {}) {
   try {
     const r = await fetch(API + path, {
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + (localStorage.getItem('orbit_token') || '') },
       ...opts,
       body: opts.body ? JSON.stringify(opts.body) : undefined,
     });

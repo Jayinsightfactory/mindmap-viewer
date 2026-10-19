@@ -8854,7 +8854,18 @@ app.use('/api/automation', createWorkflowRegistry({ getDb: dbModule.getDb }));
 
 // ─── Script Generator (Phase 4: Vision → 자동화 스크립트 자동 생성) ──────────
 try {
-  app.use('/api/scripts', require('./routes/script-generator')({ getDb: dbModule.getDb }));
+  // 승인 게이트(2026-10-19): 전 라우트 인증, 실행 계열은 admin 만 (SQLite+PG 토큰 모두 인정, ?token= 허용)
+  app.use('/api/scripts', require('./routes/script-generator')({
+    getDb: dbModule.getDb,
+    authenticate: async (req) => {
+      if (!req.headers.authorization && req.query.token) req.headers.authorization = 'Bearer ' + req.query.token;
+      const a = resolveAdmin(req);
+      if (a.isAdmin || a.user) return { user: a.user, isAdmin: a.isAdmin };
+      if (!a.token) return null;
+      const user = await require('./src/auth').verifyTokenAsync(a.token);
+      return user ? { user, isAdmin: env.isAdmin(user.email) } : null;
+    },
+  }));
 } catch(e) { console.warn('[mount] script-generator:', e.message); }
 
 // ─── PC Recording API (Python recorder ↔ Node.js 브리지) ──────────────────────

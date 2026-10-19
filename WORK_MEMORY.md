@@ -2190,3 +2190,17 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 - 점검: nowlink.kr 이미 Next.js 랜딩(Railway, Cloudflare NS, LE 인증서 ~2027-01-13), /download 404. orbit 4,841회/370파일(UI Orbit 807), nenova 3,391/129, dlaww584 17. /api/scripts 인증 미들웨어 없음(server.js:8846, 라우터 내부 router.use 없음).
 - P0 12항목: 완료0·부분6·미완6. 첫 2주: 승인 API 게이트 / workspace_id 강제 / 동의 테이블·API.
 검색어: NOWLINK_PRODUCT_PLAN, 나우링크, nowlink, 상용 출시, 상품 3단계, Watch Build Team, 동의 모델, 생성형 ERP, 브랜드 교체, 90일 로드맵
+
+## 2026-10-19 자동화 현황 최신화(MOYI 기획용)
+- 워커 4대(vision spool/local+nowlink, ops-agent, kakao-intel, solution-miner) 정상·quota-hold 없음. 07:00 run-all 07:35 전단계 성공(재실행 안 함). 과정 71개·평균 68·regressions 0·명세 52.
+- solution-miner 오늘 draft 18건(#1309~1326) 전부 pyautogui·검증게이트 0·input_map 빈값. #1312(김도준 물류표)를 nowlink/automation 어댑터로 합성 사본 preview→verify: desktop=WARN(G5), excel 재해석=FAIL(verify가 execute 전제, 그림자 verify 없음).
+- 보고서 nenova-work-features/observed/AUTOMATION_STATUS_2026-10-19.md, /my-work 업로드는 name=self-tune-report 오늘 항목 automationStatus 필드(새 name은 서버 화이트리스트라 배포 필요). capture-funnel 404·직원 PC health 미검증.
+- 검색어: 자동화현황, AUTOMATION_STATUS, MOYI 어댑터 호환, solution-miner draft, shadow verify
+
+## 2026-10-19 approve-run 구멍 막기 — 스크립트 승인 게이트 (사장님 승인)
+- 문제: routes/script-generator.js approve-run 이 호출만으로 approved:true 로 직원 PC rpa-run 큐 적재 + /api/scripts 무인증 마운트. 실행 0건(피해 없음).
+- 수정: ①router.use 인증(401) — server.js 가 authenticate 주입(resolveAdmin → PG verifyTokenAsync 폴백, ?token= 허용) ②deploy/approve/reject/approve-run/audit 는 admin(env.isAdmin=ADMIN_EMAILS)만(403) ③상태 머신 draft→tested(dry-run)→approved→deployed(executed), rejected — 위반 409+사유, PUT 으로 status 직접 변경 409 ④script_audit_log 테이블(_ensureTables 에서 IF NOT EXISTS) — 성공/409 위반 모두 who/when/action/script_id/from→to/hostname 기록, rpa-run 페이로드에 approvedBy ⑤신규 POST /:id/approve, /:id/reject, GET /:id/audit ⑥automation.html api() 에 Authorization(orbit_token) 추가.
+- 상태명은 기존 tested/deployed 유지(stats·UI 호환). nowlink 저장소 테넌트 격리는 미이식.
+- 테스트: tests/unit/script-approval-gate.test.js 6건 + 전체 jest 37 suites/497 통과.
+- 영향: bin/solution-miner.js 는 TOKEN 있을 때만 Bearer 전송 → TOKEN 미설정이면 이제 401(의도된 차단).
+- 검색어: approve-run 구멍, 승인 게이트, script_audit_log, generated_scripts 상태 머신
