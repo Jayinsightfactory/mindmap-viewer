@@ -57,6 +57,28 @@ function createScriptGenerator({ getDb, authenticate }) {
     } catch (e) { console.warn('[script-audit] 기록 실패:', e.message); }
   }
 
+  // 시스템 승인자(2026-10-19 사장님 결정): dry-run(그림자 — 서버 상태만, 직원 PC 큐 없음)은 자동 승인.
+  // AUTO_APPROVE_DRYRUN 기본 on, AUTO_APPROVE_EXECUTE 기본 off(on 이어도 tested→approved 까지만, PC 실행은 admin approve-run 필수)
+  const SYSTEM_AUTO = { user: { id: 'system-auto', email: 'system-auto' }, isAdmin: false };
+  async function _autoAdvance(db, row) {
+    if (!row || row.id == null) return row;
+    const flag = (k, d) => { const v = process.env[k]; return v == null || v === '' ? d : !/^(0|false|off|no)$/i.test(v); };
+    const sysReq = { scriptAuth: SYSTEM_AUTO };
+    let status = row.status || 'draft';
+    const step = async (action) => {
+      const to = TRANSITIONS[action].to;
+      if (!TRANSITIONS[action].from.includes(status)) return;
+      await db.query('UPDATE generated_scripts SET status = $1, updated_at = NOW() WHERE id = $2', [to, row.id]);
+      await _audit(db, { scriptId: row.id, action: `auto-${action}`, req: sysReq, fromStatus: status, toStatus: to, ok: true, reason: 'system-auto (서버 그림자, PC 큐 없음)' });
+      status = to;
+    };
+    try {
+      if (flag('AUTO_APPROVE_DRYRUN', true)) await step('deploy');
+      if (flag('AUTO_APPROVE_EXECUTE', false)) await step('approve');
+    } catch (e) { console.warn('[script-auto] 실패:', e.message); }
+    return { ...row, status };
+  }
+
   // 상태 전이 검사 — 위반 시 409 + 감사로그(ok=false)
   async function _checkTransition(db, req, res, script, action, hostname) {
     const t = TRANSITIONS[action];
@@ -748,7 +770,7 @@ function createScriptGenerator({ getDb, authenticate }) {
           VALUES (COALESCE((SELECT MAX(id) FROM generated_scripts),0)+1, $1,$2,'pyautogui',$3,$4,$5,$6,'draft') RETURNING id, name, status`,
           [name, (summary.nenovaActions[0] || summary.appFlow || '관찰절차'), script,
            (session.steps[0]?.app || 'nenova'), (session.steps[session.steps.length - 1]?.screen || null), srcIds]);
-        saved = rows[0];
+        saved = await _autoAdvance(db, rows[0]);
       }
       res.json({ ok: true, script, summary, saved, mode: 'dry-run',
         message: `${summary.steps}단계 · 클릭 ${summary.clicks} · 입력 ${summary.types} · 사람확인 ${summary.humanStops} → dry-run 스크립트 생성(초안 저장). 실행은 승인 필요.` });
@@ -928,6 +950,7 @@ function createScriptGenerator({ getDb, authenticate }) {
         JSON.stringify(inputMap),
         eventIds,
       ]);
+      inserted[0] = await _autoAdvance(db, inserted[0]);
 
       res.json({
         ok: true,
@@ -1008,7 +1031,7 @@ function createScriptGenerator({ getDb, authenticate }) {
             ON CONFLICT DO NOTHING
             RETURNING id, name, action_type, script_type, status
           `, [scriptName, actionType, scriptType, script, template.windowTitle, JSON.stringify(d.nenovaInputMap || []), [r.id]]);
-          if (ins.length > 0) generated.push(ins[0]);
+          if (ins.length > 0) generated.push(await _autoAdvance(db, ins[0]));
         } catch {}
       }
 
@@ -1317,6 +1340,7 @@ function createScriptGenerator({ getDb, authenticate }) {
     }
   });
 
+  router._autoAdvance = _autoAdvance; // 테스트용
   return router;
 }
 

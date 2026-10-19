@@ -83,3 +83,32 @@ test('reject 후 실행 불가', async () => {
   expect((await call('/1/reject', 'admin', {})).status).toBe(200);
   expect((await call('/1/deploy', 'admin', { hostname: 'h' })).status).toBe(409);
 });
+
+describe('system-auto 승인자', () => {
+  const mk = () => createScriptGenerator({ getDb: () => db, authenticate: async () => null });
+  afterEach(() => { delete process.env.AUTO_APPROVE_DRYRUN; delete process.env.AUTO_APPROVE_EXECUTE; });
+
+  test('기본: dry-run 자동 승인 → 감사로그 system-auto, 실행 큐 0', async () => {
+    const r = await mk()._autoAdvance(db, { id: 1, status: 'draft' });
+    expect(r.status).toBe('tested');
+    expect(db.scripts[1].status).toBe('tested');
+    expect(db.audit).toEqual([expect.objectContaining({ action: 'auto-deploy', actor_email: 'system-auto', to_status: 'tested', ok: true })]);
+    expect(db.commands).toHaveLength(0);
+  });
+
+  test('system-auto 는 approve-run(PC 실행) 불가 — admin 만', async () => {
+    process.env.AUTO_APPROVE_EXECUTE = 'on';
+    const r = await mk()._autoAdvance(db, { id: 1, status: 'draft' });
+    expect(r.status).toBe('approved');
+    expect(db.commands).toHaveLength(0);
+    expect((await call('/1/approve-run', 'staff', { hostname: 'h' })).status).toBe(403);
+    expect((await call('/1/approve-run', 'admin', { hostname: 'h' })).status).toBe(200);
+  });
+
+  test('AUTO_APPROVE_DRYRUN=off 면 draft 유지', async () => {
+    process.env.AUTO_APPROVE_DRYRUN = 'off';
+    const r = await mk()._autoAdvance(db, { id: 1, status: 'draft' });
+    expect(r.status).toBe('draft');
+    expect(db.audit).toHaveLength(0);
+  });
+});
