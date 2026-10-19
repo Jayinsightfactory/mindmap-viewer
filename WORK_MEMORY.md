@@ -2204,3 +2204,6 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 - 테스트: tests/unit/script-approval-gate.test.js 6건 + 전체 jest 37 suites/497 통과.
 - 영향: bin/solution-miner.js 는 TOKEN 있을 때만 Bearer 전송 → TOKEN 미설정이면 이제 401(의도된 차단).
 - 검색어: approve-run 구멍, 승인 게이트, script_audit_log, generated_scripts 상태 머신
+- 배포 f7447aa(07:54:45Z 반영). 라이브: 무토큰/가짜토큰 approve-run 401, 무토큰 list 401, admin 토큰 list 200(draft 1336 중 100건)·/1339/audit 200(테이블 생성 확인), /health 200.
+- 유입 10분 건수 전→후: capture 44→53, work.step 35→43, analyzed 2→1(평소 범위). orbit_auth_tokens 7,603,726행·1.6GB(9월 4.46M에서 증가 — initFromPg LIMIT 20000 유지로 부팅 무영향, 정리는 별건).
+- 미검증: 라이브 비admin 403(직원 토큰 DB 추출 안 함 — 단위테스트로만), automation.html 화면 수동 클릭.
