@@ -1,5 +1,5 @@
 @echo off
-title MOYI Install
+title MOYI FDE Install
 REM MOYI customer installer launcher (ASCII only). Usage: install-moyi.bat [INSTALL_CODE]
 net session >nul 2>&1
 if %errorlevel% neq 0 (
@@ -12,7 +12,7 @@ if %errorlevel% neq 0 (
 set "PS1_URL=https://nowlink-api-production.up.railway.app/api/moyi/install.ps1"
 set "PS1_LOCAL=%TEMP%\moyi-install.ps1"
 echo.
-echo   MOYI - downloading installer...
+echo   MOYI FDE - downloading installer...
 if exist "%PS1_LOCAL%" del "%PS1_LOCAL%" >nul 2>&1
 curl -fsSL --max-time 60 -o "%PS1_LOCAL%" "%PS1_URL%" 2>nul
 if exist "%PS1_LOCAL%" goto RUN
