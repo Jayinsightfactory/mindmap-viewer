@@ -51,6 +51,21 @@ async function aggregate(pool) {
     const day = u[r.d] || (u[r.d] = { capture: 0, analyzed: 0, keyboard: 0, mouse: 0, heartbeat: 0 });
     day[{ 'screen.capture': 'capture', 'screen.analyzed': 'analyzed', 'keyboard.chunk': 'keyboard', 'mouse.chunk': 'mouse', 'daemon.heartbeat': 'heartbeat' }[r.type]] += r.n;
   }
+  // [실측 10/21] screen.capture 는 보존 ~14일(_cleanupOldEvents) → events 만으로는 '4주 같은 요일' 기대치를 못 만든다.
+  //   일별 집계를 orbit_completeness_daily 에 매번 upsert 해 두고(원본 행이 지워져도 집계는 남음), 과거분은 표에서 읽어 합친다.
+  try {
+    await pool.query(`CREATE TABLE IF NOT EXISTS orbit_completeness_daily (name TEXT NOT NULL, kst_date TEXT NOT NULL, capture INT DEFAULT 0, analyzed INT DEFAULT 0, keyboard INT DEFAULT 0, mouse INT DEFAULT 0, heartbeat INT DEFAULT 0, updated_at TIMESTAMPTZ DEFAULT NOW(), PRIMARY KEY (name, kst_date))`);
+    const vals = []; const ph = [];
+    for (const [name, days] of Object.entries(byUser)) for (const [d, x] of Object.entries(days)) { ph.push(`($${vals.length + 1},$${vals.length + 2},$${vals.length + 3},$${vals.length + 4},$${vals.length + 5},$${vals.length + 6},$${vals.length + 7})`); vals.push(name, d, x.capture, x.analyzed, x.keyboard, x.mouse, x.heartbeat); }
+    for (let i = 0; i < ph.length; i += 200) {
+      const chunk = ph.slice(i, i + 200), cv = vals.slice(i * 7, (i + 200) * 7);
+      // 같은 날 다시 집계할 때 보존 삭제로 줄어든 값으로 덮어쓰지 않도록 GREATEST
+      await pool.query(`INSERT INTO orbit_completeness_daily (name, kst_date, capture, analyzed, keyboard, mouse, heartbeat) VALUES ${chunk.join(',')}
+        ON CONFLICT (name, kst_date) DO UPDATE SET capture = GREATEST(orbit_completeness_daily.capture, EXCLUDED.capture), analyzed = GREATEST(orbit_completeness_daily.analyzed, EXCLUDED.analyzed), keyboard = GREATEST(orbit_completeness_daily.keyboard, EXCLUDED.keyboard), mouse = GREATEST(orbit_completeness_daily.mouse, EXCLUDED.mouse), heartbeat = GREATEST(orbit_completeness_daily.heartbeat, EXCLUDED.heartbeat), updated_at = NOW()`, cv);
+    }
+    const { rows: hist } = await pool.query(`SELECT name, kst_date, capture, analyzed, keyboard, mouse, heartbeat FROM orbit_completeness_daily WHERE kst_date >= $1`, [kstDate(Date.now() - LOOKBACK_DAYS * 864e5)]);
+    for (const h of hist) { const u = byUser[h.name] || (byUser[h.name] = {}); const day = u[h.kst_date] || (u[h.kst_date] = { capture: 0, analyzed: 0, keyboard: 0, mouse: 0, heartbeat: 0 }); for (const k of ['capture', 'analyzed', 'keyboard', 'mouse', 'heartbeat']) day[k] = Math.max(day[k], h[k] || 0); }
+  } catch (e) { console.warn('[completeness] daily 보존 실패(집계는 계속):', e.message); }
   const lastHb = {}; for (const r of hb) { const key = names[r.user_id] || r.user_id; if (!lastHb[key] || lastHb[key].at < r.timestamp) lastHb[key] = { at: r.timestamp, hostname: r.hostname || null, userId: r.user_id }; }
   const uids = {}; for (const [k, set] of Object.entries(uidsOf)) uids[k] = [...set];
   _cache = { at: Date.now(), data: { byUser, lastHb, liveKeys: liveKeys.map((k) => k.hostname), names, uids } };
@@ -67,6 +82,15 @@ function classifyZero(day, ctx) {
   return { cause: 'pc-off', label: 'PC 꺼짐(heartbeat·입력·캡처 모두 0)', restart: false };
 }
 
+// 기대치: 최근 4주 같은 요일 중 'PC 가 켜져 있던 날(heartbeat>0)'의 캡처 중앙값. 같은 요일 표본이 2개 미만이면(보존 14일·신규 직원)
+//   최근 20일 평일 중 heartbeat>0 이고 캡처>0 인 날의 중앙값으로 대체(캡처 모듈이 죽은 날은 표본에서 제외해야 기대치가 0 으로 내려앉지 않는다).
+function expectedFor(byDay, d) {
+  const same = []; for (let w = 1; w <= 4; w++) { const x = byDay[kstDate(Date.parse(d + 'T00:00:00Z') - w * 7 * 864e5)]; if (x && x.heartbeat > 0 && x.capture > 0) same.push(x.capture); }
+  if (same.length >= 2) return median(same);
+  const any = []; for (let i = 1; i <= 20; i++) { const pd = kstDate(Date.parse(d + 'T00:00:00Z') - i * 864e5); if (!isWeekday(pd)) continue; const x = byDay[pd]; if (x && x.heartbeat > 0 && x.capture > 0) any.push(x.capture); }
+  return any.length >= 2 ? median(any) : (same[0] || 0);
+}
+
 function buildReport(agg, days) {
   const todayMs = Date.now();
   const today = kstDate(todayMs);
@@ -81,8 +105,7 @@ function buildReport(agg, days) {
     for (let i = 0; i < 14; i++) { const d = kstDate(todayMs - i * 864e5); if (!isWeekday(d)) continue; if ((byDay[d]?.heartbeat || 0) > 0) break; silentWeekdays++; }
     for (const d of window) {
       const day = byDay[d] || { capture: 0, analyzed: 0, keyboard: 0, mouse: 0, heartbeat: 0 };
-      const hist = []; for (let w = 1; w <= 4; w++) { const pd = kstDate(Date.parse(d + 'T00:00:00Z') - w * 7 * 864e5); hist.push(byDay[pd]?.capture || 0); }
-      const expected = median(hist);
+      const expected = expectedFor(byDay, d);
       const ratio = expected > 0 ? Math.round((day.capture / expected) * 1000) / 10 : null;
       let status, cause = null;
       const input = (day.keyboard || 0) + (day.mouse || 0);
@@ -106,7 +129,7 @@ function buildReport(agg, days) {
       causes: lostDays.reduce((m, r) => { m[r.cause.cause] = (m[r.cause.cause] || 0) + 1; return m; }, {}), days: dayRows });
   }
   employees.sort((a, b) => (a.overallPct ?? 101) - (b.overallPct ?? 101));
-  return { ok: true, generatedAt: new Date().toISOString(), today, days, threshold: THRESHOLD, rule: '기대치=최근 4주 같은 요일 캡처 수 중앙값. 수신률=캡처/기대치(일별 100% 상한으로 합산). 50% 미만=유실. 캡처 0 분류=heartbeat×입력(keyboard/mouse.chunk)×캡처 교차.', employees };
+  return { ok: true, generatedAt: new Date().toISOString(), today, days, threshold: THRESHOLD, rule: '기대치=최근 4주 같은 요일(PC 켜짐·캡처>0) 캡처 수 중앙값, 표본 2개 미만이면 최근 20일 평일 중앙값(일별 집계는 orbit_completeness_daily 에 보존). 수신률=캡처/기대치(일별 100% 상한으로 합산). 50% 미만=유실. 캡처 0 분류=heartbeat×입력(keyboard/mouse.chunk)×캡처 교차.', employees };
 }
 
 // 자동복구: '데몬 다운'(오늘 또는 어제) / '장기 무응답' 직원의 PC 에 restart 1건. 호스트당 하루 1회, 카나리 게이트.
@@ -161,7 +184,10 @@ function mount(app, { dbModule, adminOk }) {
       const days = Math.min(Math.max(parseInt(req.query.days) || 7, 1), 28);
       const agg = await aggregate(p);
       const rep = buildReport(agg, days);
-      try { const { rows } = await p.query(`SELECT user_id, hostname, kst_date, cause, action, ts, dry_run FROM orbit_completeness_actions WHERE ts > NOW() - INTERVAL '14 days' ORDER BY ts DESC LIMIT 100`); rep.actions = rows; } catch { rep.actions = []; }
+      // 발송 이력 + 그 restart 가 PC 에서 실제 소비됐는지(consumed_at: 소비됨=PC 켜져 있었고 guardian/워커가 받아감, NULL=아직 안 받아감)
+      try { const { rows } = await p.query(`SELECT a.user_id, a.hostname, a.kst_date, a.cause, a.action, a.ts, a.dry_run,
+          (SELECT MIN(c.consumed_at) FROM orbit_daemon_commands c WHERE c.hostname = a.hostname AND c.action = 'restart' AND c.ts >= a.ts - INTERVAL '5 seconds' AND c.data_json->>'reason' = 'completeness-auto') AS consumed_at
+         FROM orbit_completeness_actions a WHERE a.ts > NOW() - INTERVAL '14 days' ORDER BY a.ts DESC LIMIT 100`); rep.actions = rows; } catch { rep.actions = []; }
       res.json(rep);
     } catch (e) { console.error('[completeness] error:', e.message); res.status(500).json({ error: e.message }); }
   });
@@ -202,4 +228,4 @@ function mount(app, { dbModule, adminOk }) {
   console.log('[completeness] mounted: /api/completeness, /recover, /report-line (auto-restart=' + (process.env.COMPLETENESS_AUTO_RESTART || 'canary') + ')');
 }
 
-module.exports = { mount, buildReport, classifyZero, reportLine, median };
+module.exports = { mount, buildReport, classifyZero, reportLine, median, expectedFor };

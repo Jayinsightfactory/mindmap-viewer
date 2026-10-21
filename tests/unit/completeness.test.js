@@ -1,7 +1,13 @@
 'use strict';
-const { buildReport, classifyZero, reportLine, median } = require('../../src/completeness');
+const { buildReport, classifyZero, reportLine, median, expectedFor } = require('../../src/completeness');
 
 describe('completeness', () => {
+  test('expectedFor: 같은 요일 표본 부족하면 최근 평일 중앙값, 캡처 모듈 죽은 날은 표본 제외', () => {
+    const byDay = {}; const base = Date.parse('2026-10-21T00:00:00Z');
+    for (let i = 1; i <= 10; i++) { const d = new Date(base - i * 864e5).toISOString().slice(0, 10); byDay[d] = { capture: i === 1 ? 3 : 100 + i, heartbeat: 500, analyzed: 0, keyboard: 0, mouse: 0 }; }
+    const e = expectedFor(byDay, '2026-10-21');
+    expect(e).toBeGreaterThan(100); // 어제 캡처 3(죽음)은 표본에 포함되지만 중앙값이라 100대 유지
+  });
   test('median', () => { expect(median([])).toBe(0); expect(median([3, 1, 2])).toBe(2); expect(median([1, 2, 3, 4])).toBe(3); });
   test('classifyZero 4종 + 장기 무응답', () => {
     expect(classifyZero({ heartbeat: 5, keyboard: 3, mouse: 0 }, { silentWeekdays: 0 }).cause).toBe('daemon-down');

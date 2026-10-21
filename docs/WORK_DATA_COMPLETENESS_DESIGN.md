@@ -43,7 +43,9 @@ SELECT user_id, type, (timestamp::timestamptz AT TIME ZONE 'Asia/Seoul')::date, 
   FROM events WHERE type IN (screen.capture, screen.analyzed, keyboard.chunk, mouse.chunk, daemon.heartbeat)
    AND timestamp >= now-35d GROUP BY 1,2,3
 ```
-- 기대치 = **최근 4주 같은 요일** 캡처 수의 중앙값. 수신률 = 캡처/기대치(일별 100% 상한으로 7일 합산).
+- 기대치 = **최근 4주 같은 요일**(PC 켜짐 heartbeat>0·캡처>0 인 날) 캡처 수의 중앙값. 표본 2개 미만이면 최근 20일 평일 중앙값. 수신률 = 캡처/기대치(일별 100% 상한으로 7일 합산).
+- `screen.capture` 원본은 보존 약 14일(`_cleanupOldEvents`)이라 일별 집계를 `orbit_completeness_daily`(name, kst_date, capture, analyzed, keyboard, mouse, heartbeat)에 매 집계마다 GREATEST 로 upsert 해 과거 기대치를 유지한다.
+- 직원은 **이름으로 병합**(같은 사람의 여러 user_id). 실측 10/21: 아드리아나는 10/12 재등록으로 새 id(`MN1D726A373D679F9A`)로 들어오고 있었고, 파이프라인은 옛 id 만 봐서 '7일 캡처 0건'으로 오진했다. 박성수·정재훈·김원빈도 2개 id.
 - 직원별: `overallPct`, `lost`(50% 미만), `lostDays`, `causes{}`, `days[]{date, capture, analyzed, keyboard, mouse, heartbeat, expected, receivedPct, status, cause}`
 - 파이프라인: `pull-completeness.js` 가 run-all 시작에 저장(`observed/completeness.json`) → `build-observed-workflows.js merge` 가 accuracy JSON 에 `completeness{receivedPct, lost, lostDays, causes}` 를 직원별로 넣고 → `self-tune-report.js` 요약 한 줄("작업데이터 수신 …") → `/my-work` 도입 레이더(자가수정 보고) 표시 + `adoption-ledger` 에 매일 누적.
 
@@ -51,12 +53,12 @@ SELECT user_id, type, (timestamp::timestamptz AT TIME ZONE 'Asia/Seoul')::date, 
 
 | heartbeat | 입력(kbd/mouse) | 캡처 | 분류 | 자동 조치 |
 |---|---|---|---|---|
-| >0 | >0 | 0 | **데몬 다운**(캡처 모듈 죽음) | restart 발송 |
+| >0 | >0 | 0 또는 기대의 5% 이하 | **데몬 다운**(캡처 모듈 죽음) | restart 발송 |
 | >0 | 0 | 0 | 사람 미사용 | 없음 |
 | 0 | >0 | 0 | **데몬 다운**(heartbeat 모듈 죽음) | restart 발송 |
 | 0 | 0 | 0, 평일 2일↑ 연속 | **장기 무응답**(데몬 다운 의심) | restart 발송 — 소비되면 'PC 켜져 있었음'=데몬 다운 확정, 미소비면 PC 꺼짐 |
 | 0 | 0 | 0 | PC 꺼짐 | 없음 |
-| — | — | >0, 분석 0 | 큐 적체 | 없음(비전 워커 쪽) |
+| — | — | 20건↑, 분석 0(어제 이전) | 큐 적체 | 없음(비전 워커 쪽) |
 | — | — | 기대의 50% 미만 | 부분 유실 | 없음(표시만) |
 
 자동복구 규칙(10/12 사고 재발 방지):
