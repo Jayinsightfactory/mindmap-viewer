@@ -16,12 +16,15 @@ describe('completeness', () => {
     for (let w = 1; w <= 4; w++) for (let i = 0; i < 7; i++) { const d = new Date(Date.parse(today + 'T00:00:00Z') - (w * 7 + i) * 864e5).toISOString().slice(0, 10); byDay[d] = { capture: 40, analyzed: 30, keyboard: 10, mouse: 10, heartbeat: 100 }; }
     for (let i = 1; i < 7; i++) { const d = new Date(Date.parse(today + 'T00:00:00Z') - i * 864e5).toISOString().slice(0, 10); byDay[d] = { capture: 40, analyzed: 30, keyboard: 10, mouse: 10, heartbeat: 100 }; }
     byDay[today] = { capture: 10, analyzed: 0, keyboard: 5, mouse: 0, heartbeat: 50 };
-    const rep = buildReport({ byUser: { U1: byDay, U2: {} }, lastHb: { U1: { at: 'x', hostname: 'PC1' } }, liveKeys: [], names: { U1: '홍길동' } }, 7);
+    const dead = new Date(Date.parse(today + 'T00:00:00Z') - 864e5).toISOString().slice(0, 10); byDay[dead] = { capture: 1, analyzed: 0, keyboard: 1, mouse: 103, heartbeat: 257 };
+    const rep = buildReport({ byUser: { 홍길동: byDay, U2: {} }, lastHb: { 홍길동: { at: 'x', hostname: 'PC1', userId: 'U1' } }, liveKeys: [], names: { U1: '홍길동' }, uids: { 홍길동: ['U1'] } }, 7);
     const e = rep.employees.find((x) => x.userId === 'U1');
     expect(e.days.every((d) => d.expected === 40)).toBe(true);
     const t = e.days.find((d) => d.date === today);
     expect(t.receivedPct).toBe(25); expect(t.status).toBe('lost'); expect(t.cause.cause).toBe('partial');
     expect(e.overallPct).toBeLessThanOrEqual(100);
+    expect(e.days.find((d) => d.date === dead).cause.cause).toBe('daemon-down');
+    expect(rep.employees.find((x) => x.name === 'U2')).toBeUndefined();
     expect(reportLine(rep, { actions: [] })).toContain('홍길동');
   });
 });
