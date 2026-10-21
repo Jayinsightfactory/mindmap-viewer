@@ -3549,6 +3549,10 @@ app.post('/api/daemon/command', (req, res) => {
   res.json({ ok: true, queued: hostname });
 });
 
+// [2026-10-21] 작업데이터 완전성 게이트 — 직원·일자별 수신/기대치, 캡처 0 원인 분류, 데몬 다운 자동 force-restart(카나리), 카톡 보고 한 줄.
+//   설계: docs/WORK_DATA_COMPLETENESS_DESIGN.md. 라우트 /api/completeness*, 예약: 1시간마다(평일 09~19 KST) 자동 복구 점검.
+try { require('./src/completeness').mount(app, { dbModule, adminOk: _visionThumbAdminOk, env }); } catch (e) { console.error('[completeness] mount 실패:', e.message); }
+
 // GET /api/daemon/governor — 리소스 거버너 상태 조회 (데몬 PC에서 보고)
 app.get('/api/daemon/governor', (req, res) => {
   try {
@@ -4911,21 +4915,38 @@ app.get('/api/vision/work-records', async (req, res) => {
     const db = dbModule.getDb();
     if (!db?.query) return res.status(503).json({ error: 'DB not available' });
     const userId = String(req.query.userId || ''); if (!userId) return res.status(400).json({ error: 'userId required' });
-    const hours = Math.min(parseInt(req.query.hours) || 336, 720), limit = Math.min(parseInt(req.query.limit) || 40, 80);
-    const params = [userId, new Date(Date.now() - hours * 3600 * 1000).toISOString()];
+    // [2026-10-21 완전성 설계] 숨은 상한 80 제거(실측: 직원당 30일 300~700건인데 80건만 반환 → 모든 소비자 절단).
+    //   limit ≤ 1000, since/until(ISO) 또는 hours, cursor(키셋: timestamp|id) 로 끝까지 순회. 응답에 total·truncated·next_cursor 명시.
+    //   정렬은 종전과 같이 timestamp DESC(동률은 id DESC). 기본 limit 40 은 종전 호출자 호환.
+    const hours = Math.min(parseInt(req.query.hours) || 336, 720), limit = Math.min(parseInt(req.query.limit) || 40, 1000);
+    const sinceIso = req.query.since && !isNaN(Date.parse(req.query.since)) ? new Date(req.query.since).toISOString() : new Date(Date.now() - hours * 3600 * 1000).toISOString();
+    const params = [userId, sinceIso];
     let where = `type = 'screen.analyzed' AND user_id = $1 AND timestamp >= $2`;
+    if (req.query.until && !isNaN(Date.parse(req.query.until))) { params.push(new Date(req.query.until).toISOString()); where += ` AND timestamp <= $${params.length}`; }
     if (req.query.wf) { params.push(String(req.query.wf)); where += ` AND data_json->'workflow'->>'name' = $${params.length}`; }
     else if (req.query.stage) { params.push(String(req.query.stage)); where += ` AND data_json->>'businessStage' LIKE $${params.length} || '%'`; }
-    params.push(limit);
-    const { rows } = await db.query(
+    const { rows: tot } = await db.query(`SELECT COUNT(*)::int AS n FROM events WHERE ${where}`, params);
+    const total = tot[0]?.n || 0;
+    let cur = null;
+    if (req.query.cursor) {
+      try { const [cts, cid] = Buffer.from(String(req.query.cursor), 'base64').toString('utf8').split('|'); if (cts && cid) cur = { ts: cts, id: cid }; } catch {}
+      if (!cur) return res.status(400).json({ error: 'bad cursor' });
+      params.push(cur.ts, cur.id); where += ` AND (timestamp, id) < ($${params.length - 1}, $${params.length})`;
+    }
+    params.push(limit + 1);
+    const { rows: rows1 } = await db.query(
       `SELECT id, timestamp, data_json->>'app' AS app, data_json->>'screen' AS screen, data_json->>'activity' AS activity,
               data_json->>'actionDone' AS done, data_json->>'purpose' AS purpose, data_json->>'changeFromPrev' AS change,
               data_json->>'nextLikely' AS next, data_json->'workflow' AS workflow, data_json->>'businessStage' AS stage,
               data_json->'fields' AS fields, data_json->'entities' AS entities, (data_json->>'thumbnail') IS NOT NULL AS thumb,
               COALESCE(data_json->>'rawWindowTitle', data_json->>'windowTitle') AS raw_title, data_json->'excel' AS excel,
               data_json->'lastClick' AS last_click, data_json->'clicks' AS clicks
-         FROM events WHERE ${where} ORDER BY timestamp DESC LIMIT $${params.length}`, params);
-    res.json({ ok: true, records: rows.map((r) => ({
+         FROM events WHERE ${where} ORDER BY timestamp DESC, id DESC LIMIT $${params.length}`, params);
+    const truncated = rows1.length > limit;
+    const rows = truncated ? rows1.slice(0, limit) : rows1;
+    const last = rows[rows.length - 1];
+    const next_cursor = truncated && last ? Buffer.from(`${last.timestamp}|${last.id}`, 'utf8').toString('base64') : null;
+    res.json({ ok: true, total, count: rows.length, truncated, next_cursor, records: rows.map((r) => ({
       id: r.id, timestamp: r.timestamp, app: r.app, screen: r.screen, activity: r.activity, done: r.done, purpose: r.purpose, change: r.change, next: r.next,
       workflow: r.workflow || null, stage: r.stage, thumb: !!r.thumb, entities: r.entities || null,
       rawWindowTitle: r.raw_title || null, excel: r.excel || null, lastClick: r.last_click || null, clicks: Array.isArray(r.clicks) ? r.clicks.slice(-8) : null,
