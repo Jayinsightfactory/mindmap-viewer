@@ -2222,3 +2222,13 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 - 함정: ① server.js 는 CRLF — autocrlf=true 로 커밋하면 전체 파일 diff(1.1MB) → ai-attribution 워크플로 ENOBUFS 실패. `git -c core.autocrlf=false add` 로 CRLF 블롭 유지. ② 한 줄에 키 여러 개인 객체 리터럴에 `//` 주석 붙이면 뒤 키가 전부 주석 처리됨(김원빈·손지윤·박성수 수집 누락 사고, 바로잡음).
 - 남은 위험: 강명훈 PC 는 restart 후 캡처는 복구됐지만 daemon.crash 19건/시간 크래시루프 지속(DATA_CHECK §13 대상, 별건). 김원빈 큐 적체(10/17·18·20 캡처 수백·분석 0)는 비전 워커 쪽. PC 꺼짐 vs 장기 데몬 다운은 restart 소비 여부로만 사후 구분.
 - 다시 반복되면: `/api/completeness?days=7` 표부터(직원×날짜 원인), `actions[].consumed_at` 으로 발송·소비 확인, Railway 변수 COMPLETENESS_* 확인.
+
+## 2026-10-21 데몬 생존 설계 (보안프로그램·전원·업데이트 다운 방지) — 세션 serene-wescoff
+- 요청: 직원 PC 데몬이 보안프로그램/전원/구버전업데이트로 반복 죽는 것을 (1)설치예방 (2)자가복구 (3)복구불가시 원인코드 보고로 막아라. setup/·daemon/·docs 만(server.js/routes 는 다른 세션).
+- 검색/확인: DAEMON_STRUCTURE.md, install.ps1(1021줄), guardian-watchdog.ps1, guardian-start-daemon.ps1(서킷브레이커 기존 존재), boot-diag.js(crash-moment/boot-stage/stderr 3겹 기존), 형제노트 work-data-completeness-1021.md.
+- 수정 파일: setup/install.ps1(보안스캔→install.diag.security, SCM `sc failure` 3단계 복구, AppThrottle 0, last-known-good 시드+묵은 핀 해제, OrbitCodeSync 핀 존중), setup/guardian-start-daemon.ps1(HEALTHY 300s good 기록, 새배포 직후 크래시루프면 git reset --hard good + .code-pin, code=crashloop 보고), setup/guardian-watchdog.ps1(Guardian-GitSync 핀 존중), src/boot-diag.js(classifyCause→causeCode/causeDetail), src/daemon-updater.js(update 시 start-daemon.ps1 템플릿 재생성=재설치 없이 배포). diff 245+/4-.
+- 검증(오너 PC DESKTOP-S4S2HMU): 단일 PID taskkill→54.1초 자동복구+안정. 격리 git 롤백/핀유지/핀해제 통과. classifyCause 9종 통과. 보안스캔 실측=Defender만, needsManualExclusion=[]. 미검증: 오너 PC 전체 재설치(라이브 수집 중단·code-sync 충돌 리스크로 생략, 명령문구는 문서에).
+- 핵심 설계: last-known-good = 마지막 정상 git 커밋. 롤백 후 .code-pin{good,bad} → origin/main 이 bad 와 달라지면(운영자 수정 배포) 자동 해제=영구 strand 없음. 롤백은 HEAD 가 1h 내 새배포일 때만(환경 문제면 보고만).
+- 카나리 추천: 아드리아나 DESKTOP-05VLRN1 1대. `POST /api/daemon/command {"hostname":"DESKTOP-05VLRN1","action":"update"}` — 사장님 승인 후.
+- 발견(미수정): 오너 PC ~/mindmap-viewer 가 Defender 예외 미등록(defenderExcluded=False).
+- 다시 반복되면: docs/DAEMON_SURVIVAL_DESIGN.md 먼저. 원인별 집계는 daemon.crashmoment.causeCode.

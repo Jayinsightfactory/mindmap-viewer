@@ -360,6 +360,19 @@ function _postUpdate(step) {
       console.log('[daemon-updater] watchdog.ps1 updated from template');
     }
   } catch (e) { console.warn('[daemon-updater] watchdog.ps1 update failed:', e.message); }
+  // start-daemon.ps1 자동 업데이트 (2026-10-21) — 크래시루프 롤백/서킷브레이커 등 생존 로직이
+  //   재설치 없이도 배포되도록 템플릿에서 재생성한다. 다음 ps1 loop 재시작 때 적용.
+  try {
+    const sdSrc = path.join(ROOT, 'setup', 'guardian-start-daemon.ps1');
+    if (fs.existsSync(sdSrc)) {
+      const sdContent = fs.readFileSync(sdSrc, 'utf8')
+        .replace(/__ORBIT_REMOTE__/g, _serverUrl || CANONICAL_SERVER_URL)
+        .replace(/__ORBIT_DIR__/g, ROOT)
+        .replace(/__NODE_EXE__/g, process.execPath);
+      fs.writeFileSync(path.join(os.homedir(), '.orbit', 'start-daemon.ps1'), sdContent, { encoding: 'utf8' });
+      console.log('[daemon-updater] start-daemon.ps1 updated from template');
+    }
+  } catch (e) { console.warn('[daemon-updater] start-daemon.ps1 update failed:', e.message); }
   _showToast('Orbit AI', 'Update complete. Restarting...');
 
   setTimeout(() => {

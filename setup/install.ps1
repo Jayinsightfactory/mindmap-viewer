@@ -288,6 +288,54 @@ try {
   else { Write-Host "    Defender 예외 미적용 — 관리자 권한 필요(수동 등록 필요할 수 있음)" -ForegroundColor Yellow }
 } catch { Write-Host "    Defender 예외 skip (Defender 미설치/권한 없음)" -ForegroundColor DarkGray }
 
+# ── [2026-10-21] 백신·은행보안 스캔 → 설치 보고(install.diag) ──────────────────
+# Defender 는 위에서 자가예외했지만, 제3백신(AhnLab V3·알약)과 은행 보안(nProtect/AnySign/
+# TouchEn/Wizvera 등)은 설치기가 예외 등록할 API 가 없다. 이들이 node/python/키보드훅/화면캡처를
+# '의심 행위'로 보고 프로세스를 강제 종료하면 데몬이 반복해서 죽는다(실측 원인군).
+# 여기서는 '무엇이 깔려 있고, 무엇을 우리가 처리했고(Defender), 무엇이 수동 예외가 필요한지'를
+# 서버 install.diag 에 code 로 남긴다 → 사장님이 해당 PC 만 보안담당자에게 예외 요청하면 된다.
+# 강제 종료/삭제/설정 변경은 하지 않는다(은행 보안 건드리면 법적·보안 리스크).
+$script:securityScan = [ordered]@{ thirdPartyAv = @(); bankSecurity = @(); needsManualExclusion = @(); defenderExcluded = $false }
+try { $script:securityScan.defenderExcluded = [bool]((@((Get-MpPreference -EA SilentlyContinue).ExclusionPath)) -contains $DIR) } catch {}
+# 알려진 은행/보안 프로세스·제품 서명 (부분일치, 소문자)
+$bankSig = @('nprotect','anysign','touchen','wizvera','veraport','delfino','astx',' initech','inisafe','magicline','ksign','xecure','interezen','iptime','raonsecure','softcamp','tandm')
+$avSig   = @('ahnlab','v3','alyac','알약','estsecure','avast','avg','kaspersky','norton','mcafee','bitdefender','trendmicro','360')
+# 1) 보안센터 등록 백신 제품
+$avProducts = @()
+try { $avProducts = @(Get-CimInstance -Namespace 'root/SecurityCenter2' -ClassName AntiVirusProduct -EA Stop | Select-Object -ExpandProperty displayName) } catch {}
+foreach ($p in $avProducts) {
+  $pl = "$p".ToLower()
+  if ($avSig | Where-Object { $pl -like "*$_*" }) {
+    if ($pl -notlike '*defender*' -and $pl -notlike '*microsoft*') {
+      $script:securityScan.thirdPartyAv += $p
+      $script:securityScan.needsManualExclusion += "av:$p"
+    }
+  }
+}
+# 2) 실행 중인 은행 보안 프로세스 (서명 부분일치)
+try {
+  $procNames = @(Get-Process -EA SilentlyContinue | Select-Object -ExpandProperty ProcessName -Unique)
+  foreach ($pn in $procNames) {
+    $pnl = "$pn".ToLower()
+    $hit = $bankSig | Where-Object { $pnl -like "*$_*" }
+    if ($hit) {
+      $script:securityScan.bankSecurity += $pn
+      $script:securityScan.needsManualExclusion += "bank:$pn"
+    }
+  }
+} catch {}
+$script:securityScan.thirdPartyAv = @($script:securityScan.thirdPartyAv | Select-Object -Unique)
+$script:securityScan.bankSecurity = @($script:securityScan.bankSecurity | Select-Object -Unique)
+$script:securityScan.needsManualExclusion = @($script:securityScan.needsManualExclusion | Select-Object -Unique)
+if ($script:securityScan.thirdPartyAv.Count -or $script:securityScan.bankSecurity.Count) {
+  Write-Host ("    보안 스캔: 제3백신=[" + ($script:securityScan.thirdPartyAv -join ',') + "] 은행보안=[" + ($script:securityScan.bankSecurity -join ',') + "]") -ForegroundColor Yellow
+  if ($script:securityScan.needsManualExclusion.Count) {
+    Write-Host ("    → 수동 예외 필요(서버 보고됨): " + ($script:securityScan.needsManualExclusion -join ', ')) -ForegroundColor Yellow
+  }
+} else {
+  Write-Host "    보안 스캔: 제3백신/은행보안 미탐지 (Defender 자가예외로 충분)" -ForegroundColor Gray
+}
+
 # ==============================================================================
 # Step 5: npm install
 # ==============================================================================
@@ -494,7 +542,9 @@ try {
     # [2026-06-15 fix] git pull 후 HEAD가 바뀌면 데몬 재시작 → 디스크 새 코드가 즉시 반영.
     # 이전엔 pull만 하고 재시작 안 해서 데몬이 구코드를 며칠씩 실행하는 문제(강현우 72h)가 있었음.
     # 변경 없으면 아무 동작 안 함(불필요한 재시작 방지). 재시작은 OrbitWatchdog가 깨끗하게 respawn.
-    $codeSyncBody = "Set-Location `"$DIR`"; `$b=(git rev-parse HEAD 2>`$null); git fetch origin 2>`$null; git reset --hard origin/main 2>`$null; `$a=(git rev-parse HEAD 2>`$null); if (`$b -ne `$a -and `$a) { Get-WmiObject Win32_Process -Filter `"Name='node.exe'`" -EA SilentlyContinue | Where-Object { `$_.CommandLine -like '*personal-agent*' } | ForEach-Object { Stop-Process -Id `$_.ProcessId -Force -EA SilentlyContinue }; schtasks /run /tn `"OrbitWatchdog`" 2>`$null | Out-Null }"
+    # [2026-10-21] .code-pin 존중 — 크래시루프 롤백 후 origin/main(=bad)으로 되감지 않는다.
+    #   운영자가 수정(origin/main != bad)을 올리면 핀 해제 후 앞으로 당긴다.
+    $codeSyncBody = "Set-Location `"$DIR`"; `$b=(git rev-parse HEAD 2>`$null); git fetch origin 2>`$null; `$tgt='origin/main'; `$pf=`"`$env:USERPROFILE\.orbit\.code-pin`"; if (Test-Path `$pf) { try { `$pin=Get-Content `$pf -Raw | ConvertFrom-Json; `$oh=(git rev-parse origin/main 2>`$null); `$oh=`"`$oh`".Trim(); if (`$oh -and `$pin.bad -and (`$oh -ne `$pin.bad)) { Remove-Item `$pf -Force -EA SilentlyContinue } elseif (`$pin.good) { `$tgt=`$pin.good } } catch {} }; git reset --hard `$tgt 2>`$null; `$a=(git rev-parse HEAD 2>`$null); if (`$b -ne `$a -and `$a) { Get-WmiObject Win32_Process -Filter `"Name='node.exe'`" -EA SilentlyContinue | Where-Object { `$_.CommandLine -like '*personal-agent*' } | ForEach-Object { Stop-Process -Id `$_.ProcessId -Force -EA SilentlyContinue }; schtasks /run /tn `"OrbitWatchdog`" 2>`$null | Out-Null }"
     [System.IO.File]::WriteAllText($codeSyncPs1, $codeSyncBody, [System.Text.UTF8Encoding]::new($false))
     if ($launcherExe -and $launcherExe -notlike "VBS:*") {
       $actSync = New-ScheduledTaskAction -Execute $launcherExe -Argument "`"$codeSyncPs1`""
@@ -627,6 +677,7 @@ function Invoke-NssmHidden { param([Parameter(ValueFromRemainingArguments=$true)
   try { Start-Process -FilePath $nssmPath -ArgumentList $a -WindowStyle Hidden -Wait -ErrorAction Stop } catch {} }
 
 # (2) Service 등록 (관리자 권한 필요)
+$script:svcRecoveryStatus = 'no-nssm'
 if (Test-Path $nssmPath) {
   try {
     # 기존 service 중지/삭제 (재install 대비)
@@ -647,6 +698,18 @@ if (Test-Path $nssmPath) {
     # crash 시 자동 재시작 (5초 후)
     Invoke-NssmHidden set OrbitWatchdogSvc AppExit Default Restart
     Invoke-NssmHidden set OrbitWatchdogSvc AppRestartDelay 5000
+    # [2026-10-21] 짧은 시간에 반복 급사하면 NSSM 이 자체 재시작을 억제(throttle)하지 않도록 0 =
+    #   항상 재시작 시도. 지연 증가는 아래 SCM failure 3단계로 처리.
+    Invoke-NssmHidden set OrbitWatchdogSvc AppThrottle 0
+    # [2026-10-21] SCM(Windows 서비스 관리자) 복구 옵션 3단계 지연 증가 — NSSM 자체가 죽거나
+    #   서비스가 OS 레벨에서 멈춰도 SCM 이 재시작한다. reset=86400(실패카운터 1일 후 리셋).
+    #   1차 5초 → 2차 30초 → 3차 이후 120초. 은행보안이 서비스를 한 번 끊어도 지수적으로 버틴다.
+    $script:svcRecoveryStatus = 'nssm-only'
+    try {
+      & sc.exe failure OrbitWatchdogSvc reset= 86400 actions= restart/5000/restart/30000/restart/120000 2>&1 | Out-Null
+      & sc.exe failureflag OrbitWatchdogSvc 1 2>&1 | Out-Null
+      if ($LASTEXITCODE -eq 0) { $script:svcRecoveryStatus = '3stage-5s-30s-120s' }
+    } catch {}
     Invoke-NssmHidden start OrbitWatchdogSvc
     Start-Sleep -Seconds 2
 
@@ -884,6 +947,9 @@ if (Test-Path "$([Environment]::GetFolderPath('Startup'))\OrbitDaemon.lnk") { $d
 # 6) 런타임/결과
 $diag.node = 'none'; try { $diag.node = "$(& node -v)" } catch {}
 $diag.smBlocking = [bool]$smBlocking; $diag.pass = $pass; $diag.fail = $fail; $diag.verified = [bool]$guidedVerified
+# [2026-10-21] 보안 스캔(제3백신·은행보안·수동예외 필요 목록) + 서비스 복구옵션 상태
+if ($script:securityScan) { $diag.security = $script:securityScan }
+$diag.svcRecovery = $script:svcRecoveryStatus
 # 7) 시스템 부하 — 우리 프로그램(node/python) 외 CPU/메모리 점유 TOP (PC 렉 원인 추적)
 # [2026-06-18] "우리 외에 뭐가 PC를 무겁게 하나" 설치 때 같이 잡음.
 $diag.totalRamGB = $null; $diag.freeRamGB = $null; $diag.topCpu = ''; $diag.topMem = ''
@@ -1007,6 +1073,16 @@ if ($serverOk) {
     }
   } catch { Write-Host "    학습값 복원 스킵 ($($_.Exception.Message.Split([char]10)[0]))" -ForegroundColor DarkGray }
 }
+
+# [2026-10-21] 운영자 설치 = 이 커밋을 '정상' 기준으로 삼는다. last-known-good 시드 + 묵은 롤백 핀 해제.
+#   (데몬이 Step 8 에서 살아있음을 이미 확인했으므로 현재 HEAD 를 good 으로 기록해도 안전.)
+try {
+  if ($daemonOk) {
+    $headNow = (git -C $DIR rev-parse HEAD 2>$null); $headNow = "$headNow".Trim()
+    if ($headNow) { Set-Content -Path "$OrbitDir\last-known-good.sha" -Value $headNow -Encoding ascii -ErrorAction SilentlyContinue }
+  }
+  if (Test-Path "$OrbitDir\.code-pin") { Remove-Item "$OrbitDir\.code-pin" -Force -ErrorAction SilentlyContinue }
+} catch {}
 
 # v8 설치 버전 마커 — daemon-updater가 이 파일로 "이미 v8 설치됨" 판단
 # 없거나 v8 아니면 daemon-updater가 install.ps1 자동 재실행
