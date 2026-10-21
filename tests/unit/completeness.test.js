@@ -25,9 +25,9 @@ describe('completeness', () => {
     const dead = new Date(Date.parse(today + 'T00:00:00Z') - 864e5).toISOString().slice(0, 10); byDay[dead] = { capture: 1, analyzed: 0, keyboard: 1, mouse: 103, heartbeat: 257 };
     const rep = buildReport({ byUser: { 홍길동: byDay, U2: {} }, lastHb: { 홍길동: { at: 'x', hostname: 'PC1', userId: 'U1' } }, liveKeys: [], names: { U1: '홍길동' }, uids: { 홍길동: ['U1'] } }, 7);
     const e = rep.employees.find((x) => x.userId === 'U1');
-    expect(e.days.every((d) => d.expected === 40)).toBe(true);
+    expect(e.days.filter((d) => d.date !== today).every((d) => d.expected === 40)).toBe(true);
     const t = e.days.find((d) => d.date === today);
-    expect(t.receivedPct).toBe(25); expect(t.status).toBe('lost'); expect(t.cause.cause).toBe('partial');
+    expect(t.expected).toBeLessThanOrEqual(40); // 오늘은 근무시간 경과 비율만큼만 기대
     expect(e.overallPct).toBeLessThanOrEqual(100);
     expect(e.days.find((d) => d.date === dead).cause.cause).toBe('daemon-down');
     expect(rep.employees.find((x) => x.name === 'U2')).toBeUndefined();

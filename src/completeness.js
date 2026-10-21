@@ -105,18 +105,21 @@ function buildReport(agg, days) {
     for (let i = 0; i < 14; i++) { const d = kstDate(todayMs - i * 864e5); if (!isWeekday(d)) continue; if ((byDay[d]?.heartbeat || 0) > 0) break; silentWeekdays++; }
     for (const d of window) {
       const day = byDay[d] || { capture: 0, analyzed: 0, keyboard: 0, mouse: 0, heartbeat: 0 };
-      const expected = expectedFor(byDay, d);
+      const fullExpected = expectedFor(byDay, d);
+      // 오늘은 하루가 안 끝났으니 근무시간(09~18 KST) 경과 비율만큼만 기대한다(14시에 하루치 전부를 기대해 '부분 유실' 오탐 금지)
+      const elapsed = d === today ? Math.max(0.1, Math.min(1, (new Date(todayMs + KST).getUTCHours() + new Date(todayMs + KST).getUTCMinutes() / 60 - 9) / 9)) : 1;
+      const expected = Math.round(fullExpected * elapsed);
       const ratio = expected > 0 ? Math.round((day.capture / expected) * 1000) / 10 : null;
       let status, cause = null;
       const input = (day.keyboard || 0) + (day.mouse || 0);
       if (day.capture === 0 && day.analyzed === 0) {
         if (!isWeekday(d) || expected === 0) { status = 'none'; }
         else { const c = classifyZero(day, { silentWeekdays }); status = 'lost'; cause = c; }
-      } else if (expected > 0 && day.heartbeat > 0 && input > 0 && day.capture <= Math.max(2, Math.round(expected * 0.05))) {
+      } else if (isWeekday(d) && expected > 0 && day.heartbeat > 0 && input > 0 && day.capture <= Math.max(2, Math.round(expected * 0.05))) {
         // 캡처가 기대의 5% 이하인데 PC 켜짐·입력 있음 = 캡처 모듈만 죽은 상태(실측 10/21 강명훈: 캡처 1·마우스 103·heartbeat 257·기대 110)
         status = 'lost'; cause = { cause: 'daemon-down', label: `데몬 다운(캡처 모듈 죽음: 캡처 ${day.capture}·기대 ${expected}·입력 ${input}·heartbeat ${day.heartbeat})`, restart: true };
       } else if (day.capture >= 20 && day.analyzed === 0 && d !== today) { status = 'lost'; cause = { cause: 'queue-backlog', label: `큐 적체(캡처 ${day.capture}건·분석 0)`, restart: false }; }
-      else if (ratio !== null && ratio < THRESHOLD * 100) { status = 'lost'; cause = { cause: 'partial', label: `부분 유실(기대 ${expected}·수신 ${day.capture})`, restart: false }; }
+      else if (isWeekday(d) && ratio !== null && ratio < THRESHOLD * 100) { status = 'lost'; cause = { cause: 'partial', label: `부분 유실(기대 ${expected}·수신 ${day.capture})`, restart: false }; }
       else status = 'ok';
       dayRows.push({ date: d, weekday: '일월화수목금토'[weekdayOf(d)], ...day, expected, receivedPct: ratio, status, cause });
     }
@@ -165,11 +168,12 @@ async function autoRecover(pool, report, agg, opts = {}) {
 }
 
 function reportLine(report, actions) {
-  const lost = report.employees.filter((e) => e.lost || e.lostDays > 0);
   const KO = { 'daemon-down': '데몬다운', 'pc-off': 'PC꺼짐', unused: '미사용', 'queue-backlog': '큐적체', 'long-silent': '장기무응답', partial: '부분' };
+  const lost = report.employees.filter((e) => e.lost);
+  const withDays = report.employees.filter((e) => !e.lost && e.lostDays > 0).map((e) => `${e.name}(${Object.entries(e.causes).map(([c, n]) => (KO[c] || c) + n).join('·')})`);
   const parts = lost.slice(0, 8).map((e) => `${e.name} ${e.overallPct === null ? '-' : e.overallPct + '%'}(${Object.entries(e.causes).map(([c, n]) => (KO[c] || c) + n).join('·')})`);
   const sent = (actions?.actions || []).filter((a) => a.action === 'restart-queued').map((a) => `${a.name}/${a.hostname}`);
-  return `작업데이터 수신(최근 ${report.days}일, 50% 미만=유실): 유실 ${lost.length}명` + (parts.length ? ' — ' + parts.join(', ') : '') + (sent.length ? ` / 자동 restart 발송: ${sent.join(', ')}` : '');
+  return `작업데이터 수신(최근 ${report.days}일, 50% 미만=유실): 유실 ${lost.length}명` + (parts.length ? ' — ' + parts.join(', ') : '') + (withDays.length ? ` / 유실일 있음: ${withDays.join(', ')}` : '') + (sent.length ? ` / 자동 restart 발송: ${sent.join(', ')}` : '');
 }
 
 function mount(app, { dbModule, adminOk }) {
