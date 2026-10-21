@@ -27,6 +27,8 @@ const TRANSITIONS = {
   'approve-run': { from: ['approved'],        to: 'deployed' },
 };
 
+const _cmdQueue = require('../src/daemon-command-queue');
+
 function createScriptGenerator({ getDb, authenticate }) {
   const router = express.Router();
 
@@ -1222,12 +1224,8 @@ function createScriptGenerator({ getDb, authenticate }) {
       if (!(await _checkTransition(db, req, res, script, 'deploy', hostname))) return;
 
       // 데몬 명령 큐잉
-      await db.query(`
-        INSERT INTO orbit_daemon_commands (hostname, action, command, data_json, ts)
-        VALUES ($1, 'rpa-dry-run', NULL, $2::jsonb, NOW())
-      `, [
-        hostname,
-        JSON.stringify({
+      // [2026-10-21] 원격 명령 안전장치 경유(만료·중복 억제)
+      await _cmdQueue.enqueue(db, { hostname, action: 'rpa-dry-run', data: {
           scriptId: script.id,
           scriptType: script.script_type,
           script: script.script_content,
@@ -1236,8 +1234,7 @@ function createScriptGenerator({ getDb, authenticate }) {
           dryRun: true,
           approved: false,
           ts: new Date().toISOString(),
-        }),
-      ]);
+        } });
 
       await db.query('UPDATE generated_scripts SET deploy_count = deploy_count + 1, status = $1, updated_at = NOW() WHERE id = $2',
         ['tested', script.id]);
@@ -1271,12 +1268,7 @@ function createScriptGenerator({ getDb, authenticate }) {
       const script = rows[0];
       if (!(await _checkTransition(db, req, res, script, 'approve-run', hostname))) return;
 
-      await db.query(`
-        INSERT INTO orbit_daemon_commands (hostname, action, command, data_json, ts)
-        VALUES ($1, 'rpa-run', NULL, $2::jsonb, NOW())
-      `, [
-        hostname,
-        JSON.stringify({
+      await _cmdQueue.enqueue(db, { hostname, action: 'rpa-run', data: {
           scriptId: script.id,
           scriptType: script.script_type,
           script: script.script_content,
@@ -1287,8 +1279,7 @@ function createScriptGenerator({ getDb, authenticate }) {
           mode: 'execute',
           timeoutMs: timeoutMs || 120000,
           ts: new Date().toISOString(),
-        }),
-      ]);
+        } });
 
       await db.query('UPDATE generated_scripts SET deploy_count = deploy_count + 1, status = $1, updated_at = NOW() WHERE id = $2',
         ['deployed', script.id]);
