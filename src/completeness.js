@@ -41,14 +41,19 @@ async function aggregate(pool) {
   try { liveKeys = (await pool.query(`SELECT DISTINCT ON (lower(hostname)) hostname, consumed_at FROM orbit_daemon_commands WHERE consumed_at IS NOT NULL AND consumed_at > NOW() - INTERVAL '14 days' ORDER BY lower(hostname), consumed_at DESC`)).rows; } catch {}
   let names = {};
   try { (await pool.query('SELECT id, name FROM orbit_auth_users')).rows.forEach((u) => { names[u.id] = u.name || ''; }); } catch {}
-  const byUser = {};
+  // 같은 직원이 여러 user_id 로 쪼개진 사고(실측 10/21: 아드리아나 10/12 재등록 → 새 id, 박성수·정재훈·김원빈 2개 id) → 이름으로 합친다.
+  //   파이프라인이 옛 id 만 알고 있으면 "캡처 0건 7일"로 보이지만 실제론 새 id 로 들어오고 있었다.
+  const byUser = {}, uidsOf = {};
   for (const r of rows) {
-    const u = byUser[r.user_id] || (byUser[r.user_id] = {});
+    const key = names[r.user_id] || r.user_id;
+    (uidsOf[key] = uidsOf[key] || new Set()).add(r.user_id);
+    const u = byUser[key] || (byUser[key] = {});
     const day = u[r.d] || (u[r.d] = { capture: 0, analyzed: 0, keyboard: 0, mouse: 0, heartbeat: 0 });
     day[{ 'screen.capture': 'capture', 'screen.analyzed': 'analyzed', 'keyboard.chunk': 'keyboard', 'mouse.chunk': 'mouse', 'daemon.heartbeat': 'heartbeat' }[r.type]] += r.n;
   }
-  const lastHb = {}; for (const r of hb) lastHb[r.user_id] = { at: r.timestamp, hostname: r.hostname || null };
-  _cache = { at: Date.now(), data: { byUser, lastHb, liveKeys: liveKeys.map((k) => k.hostname), names } };
+  const lastHb = {}; for (const r of hb) { const key = names[r.user_id] || r.user_id; if (!lastHb[key] || lastHb[key].at < r.timestamp) lastHb[key] = { at: r.timestamp, hostname: r.hostname || null, userId: r.user_id }; }
+  const uids = {}; for (const [k, set] of Object.entries(uidsOf)) uids[k] = [...set];
+  _cache = { at: Date.now(), data: { byUser, lastHb, liveKeys: liveKeys.map((k) => k.hostname), names, uids } };
   return _cache.data;
 }
 
@@ -67,8 +72,9 @@ function buildReport(agg, days) {
   const today = kstDate(todayMs);
   const window = []; for (let i = days - 1; i >= 0; i--) window.push(kstDate(todayMs - i * 864e5));
   const employees = [];
-  for (const [uid, byDay] of Object.entries(agg.byUser)) {
-    const name = agg.names[uid] || uid;
+  for (const [name, byDay] of Object.entries(agg.byUser)) {
+    const uidList = (agg.uids && agg.uids[name]) || [name];
+    if (!window.some((d) => { const x = byDay[d]; return x && (x.capture + x.analyzed + x.keyboard + x.mouse + x.heartbeat) > 0; })) continue; // 7일간 아무것도 없는 id(옛 토큰·pc_ 계정)는 표에서 제외
     const dayRows = [];
     // 장기 무응답: 오늘부터 거슬러 heartbeat 0 인 평일 수
     let silentWeekdays = 0;
@@ -79,10 +85,14 @@ function buildReport(agg, days) {
       const expected = median(hist);
       const ratio = expected > 0 ? Math.round((day.capture / expected) * 1000) / 10 : null;
       let status, cause = null;
+      const input = (day.keyboard || 0) + (day.mouse || 0);
       if (day.capture === 0 && day.analyzed === 0) {
         if (!isWeekday(d) || expected === 0) { status = 'none'; }
         else { const c = classifyZero(day, { silentWeekdays }); status = 'lost'; cause = c; }
-      } else if (day.capture > 0 && day.analyzed === 0 && d !== today) { status = 'lost'; cause = { cause: 'queue-backlog', label: `큐 적체(캡처 ${day.capture}건·분석 0)`, restart: false }; }
+      } else if (expected > 0 && day.heartbeat > 0 && input > 0 && day.capture <= Math.max(2, Math.round(expected * 0.05))) {
+        // 캡처가 기대의 5% 이하인데 PC 켜짐·입력 있음 = 캡처 모듈만 죽은 상태(실측 10/21 강명훈: 캡처 1·마우스 103·heartbeat 257·기대 110)
+        status = 'lost'; cause = { cause: 'daemon-down', label: `데몬 다운(캡처 모듈 죽음: 캡처 ${day.capture}·기대 ${expected}·입력 ${input}·heartbeat ${day.heartbeat})`, restart: true };
+      } else if (day.capture >= 20 && day.analyzed === 0 && d !== today) { status = 'lost'; cause = { cause: 'queue-backlog', label: `큐 적체(캡처 ${day.capture}건·분석 0)`, restart: false }; }
       else if (ratio !== null && ratio < THRESHOLD * 100) { status = 'lost'; cause = { cause: 'partial', label: `부분 유실(기대 ${expected}·수신 ${day.capture})`, restart: false }; }
       else status = 'ok';
       dayRows.push({ date: d, weekday: '일월화수목금토'[weekdayOf(d)], ...day, expected, receivedPct: ratio, status, cause });
@@ -91,7 +101,7 @@ function buildReport(agg, days) {
     const sumExp = wk.reduce((a, r) => a + r.expected, 0), sumGot = wk.reduce((a, r) => a + Math.min(r.capture, r.expected), 0);
     const overallPct = sumExp ? Math.round((sumGot / sumExp) * 1000) / 10 : null;
     const lostDays = dayRows.filter((r) => r.status === 'lost');
-    employees.push({ userId: uid, name, hostname: agg.lastHb[uid]?.hostname || null, lastHeartbeatAt: agg.lastHb[uid]?.at || null, silentWeekdays,
+    employees.push({ userId: agg.lastHb[name]?.userId || uidList[0], userIds: uidList, name, hostname: agg.lastHb[name]?.hostname || null, lastHeartbeatAt: agg.lastHb[name]?.at || null, silentWeekdays,
       overallPct, lost: overallPct !== null && overallPct < THRESHOLD * 100, lostDays: lostDays.length,
       causes: lostDays.reduce((m, r) => { m[r.cause.cause] = (m[r.cause.cause] || 0) + 1; return m; }, {}), days: dayRows });
   }
