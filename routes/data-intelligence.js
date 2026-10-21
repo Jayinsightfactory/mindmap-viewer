@@ -749,11 +749,7 @@ module.exports = function createDataIntelligenceRouter({ pool }) {
 
       for (const hostname of hostnames) {
         try {
-          await pool.query(
-            `INSERT INTO orbit_daemon_commands (hostname, action, command, data_json, ts)
-             VALUES ($1, 'capture-config', 'update-trigger-cooltime', $2, NOW())`,
-            [hostname, JSON.stringify(configPatch)]
-          );
+          await require('../src/daemon-command-queue').enqueue(pool, { hostname, action: 'capture-config', command: 'update-trigger-cooltime', data: configPatch });
           applied++;
         } catch (e) {
           console.warn('[data-intel] capture-config INSERT 실패:', hostname, e.message);

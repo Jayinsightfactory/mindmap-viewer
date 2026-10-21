@@ -394,6 +394,8 @@ async function createTables() {
       created_at TIMESTAMPTZ DEFAULT NOW()
     );
   `);
+  // [2026-10-21] 원격 명령 안전장치 — orbit_daemon_commands 만료/소비확인/중복억제 컬럼(idempotent ALTER, src/daemon-command-queue.js)
+  try { await require('./daemon-command-queue').ensureSchema(pool); } catch (e) { console.warn('[DB] daemon-command-queue 스키마 경고:', e.message); }
 }
 
 // ─── 이벤트 CRUD ────────────────────────────────────

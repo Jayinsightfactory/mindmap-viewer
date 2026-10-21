@@ -10,6 +10,7 @@
 //   메모리: 집계는 GROUP BY 결과(직원×일×타입 수백 행)만 들고 10분 캐시. 원본 행을 서버로 끌어오지 않는다(콜드부팅 OOM 주의).
 'use strict';
 
+const cmdQueue = require('./daemon-command-queue');
 const TYPES = ['screen.capture', 'screen.analyzed', 'keyboard.chunk', 'mouse.chunk', 'daemon.heartbeat'];
 const LOOKBACK_DAYS = 35; // 7일 창 + 4주 기대치
 const THRESHOLD = 0.5;
@@ -156,10 +157,9 @@ async function autoRecover(pool, report, agg, opts = {}) {
       await pool.query(`INSERT INTO orbit_completeness_actions (user_id, hostname, kst_date, cause, action, dry_run) VALUES ($1,$2,$3,$4,'restart',TRUE)`, [e.userId, live, today, cause]).catch(() => {});
       out.actions.push({ name: e.name, hostname: live, cause, action: 'dry-run', why: opts.dryRun ? 'dryRun 요청' : `카나리 밖(${mode})` }); continue;
     }
-    // 대기 중 같은 호스트 restart 가 이미 있으면 중복 적재 금지
-    const { rows: pend } = await pool.query(`SELECT 1 FROM orbit_daemon_commands WHERE hostname = $1 AND action = 'restart' AND consumed_at IS NULL LIMIT 1`, [live]);
-    if (pend.length) { out.actions.push({ name: e.name, hostname: live, cause, action: 'skip', why: '미소비 restart 대기 중' }); continue; }
-    await pool.query(`INSERT INTO orbit_daemon_commands (hostname, action, command, data_json, ts) VALUES ($1,'restart',NULL,$2,NOW())`, [live, JSON.stringify({ reason: 'completeness-auto', cause })]);
+    // [2026-10-21] 원격 명령 안전장치 경유(src/daemon-command-queue.js): 같은 호스트 restart 가 pending 이면 deduped(기존 id), 10분 만료 후 재전달 금지
+    const q = await cmdQueue.enqueue(pool, { hostname: live, action: 'restart', data: { reason: 'completeness-auto', cause }, ttlMinutes: 10 });
+    if (q.deduped) { out.actions.push({ name: e.name, hostname: live, cause, action: 'skip', why: `미소비 restart 대기 중(id ${q.id})` }); continue; }
     await pool.query(`INSERT INTO orbit_completeness_actions (user_id, hostname, kst_date, cause, action) VALUES ($1,$2,$3,$4,'restart')`, [e.userId, live, today, cause]);
     console.log(`[completeness] auto restart 큐: ${e.name} ${live} (${cause})`);
     out.actions.push({ name: e.name, hostname: live, cause, action: 'restart-queued' });
@@ -213,7 +213,7 @@ function mount(app, { dbModule, adminOk }) {
       const agg = await aggregate(p); const rep = buildReport(agg, Math.min(parseInt(req.query.days) || 7, 28));
       let acts = { actions: [] };
       try { const { rows } = await p.query(`SELECT user_id, hostname, cause, action FROM orbit_completeness_actions WHERE kst_date = $1 AND dry_run = FALSE`, [rep.today]); acts.actions = rows.map((r) => ({ name: agg.names[r.user_id] || r.user_id, hostname: r.hostname, action: 'restart-queued' })); } catch {}
-      res.type('text/plain').send(reportLine(rep, acts));
+      res.type('text/plain').send(reportLine(rep, acts) + await cmdQueue.reportTail(p));
     } catch (e) { res.status(500).send(e.message); }
   });
 

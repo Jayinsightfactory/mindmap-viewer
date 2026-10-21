@@ -74,7 +74,7 @@ test('승인자 정상 경로 draft→tested→approved→deployed + 감사로�
   expect(db.audit.map(a => [a.action, a.to_status, a.actor_email, a.ok])).toEqual([
     ['deploy', 'tested', 'boss@x', true], ['approve', 'approved', 'boss@x', true], ['approve-run', 'deployed', 'boss@x', true],
   ]);
-  const run = JSON.parse(db.commands[1][1]);
+  const run = JSON.parse(db.commands[1][3]); // enqueue(): [hostname, action, command, data_json, ttl, dedupe_key]
   expect(run.approvedBy).toBe('boss@x');
   expect((await call('/1/approve-run', 'admin', { hostname: 'h' })).status).toBe(409); // 재실행 불가
 });

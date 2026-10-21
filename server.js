@@ -56,6 +56,7 @@ const chokidar     = require('chokidar');
 const fs           = require('fs');
 const path         = require('path');
 const _eventValueJudge = require('./src/event-value-judge'); // /api/hook 저장 가치 판정(daemon.update 반복 컷)
+const _daemonCmdQueue = require('./src/daemon-command-queue'); // [2026-10-21] 원격 명령 안전장치(만료·소비확인·중복억제·자동정리)
 // rate-limit: 인메모리 구현 (express-rate-limit v8 Railway 프록시 호환 문제 대체)
 const _rlStore = new Map();
 const _RL_MAX_ENTRIES = 5000; // 메모리 상한
@@ -2074,13 +2075,10 @@ app.post('/api/learning/capture-timing', async (req, res) => {
       // PG에도 저장 — 같은 hostname의 미처리 capture-config 먼저 정리 (스택 방지)
       try {
         pool.query(
-          `UPDATE orbit_daemon_commands SET consumed_at = NOW() WHERE hostname = $1 AND action = 'capture-config' AND consumed_at IS NULL`,
+          `UPDATE orbit_daemon_commands SET consumed_at = NOW(), status = 'purged' WHERE hostname = $1 AND action = 'capture-config' AND consumed_at IS NULL`,
           [hostname]
         ).catch(() => {});
-        pool.query(
-          `INSERT INTO orbit_daemon_commands (hostname, action, command, data_json, ts) VALUES ($1,$2,$3,$4,NOW())`,
-          [hostname, action, null, JSON.stringify(data)]
-        ).catch(() => {});
+        _daemonCmdQueue.enqueue(pool, { hostname, action, data }).catch(() => {});
       } catch {}
     });
     res.json({ ok: true, results });
@@ -2129,13 +2127,10 @@ setInterval(async () => {
       global._daemonCommands[hostname].push({ action, data, ts: new Date().toISOString() });
       // 같은 hostname의 미처리 capture-config 먼저 정리 (스택 방지)
       pool.query(
-        `UPDATE orbit_daemon_commands SET consumed_at = NOW() WHERE hostname = $1 AND action = 'capture-config' AND consumed_at IS NULL`,
+        `UPDATE orbit_daemon_commands SET consumed_at = NOW(), status = 'purged' WHERE hostname = $1 AND action = 'capture-config' AND consumed_at IS NULL`,
         [hostname]
       ).catch(() => {});
-      pool.query(
-        `INSERT INTO orbit_daemon_commands (hostname, action, command, data_json, ts) VALUES ($1,$2,$3,$4,NOW())`,
-        [hostname, action, null, JSON.stringify(data)]
-      ).catch(() => {});
+      _daemonCmdQueue.enqueue(pool, { hostname, action, data }).catch(() => {});
     });
     console.log('[capture-timing-learner] 완료 — 각 PC 다음 폴링 시 수신');
   } catch (e) {
@@ -2676,35 +2671,25 @@ app.get('/api/daemon/commands', async (req, res) => {
     c.consumedHosts.add(hostname);
   });
   // PG에서 미소비 명령 가져오기 (Railway 재배포 후 복원 대비)
+  // [2026-10-12 사고] ts 동등 비교로 소비 UPDATE 0행 → 'update' 가 매 폴링 재전달 → 3일간 전 PC 1분 재시작 루프. ctid 소비로 수습.
+  // [2026-10-21] 원격 명령 안전장치(src/daemon-command-queue.js): 만료(expires_at) 명령은 재전달 안 함(status=expired), id 소비 + delivered/redeliver 집계.
   let pgCmds = [];
   try {
     const _pool = dbModule.getDb ? dbModule.getDb() : null;
-    if (_pool) {
-      const { rows } = await _pool.query(
-        `SELECT ctid::text AS rid, action, command, data_json, ts FROM orbit_daemon_commands
-         WHERE hostname = $1 AND consumed_at IS NULL AND ts <= NOW()
-         ORDER BY
-           CASE action WHEN 'restart' THEN 1 WHEN 'exec' THEN 2 WHEN 'update' THEN 3 WHEN 'reinstall' THEN 4 ELSE 10 END ASC,
-           ts ASC
-         LIMIT 10`,
-        [hostname]
-      );
-      if (rows.length > 0) {
-        pgCmds = rows.map(r => ({ action: r.action, command: r.command, data: r.data_json, ts: r.ts }));
-        // [2026-10-12 사고] ts 동등 비교(timestamptz ↔ JS Date 마이크로초 손실)로 UPDATE 가 0행 → 'update' 명령이 매 폴링(60s)마다 재전달
-        //   → 10/9 force-update-all 이후 3일간 전 PC 데몬이 1분마다 재시작(daemon.crash 950건·재설치 39회·nssm 창). id 로 소비 처리한다.
-        //   10/12 12:0x 실측: 운영 테이블엔 id 컬럼이 없어(초기 생성분) id 기준도 0행 → 행 식별자 ctid 로 소비(스키마 변경 불필요).
-        const ridList = rows.map(r => r.rid).filter(Boolean);
-        if (ridList.length) _pool.query(`UPDATE orbit_daemon_commands SET consumed_at = NOW() WHERE ctid = ANY($1::tid[])`, [ridList]).catch((e) => console.warn('[daemon-commands] consume 실패:', e.message));
-      }
-    }
-  } catch {}
+    if (_pool) pgCmds = await _daemonCmdQueue.fetchForHost(_pool, hostname);
+  } catch (e) { console.warn('[daemon-commands] PG fetch 실패:', e.message); }
   // [2026-09-21] 워커(daemon-updater, 60s)와 guardian watchdog(2분)이 같은 큐를 폴링 → watchdog이 먼저 가져가면
   // 모르는 action(drive-backfill·capture-config·gitpull-worker…)은 그냥 버려져 워커에 영영 안 닿음(가브리엘 backfill 실종).
   // guardian은 X-Device-Id 헤더를 보냄(워커는 안 보냄) → guardian에겐 guardian이 처리하는 action만 주고 나머지는 큐에 남긴다.
   const _isGuardian = !!req.get('X-Device-Id') && req.query.role !== 'worker';
   const _GUARDIAN_ACTIONS = new Set(['exec', 'restart', 'update', 'reinstall', 'config']);
-  const merged = _sanitizeDaemonCommands([...cmds, ...allCmds, ...pgCmds]);
+  // [2026-10-21] 같은 폴링 응답 안에서 메모리 큐+PG 큐가 같은 명령을 두 번 주던 것(action+command+data 동일) → 1건만
+  const _seenCmd = new Set();
+  const merged = _sanitizeDaemonCommands([...cmds, ...allCmds, ...pgCmds]).filter(c => {
+    const k = c.action + '|' + (c.command || '') + '|' + _daemonCmdQueue.stableJson(c.data || {});
+    if (_seenCmd.has(k)) return false;
+    _seenCmd.add(k); return true;
+  });
   const result = _isGuardian ? merged.filter(c => _GUARDIAN_ACTIONS.has(c.action)) : merged;
   const keep = _isGuardian ? merged.filter(c => !_GUARDIAN_ACTIONS.has(c.action)) : [];
   // 개별 hostname 명령은 가져가면 삭제 (guardian이 못 다루는 건 워커용으로 남김)
@@ -3112,25 +3097,30 @@ app.get('/api/admin/pg-commands-inspect', async (req, res) => {
     if (!_pool) return res.status(500).json({ error: 'db not available' });
     const hostname = req.query.hostname || null;
     // 2026-06-03 added: includeConsumed=1 로 처리완료까지 포함 조회 (polling 진단용)
+    // [2026-10-21] status 기준(pending/consumed/executed/failed/expired/purged). ?status=expired 처럼 지정 가능, 기본 pending.
     const includeConsumed = req.query.includeConsumed === '1';
+    const status = String(req.query.status || '').trim();
+    const where = includeConsumed ? 'TRUE' : (status ? 'status = $S' : `status = 'pending' AND consumed_at IS NULL`);
     let rows;
     if (hostname) {
-      const whereClause = includeConsumed ? 'hostname = $1' : 'hostname = $1 AND consumed_at IS NULL';
+      const params = [hostname]; if (status && !includeConsumed) params.push(status);
       const r = await _pool.query(
-        `SELECT id, hostname, action, ts, consumed_at FROM orbit_daemon_commands
-         WHERE ${whereClause} ORDER BY ts DESC LIMIT 50`,
-        [hostname]
+        `SELECT id, hostname, action, status, ts, expires_at, consumed_at, executed_at, delivered_count, redeliver_count, dedupe_key, result_json FROM orbit_daemon_commands
+         WHERE hostname = $1 AND ${where.replace('$S', '$2')} ORDER BY ts DESC LIMIT 50`,
+        params
       );
       rows = r.rows;
     } else {
+      const params = []; if (status && !includeConsumed) params.push(status);
       const r = await _pool.query(
-        `SELECT hostname, action, COUNT(*) as cnt, MIN(ts) as first_ts, MAX(ts) as last_ts
-         FROM orbit_daemon_commands WHERE consumed_at IS NULL
-         GROUP BY hostname, action ORDER BY cnt DESC LIMIT 200`
+        `SELECT hostname, action, status, COUNT(*) as cnt, MIN(ts) as first_ts, MAX(ts) as last_ts, MAX(redeliver_count) AS max_redeliver
+         FROM orbit_daemon_commands WHERE ${where.replace('$S', '$1')}
+         GROUP BY hostname, action, status ORDER BY cnt DESC LIMIT 200`, params
       );
       rows = r.rows;
     }
-    res.json({ ok: true, pending: rows, total: rows.length });
+    const { rows: purges } = await _pool.query(`SELECT hostname, reason, count, actions, ts FROM orbit_daemon_command_purges ORDER BY ts DESC LIMIT 20`).catch(() => ({ rows: [] }));
+    res.json({ ok: true, pending: rows, total: rows.length, purges });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
@@ -3148,34 +3138,15 @@ app.post('/api/admin/pg-commands-purge', async (req, res) => {
     if (!_pool) return res.status(500).json({ error: 'db not available' });
     const { hostname, actions, purgeAll } = req.body || {};
     const acts = Array.isArray(actions) && actions.length ? actions : ['restart', 'update', 'reinstall'];
-    let r;
-    if (purgeAll && hostname) {
-      r = await _pool.query(
-        `UPDATE orbit_daemon_commands SET consumed_at = NOW() WHERE consumed_at IS NULL AND hostname = $1`,
-        [hostname]
-      );
-    } else if (purgeAll) {
-      r = await _pool.query(`UPDATE orbit_daemon_commands SET consumed_at = NOW() WHERE consumed_at IS NULL`);
-    } else if (hostname) {
-      r = await _pool.query(
-        `UPDATE orbit_daemon_commands SET consumed_at = NOW()
-         WHERE consumed_at IS NULL AND hostname = $1 AND action = ANY($2)`,
-        [hostname, acts]
-      );
-    } else {
-      r = await _pool.query(
-        `UPDATE orbit_daemon_commands SET consumed_at = NOW()
-         WHERE consumed_at IS NULL AND action = ANY($1)`,
-        [acts]
-      );
-    }
+    // [2026-10-21] status='purged' 로 마감 + orbit_daemon_command_purges 기록(아침 보고 한 줄에 섞임). 로직은 src/daemon-command-queue.js purge().
+    const purged = await _daemonCmdQueue.purge(_pool, { hostname, actions: acts, purgeAll: !!purgeAll, reason: 'admin pg-commands-purge' });
     // 인메모리 ALL 큐도 정리
     if (global._daemonCommands) {
       for (const h of Object.keys(global._daemonCommands)) {
         global._daemonCommands[h] = (global._daemonCommands[h] || []).filter(c => !acts.includes(c.action));
       }
     }
-    res.json({ ok: true, purged: r.rowCount || 0, actions: acts, hostname: hostname || 'ALL' });
+    res.json({ ok: true, purged, actions: acts, hostname: hostname || 'ALL' });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
@@ -3535,14 +3506,12 @@ app.post('/api/daemon/command', (req, res) => {
         const _PRIORITY = ['restart', 'exec', 'update', 'reinstall'];
         if (_PRIORITY.includes(action)) {
           _pool.query(
-            `UPDATE orbit_daemon_commands SET consumed_at = NOW() WHERE hostname = $1 AND consumed_at IS NULL AND action = 'capture-config'`,
+            `UPDATE orbit_daemon_commands SET consumed_at = NOW(), status = 'purged' WHERE hostname = $1 AND consumed_at IS NULL AND action = 'capture-config'`,
             [hostname]
           ).catch(() => {});
         }
-        _pool.query(
-          `INSERT INTO orbit_daemon_commands (hostname, action, command, data_json, ts) VALUES ($1,$2,$3,$4,$5)`,
-          [hostname, action, command || null, JSON.stringify(data || {}), cmdTs]
-        ).catch(() => {});
+        // [2026-10-21] 안전장치 경유: 만료(기본 10분, body.ttlMinutes 로 override)·중복 억제(같은 host+action+args pending 이면 기존 id)
+        _daemonCmdQueue.enqueue(_pool, { hostname, action, command, data, ttlMinutes: (req.body || {}).ttlMinutes }).catch((e) => console.warn('[daemon-cmd] PG enqueue 실패:', e.message));
       }
     } catch {}
   }
@@ -3552,6 +3521,18 @@ app.post('/api/daemon/command', (req, res) => {
 // [2026-10-21] 작업데이터 완전성 게이트 — 직원·일자별 수신/기대치, 캡처 0 원인 분류, 데몬 다운 자동 force-restart(카나리), 카톡 보고 한 줄.
 //   설계: docs/WORK_DATA_COMPLETENESS_DESIGN.md. 라우트 /api/completeness*, 예약: 1시간마다(평일 09~19 KST) 자동 복구 점검.
 try { require('./src/completeness').mount(app, { dbModule, adminOk: _visionThumbAdminOk, env }); } catch (e) { console.error('[completeness] mount 실패:', e.message); }
+// [2026-10-21] 원격 명령 안전장치 sweeper: 5분마다 만료 마감 + 미소비 누적(기본 20)·같은 명령 3회↑ 재전달 자동 purge(→ 아침 보고 한 줄)
+_daemonCmdQueue.startSweeper(() => (dbModule.getDb ? dbModule.getDb() : null));
+// POST /api/admin/pg-commands-sweep — sweep 즉시 1회(관리자, 검증용)
+app.post('/api/admin/pg-commands-sweep', async (req, res) => {
+  try {
+    const _rawTok = (req.headers.authorization || '').replace('Bearer ', '').trim();
+    if (!env.isMasterToken(_rawTok) && !resolveAdmin(req).isAdmin) return res.status(403).json({ error: 'admin only' });
+    const _pool = dbModule.getDb ? dbModule.getDb() : null;
+    if (!_pool) return res.status(500).json({ error: 'db not available' });
+    res.json({ ok: true, ...(await _daemonCmdQueue.sweep(_pool)) });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
 
 // GET /api/daemon/governor — 리소스 거버너 상태 조회 (데몬 PC에서 보고)
 app.get('/api/daemon/governor', (req, res) => {
@@ -3638,14 +3619,8 @@ app.post('/api/admin/push-token', async (req, res) => {
   const _pool = dbModule.getDb ? dbModule.getDb() : null;
   if (_pool) {
     Promise.all([
-      _pool.query(
-        `INSERT INTO orbit_daemon_commands (hostname, action, command, data_json, ts) VALUES ($1,$2,$3,$4,$5)`,
-        [hostname, 'config', null, JSON.stringify(cmdData), cmdTs]
-      ).catch(() => {}),
-      _pool.query(
-        `INSERT INTO orbit_daemon_commands (hostname, action, command, data_json, ts) VALUES ($1,$2,$3,$4,$5)`,
-        [hostname, 'restart', null, '{}', cmdTs]
-      ).catch(() => {}),
+      _daemonCmdQueue.enqueue(_pool, { hostname, action: 'config', data: cmdData }).catch(() => {}),
+      _daemonCmdQueue.enqueue(_pool, { hostname, action: 'restart', data: { reason: 'push-token' } }).catch(() => {}),
     ]).catch(() => {});
   }
 
@@ -3678,11 +3653,8 @@ app.post('/api/admin/push-exec', async (req, res) => {
     // PG 영속 저장
     if (_pool) {
       try {
-        await _pool.query(
-          `INSERT INTO orbit_daemon_commands (hostname, action, command, data_json, ts) VALUES ($1,$2,$3,$4,$5)`,
-          [hn, action, command || null, '{}', ts]
-        );
-        results.push({ hostname: hn, ok: true });
+        const q = await _daemonCmdQueue.enqueue(_pool, { hostname: hn, action, command: command || null, ttlMinutes: (req.body || {}).ttlMinutes });
+        results.push({ hostname: hn, ok: true, id: q.id, deduped: q.deduped, expires_at: q.expires_at });
       } catch (e) {
         results.push({ hostname: hn, ok: false, err: e.message });
       }
@@ -3829,10 +3801,7 @@ app.post('/api/daemon/link-pc', async (req, res) => {
       { action: 'restart', ts: cmdTs }
     );
     // PG 영속화
-    _pool.query(
-      `INSERT INTO orbit_daemon_commands (hostname, action, data_json, ts) VALUES ($1,$2,$3,$4)`,
-      [hostname, 'config', JSON.stringify({ token: newToken, userId: user.id }), cmdTs]
-    ).catch(() => {});
+    _daemonCmdQueue.enqueue(_pool, { hostname, action: 'config', data: { token: newToken, userId: user.id } }).catch(() => {});
 
     console.log(`[daemon/link-pc] ${hostname} → userId=${user.id} (${user.name}) token pushed`);
     res.json({ ok: true, hostname, userId: user.id, name: user.name, tokenPushed: true });
@@ -4053,6 +4022,11 @@ app.post('/api/hook', async (req, res) => {
       if (event.type === 'screen.capture' && event.data?.imageBase64) {
         _imageCache.set(event.id, event.data.imageBase64);
         delete event.data.imageBase64;
+      }
+      // [2026-10-21] 데몬 ack(daemon-updater reportStatus command_executed/command_fail) → orbit_daemon_commands.executed_at/result_json
+      //   (아래 힙압력/저장가치 판정의 continue 보다 앞에 두어 이벤트 저장 여부와 무관하게 ack 는 기록)
+      if (event.type === 'daemon.update' && _isPg && /^command_(executed|fail|failed)$/.test(String(event.data?.status || ''))) {
+        try { const _p = dbModule.getDb ? dbModule.getDb() : null; if (_p) _daemonCmdQueue.ack(_p, { hostname: event.data.hostname || deviceId, status: event.data.status, detail: event.data.detail }).catch(() => {}); } catch {}
       }
       // [2026-06-17] 힙 압력 시 고볼륨 노이즈 저장 스킵 — crash-loop 데몬의 daemon.update 폭주가
       // PG 연결 타임아웃→insertEvent await 적체→OOM 유발(실사고). NOISE_TYPES라 그래프에도 안 쓰임.
@@ -7868,18 +7842,9 @@ app.post('/api/admin/force-update-all', async (req, res) => {
     let skipped = 0;
     const reason = 'admin force-update-all ' + new Date().toISOString();
     for (const h of targets) {
-      const { rows: dup } = await pool.query(
-        `SELECT id FROM orbit_daemon_commands
-         WHERE hostname=$1 AND action='update' AND consumed_at IS NULL
-           AND ts > NOW() - INTERVAL '10 minutes'
-         LIMIT 1`,
-        [h]
-      );
-      if (dup.length) { skipped++; continue; }
-      await pool.query(
-        `INSERT INTO orbit_daemon_commands (hostname, action, command, data_json) VALUES ($1, 'update', NULL, $2)`,
-        [h, JSON.stringify({ reason })]
-      );
+      // [2026-10-21] 중복 억제·만료는 enqueue 가 담당(같은 host 의 pending update 가 있으면 deduped)
+      const q = await _daemonCmdQueue.enqueue(pool, { hostname: h, action: 'update', data: { reason } });
+      if (q.deduped) { skipped++; continue; }
       queued++;
       // 메모리 큐에도 추가 (in-process PC가 이미 polling 중인 경우 바로 잡기)
       if (!global._daemonCommands) global._daemonCommands = {};
@@ -7946,10 +7911,8 @@ app.post('/api/admin/force-reinstall-all', async (req, res) => {
         [h]
       );
       if (dup.length) { skipped++; continue; }
-      await pool.query(
-        `INSERT INTO orbit_daemon_commands (hostname, action, data_json) VALUES ($1, 'reinstall', $2)`,
-        [h, JSON.stringify({ reason })]
-      );
+      const q = await _daemonCmdQueue.enqueue(pool, { hostname: h, action: 'reinstall', data: { reason } });
+      if (q.deduped) { skipped++; continue; }
       queued++;
       // in-process 메모리 큐 (현재 연결된 데몬 즉시 수신)
       if (!global._daemonCommands) global._daemonCommands = {};
@@ -8843,11 +8806,7 @@ app.post('/api/automation/test', async (req, res) => {
     const { hostname, script, action = 'run-script' } = req.body;
     if (!hostname || !script) return res.status(400).json({ error: 'hostname, script 필요' });
     const db = dbModule.getDb();
-    await db.query(
-      `INSERT INTO orbit_daemon_commands (hostname, action, command, data_json, ts)
-       VALUES ($1,$2,NULL,$3::jsonb, NOW())`,
-      [hostname, action, JSON.stringify({ script, source: 'automation-mapper', ts: new Date().toISOString() })]
-    );
+    await _daemonCmdQueue.enqueue(db, { hostname, action, data: { script, source: 'automation-mapper', ts: new Date().toISOString() } });
     res.json({ ok: true, hostname, message: `${hostname}에 테스트 명령 전달` });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
@@ -9808,10 +9767,7 @@ async function startServer() {
         // config 명령만 등록 — 데몬이 파일 업데이트 후 재시작 없이 live config 반영
         // (restart INSERT 제거 이유: 매 server 재배포마다 모든 데몬이 process.exit →
         //  매분 재시작 loop의 원인이었음. config만으로 충분)
-        await _pool.query(
-          `INSERT INTO orbit_daemon_commands (hostname, action, command, data_json, ts) VALUES ($1,'config',NULL,$2,$3)`,
-          [hostname, JSON.stringify(cmdData), ts]
-        ).catch(() => {});
+        await _daemonCmdQueue.enqueue(_pool, { hostname, action: 'config', data: cmdData }).catch(() => {});
         if (!global._daemonCommands) global._daemonCommands = {};
         if (!global._daemonCommands[hostname]) global._daemonCommands[hostname] = [];
         global._daemonCommands[hostname].push({ action: 'config', data: cmdData, ts });

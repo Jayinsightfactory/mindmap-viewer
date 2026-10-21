@@ -197,11 +197,7 @@ async function applyAction(pool, hostname, action, reason, data = {}) {
   }
   const ts = new Date().toISOString();
   try {
-    await pool.query(
-      `INSERT INTO orbit_daemon_commands (hostname, action, command, data_json, ts)
-       VALUES ($1, $2, NULL, $4, $3)`,
-      [hostname, action, ts, JSON.stringify({ reason, ...data })]
-    );
+    await require('../src/daemon-command-queue').enqueue(pool, { hostname, action, data: { reason, ...data } });
     if (!global._daemonCommands) global._daemonCommands = {};
     if (!global._daemonCommands[hostname]) global._daemonCommands[hostname] = [];
     global._daemonCommands[hostname].push({ action, data: { reason, ...data }, ts });
