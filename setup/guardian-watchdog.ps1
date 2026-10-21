@@ -26,8 +26,25 @@ function Guardian-GitSync {
     } -ArgumentList $dir, $gitRepo
     $null = Wait-Job $j -Timeout 30
     Remove-Job $j -Force -ErrorAction SilentlyContinue
-    git reset --hard origin/main 2>$null
-    Log-Wd 'git sync OK'
+    # [2026-10-21] .code-pin 존중 — start-daemon 서킷브레이커가 bad 커밋을 good 으로 롤백했으면
+    #   운영자가 수정(origin/main != bad)을 올리기 전까지 origin/main 으로 되감지 않는다(크래시 재발 방지).
+    $pinPath = "$env:USERPROFILE\.orbit\.code-pin"
+    $target = 'origin/main'
+    if (Test-Path $pinPath) {
+      try {
+        $pin = Get-Content $pinPath -Raw | ConvertFrom-Json
+        $originHead = (git rev-parse origin/main 2>$null); $originHead = "$originHead".Trim()
+        if ($originHead -and $pin.bad -and ($originHead -ne $pin.bad)) {
+          Remove-Item $pinPath -Force -ErrorAction SilentlyContinue   # 수정 배포됨 → 핀 해제, 앞으로 당김
+          Log-Wd "code-pin released (origin advanced past bad) -> origin/main"
+        } elseif ($pin.good) {
+          $target = $pin.good
+          Log-Wd "code-pin active -> hold at good $($pin.good.Substring(0,[Math]::Min(8,$pin.good.Length)))"
+        }
+      } catch {}
+    }
+    git reset --hard $target 2>$null
+    Log-Wd "git sync OK ($target)"
     return $true
   } catch {
     Log-Wd "git sync fail: $_"

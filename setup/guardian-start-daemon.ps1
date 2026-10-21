@@ -58,6 +58,47 @@ $cbLogPath     = "$env:USERPROFILE\.orbit\crashloop.log"
 $fastCount     = 0
 $firstFastAt   = $null
 
+# ── last-known-good 롤백 (2026-10-21) ────────────────────────────────────────
+# 문제: 새 코드(origin/main)를 받은 직후 '구버전 크래시 루프'처럼 데몬이 계속 급사하면,
+#   서킷브레이커는 CPU만 막을 뿐 PC는 데이터 0 상태로 방치된다. 서버가 고친 커밋을 올릴
+#   때까지 '마지막으로 정상 돈 커밋'으로 로컬을 되돌려 수집을 되살린다.
+# 설계:
+#   - 워커가 HEALTHY_SEC 이상 산 런이 끝나면 그때의 git HEAD 를 last-known-good.sha 에 기록.
+#   - 브레이커가 트립했는데 ①현재 HEAD 가 ROLLBACK_WINDOW_SEC 안에 커밋된 '새 배포'이고
+#     ②그와 다른 good SHA 가 있으면 → git reset --hard good + .code-pin 기록 후 백오프.
+#     (HEAD 가 오래됐으면 코드가 아니라 환경 문제(AV/OOM)이므로 롤백하지 않고 보고만 한다.)
+#   - .code-pin {good,bad} 은 watchdog GitSync·OrbitCodeSync 가 존중한다. origin/main 이
+#     bad 와 달라지면(=운영자가 수정 배포) 자동 해제되어 앞으로 당겨진다 → 영구 strand 없음.
+#   - 어느 경우든 crash-moment.log 에 [cause] code=crashloop 을 남겨 다음 기동 때 boot-diag 가
+#     서버로 올린다(+베스트에포트 직접 보고). COM New-Object 없음, 새 창 없음, 재부팅/재설치 아님.
+$HEALTHY_SEC         = 300
+$ROLLBACK_WINDOW_SEC = 3600
+$lastGoodPath        = "$env:USERPROFILE\.orbit\last-known-good.sha"
+$codePinPath         = "$env:USERPROFILE\.orbit\.code-pin"
+
+function Get-GitHead {
+  try { $h = & git -C $repoDir rev-parse HEAD 2>$null; if ($LASTEXITCODE -eq 0) { return "$h".Trim() } } catch {}
+  return ''
+}
+function Get-HeadAgeSec {
+  try { $ct = & git -C $repoDir log -1 --format=%ct 2>$null; if ($LASTEXITCODE -eq 0 -and $ct) { return [int](([DateTimeOffset]::UtcNow.ToUnixTimeSeconds()) - [int64]"$ct".Trim()) } } catch {}
+  return 999999999
+}
+function Report-Crashloop([string]$detail) {
+  # 베스트에포트 직접 보고(서버 다운/네트워크 실패해도 무해). boot-diag 가 다음 기동 때 확실히 올림.
+  try {
+    $server = $env:ORBIT_SERVER_URL
+    if (-not $server) { try { $server = (Get-Content "$env:USERPROFILE\.orbit-config.json" -Raw | ConvertFrom-Json).serverUrl } catch {} }
+    if (-not $server) { return }
+    $tok = $env:ORBIT_TOKEN; if (-not $tok) { try { $tok = (Get-Content "$env:USERPROFILE\.orbit-config.json" -Raw | ConvertFrom-Json).token } catch {} }
+    $hdrs = @{ 'X-Device-Id' = [Uri]::EscapeDataString($env:COMPUTERNAME) }
+    if ($tok) { $hdrs['Authorization'] = "Bearer $tok" }
+    $d = ($detail -replace '[\x22\\]', ' '); $d = $d.Substring(0, [Math]::Min(200, $d.Length))
+    $body = "{`"events`":[{`"id`":`"crashloop-$env:COMPUTERNAME-$([DateTimeOffset]::Now.ToUnixTimeSeconds())`",`"type`":`"daemon.crashmoment`",`"source`":`"start-daemon`",`"sessionId`":`"daemon-$env:COMPUTERNAME`",`"timestamp`":`"$((Get-Date).ToString('o'))`",`"data`":{`"hostname`":`"$env:COMPUTERNAME`",`"causeCode`":`"crashloop`",`"causeDetail`":`"$d`"}}]}"
+    Invoke-RestMethod -Uri "$server/api/hook" -Method POST -ContentType 'application/json' -Body $body -Headers $hdrs -TimeoutSec 6 | Out-Null
+  } catch {}
+}
+
 while ($true) {
   $startAt = Get-Date
   $ts = $startAt.ToString('yyyy-MM-dd HH:mm:ss')
@@ -121,6 +162,28 @@ while ($true) {
       try { $payload | Out-File -Encoding utf8 -FilePath $safeModePath -Force } catch {}
       "[$ts] CIRCUIT BREAKER: $reason -> back off ${BACKOFF_SEC}s" | Out-File -Append -Encoding utf8 -FilePath $cbLogPath
       "[$ts] CIRCUIT BREAKER tripped ($reason) — sleeping ${BACKOFF_SEC}s" | Out-File -Append -Encoding utf8 -FilePath $dlogPath
+
+      # ── last-known-good 롤백 판단 ──────────────────────────────────────────
+      $head = Get-GitHead
+      $headAge = Get-HeadAgeSec
+      $good = ''; try { $good = (Get-Content $lastGoodPath -Raw -ErrorAction SilentlyContinue).Trim() } catch {}
+      $rolledBack = ''
+      if ($good -and $head -and ($good -ne $head) -and ($headAge -le $ROLLBACK_WINDOW_SEC)) {
+        # 새 배포 직후의 크래시 루프 = 코드가 범인 → 마지막 정상 커밋으로 되돌리고 핀 고정
+        try {
+          & git -C $repoDir reset --hard $good 2>$null | Out-Null
+          $pin = '{"good":"' + $good + '","bad":"' + $head + '","at":"' + (Get-Date).ToUniversalTime().ToString('o') + '"}'
+          [System.IO.File]::WriteAllText($codePinPath, $pin, [System.Text.UTF8Encoding]::new($false))
+          $rolledBack = $good.Substring(0, [Math]::Min(8, $good.Length))
+          "[$ts] ROLLBACK head=$($head.Substring(0,[Math]::Min(8,$head.Length))) -> good=$rolledBack (headAge ${headAge}s) pin set" | Out-File -Append -Encoding utf8 -FilePath $cbLogPath
+        } catch { "[$ts] ROLLBACK fail: $_" | Out-File -Append -Encoding utf8 -FilePath $cbLogPath }
+      }
+
+      # ── code=crashloop 보고 (crash-moment 에 [cause] 남겨 boot-diag 가 확실히 업로드 + 직접 1회) ─
+      $cdetail = "fast-exit x$fastCount/${windowSec}s head=$($head.Substring(0,[Math]::Min(8,"$head".Length))) headAge=${headAge}s" + $(if ($rolledBack) { " rolledBackTo=$rolledBack" } else { " noRollback(env?)" })
+      try { "[cause] code=crashloop $cdetail" | Out-File -Append -Encoding utf8 -FilePath $crashMoment } catch {}
+      Report-Crashloop $cdetail
+
       Start-Sleep -Seconds $BACKOFF_SEC
       $fastCount = 0
       $firstFastAt = $null
@@ -131,6 +194,11 @@ while ($true) {
     # 정상 수명으로 돌았으면 연속 카운터 리셋
     $fastCount = 0
     $firstFastAt = $null
+    # HEALTHY_SEC 이상 산 런 = 이 커밋은 '정상 동작' 증명 → last-known-good 갱신
+    if ($ranSec -ge $HEALTHY_SEC) {
+      $gh = Get-GitHead
+      if ($gh) { try { Set-Content -Path $lastGoodPath -Value $gh -Encoding ascii -ErrorAction SilentlyContinue } catch {} }
+    }
   }
 
   Start-Sleep -Seconds 10

@@ -118,10 +118,75 @@ function _post(event) {
 }
 
 /**
+ * classifyCause(tails) — 직전 런의 꼬리에서 '죽은 원인 코드'를 뽑는다(2026-10-21).
+ * 서버가 code 하나로 다운 유형을 집계·분기할 수 있게. 순수 함수, throw 안 함.
+ * 우선순위: 수퍼바이저가 명시한 [cause] 줄 > 종료코드/stderr 패턴.
+ * 반환 { code, detail } — code 목록:
+ *   graceful        정상 종료(code=0)
+ *   crashloop       수퍼바이저 서킷브레이커가 [cause] 로 명시(구버전 크래시 루프 등)
+ *   oom             메모리 한도/힙 소진(graceful memory_limit 포함)
+ *   missing-file    require 실패(Cannot find module) / ENOENT = AV 격리 의심
+ *   av-quarantine   네이티브 종료 + 핵심 모듈 파일 소실(AV가 node_modules 격리)
+ *   token-expired   401/토큰 무효로 전송 실패 누적
+ *   port            EADDRINUSE 등 포트 충돌
+ *   killed-by:<p>   수퍼바이저가 종료 직전 포그라운드 보안 프로세스를 기록
+ *   native-crash    음수/대형 종료코드(0xC0000005 등) — 원인 미상 네이티브 abort
+ *   unknown         분류 불가
+ */
+function classifyCause(tails) {
+  const cm   = String((tails && tails.crashMoment) || '');
+  const se   = String((tails && tails.workerStderr) || '');
+  const stg  = String((tails && tails.bootStagePrev) || '');
+  const hay  = (cm + '\n' + se + '\n' + stg);
+  const low  = hay.toLowerCase();
+  // 1) 수퍼바이저가 명시한 원인(최우선)
+  const mCause = cm.match(/\[cause\]\s+code=([^\s]+)(?:\s+(.*))?/i);
+  if (mCause) return { code: mCause[1], detail: (mCause[2] || '').slice(0, 200) };
+  const mKill = cm.match(/\[cause\]\s+killed-by[:=]\s*([^\s]+)/i) || cm.match(/killed-by[:=]\s*([^\s]+)/i);
+  if (mKill) return { code: 'killed-by:' + mKill[1], detail: 'security/av foreground kill' };
+  // 2) 마지막 [exit] 줄의 종료코드
+  const exits = cm.match(/\[exit\][^\n]*code=(-?\d+)[^\n]*/gi) || [];
+  const lastExit = exits.length ? exits[exits.length - 1] : '';
+  const mCode = lastExit.match(/code=(-?\d+)/);
+  const code = mCode ? parseInt(mCode[1], 10) : null;
+  // 3) stderr/stage 패턴
+  if (/eaddrinuse|address already in use/.test(low)) return { code: 'port', detail: 'EADDRINUSE' };
+  if (/cannot find module|module not found|enoent/.test(low)) {
+    const nativeMissing = /uiohook|screen-capture|node_modules/.test(low);
+    return { code: nativeMissing ? 'av-quarantine' : 'missing-file', detail: _firstMatch(hay, /(Cannot find module[^\n]*|ENOENT[^\n]*)/i) };
+  }
+  if (/\b401\b|unauthorized|invalid token|token.*expired/.test(low)) return { code: 'token-expired', detail: 'auth 401' };
+  if (/out of memory|heap out of memory|memory_graceful_restart|javascript heap/.test(low)) return { code: 'oom', detail: _firstMatch(hay, /([^\n]*heap[^\n]*|memory_graceful_restart[^\n]*)/i) };
+  if (code === 0) return { code: 'graceful', detail: 'exit 0' };
+  if (code !== null && (code < 0 || code > 1000)) {
+    // 0xC0000005=3221225477 등 네이티브 abort. 핵심 모듈 파일이 실제로 없으면 AV 격리로 승격.
+    const avq = _coreModuleMissing();
+    return { code: avq ? 'av-quarantine' : 'native-crash', detail: 'exitcode ' + code + (avq ? ' + core module file missing' : '') };
+  }
+  if (code === 1) return { code: 'native-crash', detail: 'main throw (exit 1)' };
+  return { code: 'unknown', detail: lastExit.slice(0, 120) };
+}
+
+function _firstMatch(s, re) { try { const m = String(s).match(re); return m ? m[0].slice(0, 200) : ''; } catch { return ''; } }
+
+// AV 격리 판정 보조: 데몬 핵심 네이티브 모듈 파일이 디스크에서 사라졌는지(AV가 .node 격리하면 재require 실패).
+function _coreModuleMissing() {
+  try {
+    const root = path.join(__dirname, '..');
+    const probes = [
+      path.join(root, 'node_modules', 'uiohook-napi'),
+      path.join(root, 'daemon', 'personal-agent.js'),
+    ];
+    return probes.some(p => !fs.existsSync(p));
+  } catch { return false; }
+}
+
+/**
  * buildEvent(tails) — 서버로 보낼 daemon.crashmoment 이벤트. 꼬리 문자열만 담아 작게.
  */
 function buildEvent(tails) {
   const cfg = _readConfig();
+  const cause = classifyCause(tails);
   return {
     id: 'crashmoment-' + os.hostname() + '-' + Date.now(),
     type: 'daemon.crashmoment',
@@ -133,6 +198,8 @@ function buildEvent(tails) {
       userId: cfg.userId || 'unknown',
       platform: process.platform,
       nodeVersion: process.version,
+      causeCode: cause.code,            // [2026-10-21] 다운 원인 분류(서버 집계·분기용)
+      causeDetail: cause.detail,
       crashMoment: tails.crashMoment,   // 수퍼바이저가 남긴 [exit] code/ranMs/lastStage 줄들
       bootStagePrev: tails.bootStagePrev, // 직전 런의 단계 마커(마지막 줄=죽은 모듈)
       workerStderr: tails.workerStderr,   // 워커 stderr 꼬리(네이티브 abort 메시지 등)
@@ -171,7 +238,7 @@ async function flushOnBoot(postFn) {
 }
 
 module.exports = {
-  beginRun, stage, flushOnBoot, buildEvent,
+  beginRun, stage, flushOnBoot, buildEvent, classifyCause,
   _setOrbitDir, _collectTails, _tailFile, _post,
   get _paths() { return { ORBIT_DIR, BOOT_STAGE_LOG, BOOT_STAGE_PREV, CRASH_MOMENT, WORKER_STDERR }; },
 };
