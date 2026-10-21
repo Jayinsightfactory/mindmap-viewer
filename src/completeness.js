@@ -184,7 +184,10 @@ function mount(app, { dbModule, adminOk }) {
       const days = Math.min(Math.max(parseInt(req.query.days) || 7, 1), 28);
       const agg = await aggregate(p);
       const rep = buildReport(agg, days);
-      try { const { rows } = await p.query(`SELECT user_id, hostname, kst_date, cause, action, ts, dry_run FROM orbit_completeness_actions WHERE ts > NOW() - INTERVAL '14 days' ORDER BY ts DESC LIMIT 100`); rep.actions = rows; } catch { rep.actions = []; }
+      // 발송 이력 + 그 restart 가 PC 에서 실제 소비됐는지(consumed_at: 소비됨=PC 켜져 있었고 guardian/워커가 받아감, NULL=아직 안 받아감)
+      try { const { rows } = await p.query(`SELECT a.user_id, a.hostname, a.kst_date, a.cause, a.action, a.ts, a.dry_run,
+          (SELECT MIN(c.consumed_at) FROM orbit_daemon_commands c WHERE c.hostname = a.hostname AND c.action = 'restart' AND c.ts >= a.ts - INTERVAL '5 seconds' AND c.data_json->>'reason' = 'completeness-auto') AS consumed_at
+         FROM orbit_completeness_actions a WHERE a.ts > NOW() - INTERVAL '14 days' ORDER BY a.ts DESC LIMIT 100`); rep.actions = rows; } catch { rep.actions = []; }
       res.json(rep);
     } catch (e) { console.error('[completeness] error:', e.message); res.status(500).json({ error: e.message }); }
   });
