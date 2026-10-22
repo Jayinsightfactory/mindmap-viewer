@@ -53,7 +53,8 @@ function _buildPrompt(ctx) {
   "automationScore": 0.0,
   "automatable": false,
   "automationHint": "자동화 방법 또는 null"
-}`;
+}
+fields 규칙: 버튼·대화상자 버튼(저장/취소/확인)은 빼고 값이 적힌 칸만. 표 화면은 거래처·품목·단가·수량 셀 값을 각각 field 로(보이면 3개 이상). 카톡·WhatsApp·WeChat 대화는 "방 이름"·"보낸 사람"·"요청 내용"(품목·수량·차수)·"첨부 파일명"·"내가 보낸 답" 5개 field 필수(안 보이면 null). 보이는 값만, 추측 금지.`;
 }
 
 function _parseResult(text) {
