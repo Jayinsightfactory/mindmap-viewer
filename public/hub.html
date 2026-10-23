@@ -1,0 +1,211 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>통합 대시보드</title>
+<style>
+:root{--bg:#f6f7f9;--card:#fff;--ink:#14171c;--sub:#5b6472;--line:#e3e6eb;--acc:#2f5bd3;--ok:#1f8a4c;--okb:#e5f5ec;--warn:#9a6700;--warnb:#fdf3d7;--dead:#6b7280;--deadb:#eceef1;}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0f1115;--card:#171a21;--ink:#e8eaee;--sub:#9aa3b2;--line:#2a2f3a;--acc:#7c9cff;--ok:#4cc38a;--okb:#16322a;--warn:#e3b341;--warnb:#3a2f12;--dead:#8b93a1;--deadb:#252a33;}}
+:root[data-theme="dark"]{--bg:#0f1115;--card:#171a21;--ink:#e8eaee;--sub:#9aa3b2;--line:#2a2f3a;--acc:#7c9cff;--ok:#4cc38a;--okb:#16322a;--warn:#e3b341;--warnb:#3a2f12;--dead:#8b93a1;--deadb:#252a33;}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.5 -apple-system,"Segoe UI","Malgun Gothic",sans-serif;overflow-x:hidden}
+a{color:inherit;text-decoration:none}
+header{position:sticky;top:0;z-index:5;background:var(--card);border-bottom:1px solid var(--line);padding:10px 16px;display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+header h1{font-size:17px;margin:0}
+header .meta{color:var(--sub);font-size:12px;flex:1;min-width:0}
+header button{background:var(--bg);border:1px solid var(--line);color:var(--ink);border-radius:8px;padding:6px 10px;cursor:pointer;font:inherit}
+.wrap{display:grid;grid-template-columns:200px minmax(0,1fr);gap:20px;max-width:1280px;margin:0 auto;padding:16px}
+nav.side{position:sticky;top:64px;align-self:start;display:flex;flex-direction:column;gap:2px}
+nav.side a{padding:7px 10px;border-radius:8px;color:var(--sub)}
+nav.side a:hover{background:var(--card);color:var(--ink)}
+main{min-width:0}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:18px}
+.kpi{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 14px;min-width:0}
+.kpi .l{color:var(--sub);font-size:12px}
+.kpi .v{font-size:24px;font-weight:650;margin-top:2px;font-variant-numeric:tabular-nums;word-break:break-all}
+.kpi .h{color:var(--sub);font-size:11px;margin-top:2px;overflow-wrap:anywhere}
+.kpi.fail .v{color:var(--dead);font-size:15px;font-weight:500}
+.kpi.need .v{color:var(--warn);font-size:15px;font-weight:500}
+section{margin-bottom:26px;scroll-margin-top:70px}
+section h2{font-size:15px;margin:0 0 10px;display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}
+section h2 small{color:var(--sub);font-weight:400;font-size:12px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:10px}
+.pc{display:block;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 14px;min-width:0;transition:border-color .15s}
+.pc:hover{border-color:var(--acc)}
+.pc .t{font-weight:600;display:flex;gap:6px;align-items:center;justify-content:space-between}
+.pc .t span:first-child{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pc .d{color:var(--sub);font-size:12px;margin-top:4px}
+.pc .p{color:var(--sub);font-size:11px;margin-top:6px;font-family:ui-monospace,Consolas,monospace;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.b{flex:none;font-size:11px;padding:1px 7px;border-radius:99px;font-weight:500;background:var(--deadb);color:var(--dead)}
+.b.ok{background:var(--okb);color:var(--ok)}.b.auth{background:var(--warnb);color:var(--warn)}.b.ext{background:var(--deadb);color:var(--acc)}
+.pc.deadc{opacity:.6}
+.owner{border-style:dashed}
+.login{background:var(--warnb);color:var(--warn);border-radius:10px;padding:10px 14px;margin-bottom:14px;display:none}
+.login a{text-decoration:underline}
+@media (max-width:760px){header .meta{order:3;flex-basis:100%}.wrap{grid-template-columns:minmax(0,1fr);padding:12px 16px}nav.side{position:static;flex-direction:row;flex-wrap:wrap}nav.side a{padding:4px 8px;font-size:12px;background:var(--card)}.kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.grid{grid-template-columns:minmax(0,1fr)}}
+</style>
+</head>
+<body>
+<header>
+  <h1>통합 대시보드</h1>
+  <div class="meta" id="meta">불러오는 중…</div>
+  <button id="reload" type="button">새로고침</button>
+  <button id="theme" type="button">테마</button>
+</header>
+<div class="wrap">
+  <nav class="side" id="side"></nav>
+  <main>
+    <div class="login" id="login">로그인 토큰이 없습니다 — 숫자(KPI)는 로그인 후 보입니다. <a href="/my-work.html">로그인 페이지로</a></div>
+    <div class="kpis" id="topk"></div>
+    <div id="sections"></div>
+  </main>
+</div>
+<script>
+(function(){
+'use strict';
+// 상태 판정은 orbit-one·페이지 인벤토리와 같은 규칙: 200·400=정상, 401·403=인증필요(살아있음), 404·5xx·타임아웃=끊김. 실패 시 가짜 숫자 금지.
+var MOYI='https://nowlink-api-production.up.railway.app';
+var TOKEN=null; try{TOKEN=localStorage.getItem('orbit_token');}catch(e){}
+var cache={};
+function get(path,ms){
+  if(cache[path])return cache[path];
+  var ctl=new AbortController(); var tm=setTimeout(function(){ctl.abort();},ms||20000);
+  var h={}; if(TOKEN)h.Authorization='Bearer '+TOKEN;
+  cache[path]=fetch(path,{headers:h,signal:ctl.signal,credentials:'same-origin'}).then(function(r){
+    clearTimeout(tm);
+    return r.text().then(function(t){var j=null;try{j=JSON.parse(t);}catch(e){} return {status:r.status,json:j};});
+  }).catch(function(){clearTimeout(tm);return {status:0,json:null};});
+  return cache[path];
+}
+function state(s){ if(s===200||s===400)return 'ok'; if(s===401||s===403)return 'auth'; return 'dead'; }
+var LABEL={ok:'정상',auth:'인증필요',dead:'끊김',ext:'MOYI'};
+function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
+
+function completeness(){ return get('/api/completeness',30000); }
+function daemon(){ return get('/api/admin/daemon-health'); }
+function avgPct(j){ var e=(j&&j.employees||[]).filter(function(x){return x.overallPct!=null;}); if(!e.length)return null; return Math.round(e.reduce(function(a,x){return a+x.overallPct;},0)/e.length*10)/10; }
+// KPI: f(json) -> {v,h} 또는 null(=불러오기 실패)
+var K={
+  recv:{l:'직원 평균 수신률',src:completeness,f:function(j){var a=avgPct(j);return a==null?null:{v:a+'%',h:'최근 '+(j.days||'?')+'일 · '+(j.employees||[]).length+'명'};}},
+  lost:{l:'유실 인원(50% 미만)',src:completeness,f:function(j){if(!j||!j.employees)return null;var l=j.employees.filter(function(x){return x.lost;});return {v:l.length+'명',h:l.slice(0,3).map(function(x){return x.name;}).join(', ')||'없음'};}},
+  lostDays:{l:'유실일 있는 직원',src:completeness,f:function(j){if(!j||!j.employees)return null;return {v:j.employees.filter(function(x){return x.lostDays>0;}).length+'명',h:'최근 '+(j.days||'?')+'일'};}},
+  dmn:{l:'데몬 정상 / 켜진 전체',src:daemon,f:function(j){if(!j||!j.summary)return null;return {v:j.summary.ok+' / '+j.total,h:'끊김 '+(j.summary.dead||0)+' · 무응답 '+(j.summary.silent||0)};}},
+  dmnBad:{l:'데몬 이상',src:daemon,f:function(j){if(!j||!j.summary)return null;return {v:((j.summary.degraded||0)+(j.summary.dead||0)+(j.summary.silent||0))+'대',h:'꺼진 PC는 집계 안 됨'};}},
+  xray:{l:'자동화 제안',src:function(){return get('/api/xray/proposals');},f:function(j){if(!j)return null;var a=j.opportunities||j.proposals||(Array.isArray(j)?j:null);return a?{v:a.length+'건',h:j.note||'X-ray 기준'}:null;}}
+};
+// 섹션: [페이지, 제목, 한줄 용도, 대표 읽기전용 API | null(페이지만) | 'ext'(MOYI 외부)]
+var S=[
+ {id:'work',t:'직원 작업데이터 · 수신률',k:['recv','lost','lostDays'],p:[
+  ['my-work.html','내 작업 데이터','직원 본인 수집·업무시간 통합 탭',null],
+  ['work-daylog.html','하루 작업 일지','하루 단위 작업 로그·해독 품질','/api/flow/vision-quality'],
+  ['work-detail.html','작업 상세','화면·입력 원본 확인','/api/learning/capture-funnel'],
+  ['work-logs.html','직원 작업 로그','직원별 로그 목록','/api/learning/logs'],
+  ['work-timetable.html','업무시간 타임테이블','시간/일/주/월 히트맵','/api/timetable/range'],
+  ['work-flow.html','작업 흐름','하루 앱 전환 흐름','/api/work-flow/day'],
+  ['work-unified.html','업무 데이터 통합본','직원 업무 데이터 합본','/api/flow/work-unified'],
+  ['my-privacy.html','내 수집 내역','개인정보 수집 확인·일시정지','/api/privacy/me'],
+  ['cctv.html','업무 관찰(동의)','동의자 화면 세션','/api/vision/task-sessions']]},
+ {id:'flow',t:'업무흐름 · 프로세스',k:[],p:[
+  ['xray.html','회사 X-ray','업무 병목 전체 조감','/api/flow/ops-report'],
+  ['intent-map.html','의도 지도','업무 의도 지도','/api/flow/ops-report'],
+  ['deepdive.html','세밀분석','앱→앱 작업 재구성','/api/admin/all-users'],
+  ['orderflow.html','발주 파이프라인 검증','발주 ①②③ 확인·정리','/api/flow/ops-report'],
+  ['process-mining.html','프로세스 마이닝','병목·이상 마이닝','/api/mining/bottlenecks'],
+  ['orbit-timeline.html','목적 타임라인','업무 목적별 타임라인','/api/purposes/timeline'],
+  ['knowledge.html','지식 그래프','카톡·전산 지식 연결','/api/admin/kakao-intel'],
+  ['org-hierarchy.html','조직 계층 구조','조직도','/api/auth/me']]},
+ {id:'auto',t:'자동화 · 승인',k:['xray'],p:[
+  ['auto-proposals.html','자동화 제안','X-ray 기반 자동화 후보','/api/xray/proposals'],
+  ['automation.html','자동화 스크립트 관리','dry-run 스크립트 목록','/api/scripts/list'],
+  ['automation-flow.html','자동화 워크플로우','워크플로우 편집','/api/automation/workflows'],
+  ['automation-visual.html','자동화 시각화','자동화 구조 시각화','/api/automation/master'],
+  [MOYI+'/moyi-approvals.html','MOYI 승인 인박스','자동화 실행 승인','ext'],
+  [MOYI+'/moyi-automation.html','MOYI 자동화 운영','자동화 운영·수신률','ext']]},
+ {id:'erp',t:'전산(nenova) · 매출',k:[],p:[
+  ['nenova-dashboard.html','MOYI 전산','전산 이벤트·흐름 매칭','/api/events/health'],
+  ['orbit-hub.html','Company OS','전산·학습 종합','/api/nenova/dashboard'],
+  ['kakao-intel.html','카톡 인텔리전스','카톡 업무 신호·채권','/api/admin/kakao-intel'],
+  ['owner.html','사장님 브리핑','사장님용 요약','/api/flow/ops-report']]},
+ {id:'sys',t:'시스템 상태 · 데몬',k:['dmn','dmnBad'],p:[
+  ['orbit-one.html','ORBIT ONE 통합 관제','API 399종 생존 관제',null],
+  ['orbit-os.html','MOYI OS','회사 운영 대시보드','/api/archive/stats'],
+  ['app.html','업무 인텔리전스 콘솔','PC 목록·운영 리포트','/api/admin/pc-list'],
+  ['team-command.html','업무 현황판','실시간 인력 현황','/api/workforce/live'],
+  ['history.html','히스토리 & 롤백','세션 히스토리','/api/sessions'],
+  ['issues.html','이슈 보드','이슈 목록','/api/issues']]},
+ {id:'ana',t:'분석 · 인사이트',k:[],p:[
+  ['admin-analysis.html','업무 분석 대시보드','관리자 종합 분석','/api/activity/purposes'],
+  ['analysis.html','작업 분석 대시보드','이상·결정·히트맵','/api/intelligence/heatmap'],
+  ['admin-analytics.html','Analytics Admin','사용 통계','/api/analytics/summary'],
+  ['dashboard.html','MOYI Dashboard','그래프·세션 통계','/api/stats'],
+  ['team-dashboard.html','팀 AI 대시보드','팀 리포트','/api/report/daily'],
+  ['conversation-dashboard.html','작업 내역','세션 요약','/api/sessions/summary'],
+  ['chat-history.html','대화 이력','대화 세션 목록','/api/sessions'],
+  ['consultant.html','컨설턴트 대시보드','진단 리포트','/api/company'],
+  ['contributor-dashboard.html','기여자 대시보드','Market 기여자','/api/market/contributors'],
+  ['orbit3d.html','작업 우주(3D)','3D 시각화',null],
+  [MOYI+'/moyi-coach.html','MOYI AI 질문 코치','팀 질문 리포트','ext'],
+  [MOYI+'/moyi-coach-me.html','내 AI 질문 리포트','개인 질문 리포트','ext']]},
+ {id:'owner',t:'사장님 전용',k:[],owner:true,p:[
+  [MOYI+'/moyi-automation.html','지시 품질','사장님 AI 지시 품질 (직원 대부분 AI 미사용 — 사장님 카드만)','ext']]}
+];
+var TOP=['recv','lost','dmn','xray'];
+var counts;
+
+function kpiBox(key,el){
+  var d=K[key]; el.className='kpi'; el.innerHTML='<div class="l">'+esc(d.l)+'</div><div class="v">…</div>';
+  if(!TOKEN){el.className='kpi need';el.querySelector('.v').textContent='로그인 필요';return;}
+  d.src().then(function(r){
+    var st=state(r.status), out=st==='ok'?d.f(r.json):null;
+    if(out){el.innerHTML='<div class="l">'+esc(d.l)+'</div><div class="v">'+esc(out.v)+'</div><div class="h">'+esc(out.h)+'</div>';}
+    else{el.className=st==='auth'?'kpi need':'kpi fail';el.innerHTML='<div class="l">'+esc(d.l)+'</div><div class="v">'+(st==='auth'?'권한 없음':'불러오기 실패')+'</div><div class="h">HTTP '+(r.status||'타임아웃')+'</div>';}
+  });
+}
+function render(){
+  document.getElementById('login').style.display=TOKEN?'none':'block';
+  var top=document.getElementById('topk'); top.innerHTML='';
+  TOP.forEach(function(k){var e=document.createElement('div');top.appendChild(e);kpiBox(k,e);});
+  var side=document.getElementById('side'), box=document.getElementById('sections'); side.innerHTML=''; box.innerHTML='';
+  var pend=[]; counts={ok:0,auth:0,dead:0,ext:0};
+  S.forEach(function(s){
+    side.insertAdjacentHTML('beforeend','<a href="#'+s.id+'">'+esc(s.t)+'</a>');
+    var sec=document.createElement('section'); sec.id=s.id;
+    sec.innerHTML='<h2>'+esc(s.t)+' <small>'+s.p.length+'개 페이지</small></h2>'+(s.k.length?'<div class="kpis"></div>':'')+'<div class="grid"></div>';
+    box.appendChild(sec);
+    if(s.k.length){var kb=sec.querySelector('.kpis');s.k.forEach(function(k){var e=document.createElement('div');kb.appendChild(e);kpiBox(k,e);});}
+    var g=sec.querySelector('.grid');
+    s.p.forEach(function(p){
+      var ext=p[0].indexOf('http')===0, href=ext?p[0]:'/'+p[0];
+      var a=document.createElement('a'); a.className='pc'+(s.owner?' owner':''); a.href=href;
+      if(ext){a.target='_blank';a.rel='noopener';}
+      a.innerHTML='<div class="t"><span>'+esc(p[1])+'</span><span class="b">확인 중</span></div><div class="d">'+esc(p[2])+'</div><div class="p">'+esc(p[3]&&p[3]!=='ext'?p[3]:href)+'</div>';
+      g.appendChild(a);
+      var badge=a.querySelector('.b');
+      if(p[3]==='ext'){badge.className='b ext';badge.textContent=LABEL.ext;badge.title='MOYI(nowlink) 별도 서버 — 교차 출처라 여기서 상태 확인 안 함';counts.ext++;return;}
+      pend.push(get(href,10000).then(function(r){
+        if(state(r.status)==='dead')return 'dead';
+        return p[3]?get(p[3]).then(function(x){return state(x.status);}):'ok';
+      }).then(function(st){
+        counts[st]++; badge.className='b '+st; badge.textContent=LABEL[st];
+        if(p[3])badge.title='대표 API '+p[3];
+        if(st==='dead')a.classList.add('deadc');
+      }));
+    });
+  });
+  document.getElementById('meta').textContent='페이지 상태 확인 중…';
+  Promise.all(pend).then(function(){
+    document.getElementById('meta').textContent='정상 '+counts.ok+' · 인증필요 '+counts.auth+' · 끊김 '+counts.dead+' · MOYI 외부 '+counts.ext+' — '+new Date().toLocaleTimeString('ko-KR');
+  });
+}
+document.getElementById('reload').onclick=function(){cache={};render();};
+document.getElementById('theme').onclick=function(){
+  var r=document.documentElement, dark=r.dataset.theme?r.dataset.theme==='dark':matchMedia('(prefers-color-scheme: dark)').matches;
+  r.dataset.theme=dark?'light':'dark'; try{localStorage.setItem('hub_theme',r.dataset.theme);}catch(e){}
+};
+try{var t=localStorage.getItem('hub_theme');if(t)document.documentElement.dataset.theme=t;}catch(e){}
+render();
+})();
+</script>
+</body>
+</html>
