@@ -42,9 +42,9 @@ function apiPost(p, body) { return new Promise(r => { const u = new URL(p, ORBIT
 
 let _lastCliError = '';    // 마지막 CLI 실패 사유(배치 종료 시 요약 출력용)
 let _cliErrLogged = false; // 같은 배치에서 동일 오류 도배 방지
-function cliOnce(prompt, model) {
+function cliOnce(prompt, model, extra = []) {
   return new Promise(resolve => {
-    const child = execFile(CLAUDE_CLI, ['-p', prompt, '--model', model || MODEL], { timeout: 150000, maxBuffer: 2 * 1024 * 1024 }, (err, stdout, stderr) => {
+    const child = execFile(CLAUDE_CLI, ['-p', prompt, '--model', model || MODEL, ...extra], { timeout: 150000, maxBuffer: 2 * 1024 * 1024 }, (err, stdout, stderr) => {
       // [2026-09-10] 실패 원인을 반드시 남긴다.
       // 기존에는 err/stderr를 통째로 버려서 CLI 인증 만료 같은 치명적 원인이
       // "예측/채점 실패(스킵)" 한 줄로만 보였고, 그 탓에 2026-08-26 이후
@@ -75,7 +75,7 @@ function cliOnce(prompt, model) {
   });
 }
 // 재시도 래퍼(CLI 단발 null 손실 방지). model 미지정 시 MODEL.
-async function cli(prompt, model) { for (let i = 0; i < 2; i++) { const r = await cliOnce(prompt, model); if (r) return r; await new Promise(s => setTimeout(s, 800)); } return null; }
+async function cli(prompt, model, extra) { for (let i = 0; i < 2; i++) { const r = await cliOnce(prompt, model, extra); if (r) return r; await new Promise(s => setTimeout(s, 800)); } return null; }
 const minStep = s => ({ screen: s.screen, activity: (s.activity || '').slice(0, 160), app: s.app, nenovaAction: s.nenovaAction || null, gapSec: s.gapSec, clickFields: (s.clickFields || []).map(f => ({ name: f.name, clickXY: f.clickXY || null, value: f.value != null ? String(f.value).slice(0, 80) : null, source: f.source || null })) });
 function localCategory(actual) {
   const hay = `${actual.activity || ''} ${actual.screen || ''} ${actual.nenovaAction || ''}`.toLowerCase();
@@ -87,7 +87,41 @@ function localCategory(actual) {
   return '기타';
 }
 
-async function predictAndScore(who, sessionKey, cutIdx, prefix, actual) {
+// [2026-10-23 v3] 캡처 이미지 정답지: 해독 텍스트(요약·누락 많음) 대신 실제 다음 캡처 이미지를 채점기가 직접 본다.
+//   사장님 지시 "캡쳐 이미지로 검증테스트". SHADOW_JUDGE=text 면 기존 v2 텍스트 채점.
+const JUDGE = (process.env.SHADOW_JUDGE || 'image').toLowerCase();
+const MAX_GAP = parseInt(process.env.SHADOW_MAX_GAP_SEC) || 600; // 다음 스텝이 10분 넘게 뒤면 '바로 다음'이 아니라 예측점에서 제외
+function downloadImage(urlPath, file) {
+  return new Promise(r => { const u = new URL(urlPath, ORBIT_SERVER); const mod = u.protocol === 'https:' ? https : http;
+    const q = mod.request({ hostname: u.hostname, port: u.port || 443, path: u.pathname + u.search, method: 'GET', headers: { Authorization: 'Bearer ' + ORBIT_TOKEN }, timeout: 40000 }, res => {
+      if (res.statusCode !== 200 || !/image/.test(res.headers['content-type'] || '')) { res.resume(); return r(false); }
+      const w = fs.createWriteStream(file); res.pipe(w); w.on('finish', () => r(true)); w.on('error', () => r(false)); });
+    q.on('error', () => r(false)); q.on('timeout', () => { q.destroy(); r(false); }); q.end(); });
+}
+async function judgeWithImage(pred, actual, thumb) {
+  if (!thumb) return null;
+  const file = path.join(TMP, 'judge-' + Date.now() + '.jpg');
+  if (!(await downloadImage(thumb, file))) return null;
+  try {
+    return await cli(`너는 예측 채점기다. 직원의 "실제 다음 화면" 캡처 이미지 파일을 Read 도구로 열어 직접 보고, 아래 예측이 맞았는지 5차원으로 채점하라.
+이미지 파일: ${file}
+참고(이미지 해독 요약, 틀릴 수 있음 — 이미지가 우선): ${JSON.stringify({ screen: actual.screen, activity: actual.activity, clickFields: actual.clickFields })}
+
+예측: ${JSON.stringify(pred)}
+
+각 0~1(0=다름, 0.5=부분, 1=의미상 동일). 이미지에서 확인 가능한 것만 근거로:
+- screenMatch: 이미지의 앱·업무화면이 predScreen 과 같은가
+- actionMatch: 이미지 상태(입력 중 커서·선택 강조·저장 대화상자·화면 전환 등)가 predAction 과 맞는가
+- targetMatch: predTarget 필드/버튼이 이미지에서 활성·작업 대상인가
+- coordMatch: predClickRegion 이 이미지의 작업 위치와 근접한가
+- valueMatch: predValue 가 이미지에 보이는 입력값과 같은가 (예측값이 "-" 이고 이미지에도 새 입력이 없으면 1)
+이미지로 판단 불가한 차원은 null, overall=0.15*screen+0.20*action+0.25*target+0.15*coord+0.25*value 를 null 제외 가중치 정규화.
+엄격하게, 의미 기준. note 에 "예측 X / 이미지 Y" 한 줄.
+순수 JSON 하나만: {"screenMatch":0,"actionMatch":0,"targetMatch":0,"coordMatch":0,"valueMatch":0,"overall":0,"note":""}`, MODEL, ['--allowedTools', 'Read', '--add-dir', TMP]);
+  } finally { try { fs.unlinkSync(file); } catch {} }
+}
+
+async function predictAndScore(who, sessionKey, cutIdx, prefix, actual, thumb) {
   const roleHint = ROLE[who] ? `직원 역할: ${who} — ${ROLE[who]}.` : `직원: ${who}.`;
   const pred = await cli(`너는 직원의 다음 업무행동을 예측하는 모델이다. ${roleHint}
 아래는 이 직원 작업 세션의 "앞 스텝들"(시간순)이다. 정답(다음 스텝)은 주어지지 않았다.
@@ -113,7 +147,9 @@ ${JSON.stringify(prefix)}
 순수 JSON 객체 하나로만 출력(마크다운/설명/코드펜스 금지):
 {"predScreen":"","predAction":"","predTarget":"","predClickRegion":"","predValue":"","predSource":"","confidence":0}`, MODEL_PRED);
   if (!pred) return null;
-  const sc = await cli(`너는 예측 유사도 채점기다. 아래 "예측"과 "실제 다음 스텝"을 5차원으로 채점한다.
+  const imageSc = JUDGE === 'image' ? await judgeWithImage(pred, actual, thumb) : null;
+  if (JUDGE === 'image' && !imageSc) return null; // 이미지 없으면 텍스트로 몰래 대체하지 않는다(정답지 혼합 방지)
+  const sc = imageSc || await cli(`너는 예측 유사도 채점기다. 아래 "예측"과 "실제 다음 스텝"을 5차원으로 채점한다.
 
 예측:
 ${JSON.stringify(pred)}
@@ -140,7 +176,7 @@ note에 "예측 X / 실제 Y" 형식 한 줄 비교.
 순수 JSON 객체 하나로만 출력(마크다운/설명/코드펜스 금지):
 {"screenMatch":0,"actionMatch":0,"targetMatch":0,"coordMatch":0,"valueMatch":0,"overall":0,"note":""}`);
   if (!sc) return null;
-  return { sessionKey, cutIdx, who, category: localCategory(actual), screenMatch: sc.screenMatch, actionMatch: sc.actionMatch, targetMatch: sc.targetMatch, coordMatch: sc.coordMatch, valueMatch: sc.valueMatch, overall: sc.overall, note: (sc.note || '').slice(0, 300), source: 'shadow-predictor-v2' + (MODEL_PRED !== MODEL ? '-' + MODEL_PRED : '') };
+  return { sessionKey, cutIdx, who, category: localCategory(actual), screenMatch: sc.screenMatch, actionMatch: sc.actionMatch, targetMatch: sc.targetMatch, coordMatch: sc.coordMatch, valueMatch: sc.valueMatch, overall: sc.overall, note: (sc.note || '').slice(0, 300), source: (imageSc ? 'shadow-predictor-v3-image' : 'shadow-predictor-v2') + (MODEL_PRED !== MODEL ? '-' + MODEL_PRED : '') };
 }
 
 async function runBatch() {
@@ -153,8 +189,8 @@ async function runBatch() {
     const sessions = (j && j.sessions || []).filter(s => s.stepCount >= 4);
     sessions.forEach((s, si) => {
       const N = s.steps.length;
-      [...new Set([Math.floor(N * 0.5), Math.floor(N * 0.75), N - 1].filter(c => c >= 2 && c < N))].forEach(c => {
-        points.push({ who, sessionKey: `${who}-s${si}`, cutIdx: c, prefix: s.steps.slice(0, c).map(minStep), actual: minStep(s.steps[c]) });
+      [...new Set([Math.floor(N * 0.5), Math.floor(N * 0.75), N - 1].filter(c => c >= 2 && c < N && (s.steps[c].gapSec == null || s.steps[c].gapSec <= MAX_GAP)))].forEach(c => {
+        points.push({ who, sessionKey: `${who}-s${si}`, cutIdx: c, prefix: s.steps.slice(0, c).map(minStep), actual: minStep(s.steps[c]), thumb: s.steps[c].thumbnailUrl || null });
       });
     });
   }
@@ -164,7 +200,7 @@ async function runBatch() {
   // 점마다 즉시 적재(중단돼도 부분진행 보존)
   let posted = 0;
   for (const p of batch) {
-    const r = await predictAndScore(p.who, p.sessionKey, p.cutIdx, p.prefix, p.actual);
+    const r = await predictAndScore(p.who, p.sessionKey, p.cutIdx, p.prefix, p.actual, p.thumb);
     if (r) {
       const res = await apiPost('/api/verification/scores', { scores: [r] });
       const ok = (res && res.inserted) || 0; posted += ok;
