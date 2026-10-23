@@ -1303,6 +1303,29 @@ async function main() {
       }
     } catch {}
   }, 60 * 1000); // 1분마다 체크
+  // 2026-10-23 모듈 정지(stall) 감시: 10/19~21 아드리아나 PC 실측 — 프로세스·heartbeat·마우스는 살아 있는데
+  //   캡처(captureCount 24 고정)·키보드 flush 가 46시간 멈춤, 상태는 계속 'ok' 라 self-healer(dead 만 봄)가 못 잡음.
+  //   마우스는 들어오는데(사람이 PC 사용 중) 캡처·키보드가 둘 다 60분 넘게 멈추면 2회 연속 확인 후 graceful restart(ps1 loop 재시작).
+  //   재시작은 2시간에 1번까지(파일 기록) — 재시작 폭주 방지.
+  let stallHits = 0;
+  const STALL_FILE = path.join(os.homedir(), '.orbit', 'last-stall-restart');
+  setInterval(() => {
+    try {
+      const sc = screenCapture?.getStatus?.(), kb = keyboardWatcher?.getStatus?.(), ms = mouseWatcher?.getStatus?.();
+      if (!sc || !kb || !ms || sc.state === 'paused' || kb.state === 'paused') { stallHits = 0; return; }
+      const age = (iso) => iso ? (Date.now() - Date.parse(iso)) / 1000 : Infinity;
+      const userActive = age(ms.lastFlushAt) < 600;
+      const stalled = age(sc.lastCaptureAt) > 3600 && age(kb.lastFlushAt) > 3600 && (Date.now() - _daemonStartedAt) > 3600e3;
+      stallHits = userActive && stalled ? stallHits + 1 : 0;
+      if (stallHits < 2) return;
+      let last = 0; try { last = Number(fs.readFileSync(STALL_FILE, 'utf8')) || 0; } catch {}
+      if (Date.now() - last < 2 * 3600e3) return;
+      try { fs.writeFileSync(STALL_FILE, String(Date.now())); } catch {}
+      console.warn('[orbit] 캡처·키보드 정지(마우스는 활동) → graceful restart');
+      _reportError('module_stall_restart', `capture ${sc.lastCaptureAt} kb ${kb.lastFlushAt} mouse ${ms.lastFlushAt}`);
+      shutdown('module_stall').catch(() => {});
+    } catch {}
+  }, 5 * 60 * 1000);
 }
 
 main().catch(err => {
