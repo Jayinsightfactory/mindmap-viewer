@@ -121,7 +121,16 @@ async function judgeWithImage(pred, actual, thumb) {
   } finally { try { fs.unlinkSync(file); } catch {} }
 }
 
-async function predictAndScore(who, sessionKey, cutIdx, prefix, actual, thumb) {
+// [2026-10-23] 이미지 채점 실측: 예측 실패 대부분이 '다음에 어느 카톡방으로 가는가' — 방금 도착한 메시지가 결정하는데 예측기는 못 봤다.
+//   다음 스텝 직전까지 도착한 업무방 메시지(공유방만, /api/kakao/messages)를 맥락으로 준다. 다음 스텝 시각 이후 메시지는 절대 안 줌(정답 누출 금지).
+async function recentMessages(fromIso, toIso) {
+  if (!fromIso || !toIso || process.env.SHADOW_KAKAO === 'off') return [];
+  const j = await apiGet(`/api/kakao/messages?startDate=${encodeURIComponent(fromIso)}&endDate=${encodeURIComponent(toIso)}&limit=30`);
+  return ((j && j.messages) || []).filter(m => m.created_at && m.created_at < toIso)
+    .slice(0, 15).map(m => ({ t: m.created_at, room: m.chatroom, from: m.sender, text: String(m.message || '').slice(0, 80) }));
+}
+
+async function predictAndScore(who, sessionKey, cutIdx, prefix, actual, thumb, msgs = []) {
   const roleHint = ROLE[who] ? `직원 역할: ${who} — ${ROLE[who]}.` : `직원: ${who}.`;
   const pred = await cli(`너는 직원의 다음 업무행동을 예측하는 모델이다. ${roleHint}
 아래는 이 직원 작업 세션의 "앞 스텝들"(시간순)이다. 정답(다음 스텝)은 주어지지 않았다.
@@ -132,6 +141,9 @@ async function predictAndScore(who, sessionKey, cutIdx, prefix, actual, thumb) {
 
 앞스텝:
 ${JSON.stringify(prefix)}
+
+같은 시간대 업무 카톡방에 도착한 메시지(다음 스텝 직전까지, 회사 공유방만 — 다음 행동의 계기일 수 있음):
+${msgs.length ? JSON.stringify(msgs) : '(없음)'}
 
 이 직원이 "바로 다음에 할 단 하나의 스텝"을 앞 흐름의 업무 논리로만 추론해 예측하라.
 정답을 막연히 찍지 말고, 앞 스텝의 흐름 근거로 특정하라(정답은 주어지지 않았다).
@@ -190,7 +202,8 @@ async function runBatch() {
     sessions.forEach((s, si) => {
       const N = s.steps.length;
       [...new Set([Math.floor(N * 0.5), Math.floor(N * 0.75), N - 1].filter(c => c >= 2 && c < N && (s.steps[c].gapSec == null || s.steps[c].gapSec <= MAX_GAP)))].forEach(c => {
-        points.push({ who, sessionKey: `${who}-s${si}`, cutIdx: c, prefix: s.steps.slice(0, c).map(minStep), actual: minStep(s.steps[c]), thumb: s.steps[c].thumbnailUrl || null });
+        points.push({ who, sessionKey: `${who}-s${si}`, cutIdx: c, prefix: s.steps.slice(0, c).map(minStep), actual: minStep(s.steps[c]), thumb: s.steps[c].thumbnailUrl || null,
+          winFrom: s.steps[c - 1].t ? new Date(Date.parse(s.steps[c - 1].t) - 10 * 60e3).toISOString() : null, winTo: s.steps[c].t || null });
       });
     });
   }
@@ -200,7 +213,9 @@ async function runBatch() {
   // 점마다 즉시 적재(중단돼도 부분진행 보존)
   let posted = 0;
   for (const p of batch) {
-    const r = await predictAndScore(p.who, p.sessionKey, p.cutIdx, p.prefix, p.actual, p.thumb);
+    const msgs = await recentMessages(p.winFrom, p.winTo);
+    const r = await predictAndScore(p.who, p.sessionKey, p.cutIdx, p.prefix, p.actual, p.thumb, msgs);
+    if (r && msgs.length) r.note = `[카톡${msgs.length}] ` + r.note;
     if (r) {
       const res = await apiPost('/api/verification/scores', { scores: [r] });
       const ok = (res && res.inserted) || 0; posted += ok;
