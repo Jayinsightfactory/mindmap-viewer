@@ -3,6 +3,7 @@
 // 컨테이너의 기존 CSS(a 태그 스타일)를 그대로 쓰도록 <a>만 채운다. 현재 페이지는 목록에서 뺀다.
 (function () {
   var MENU = [
+    ['/hub.html', '통합 대시보드'],
     ['/my-work.html', '내 작업 데이터'],
     ['/work-daylog.html', '하루 일지'],
     ['/admin-analysis.html', '분석'],
