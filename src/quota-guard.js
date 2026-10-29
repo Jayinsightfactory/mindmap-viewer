@@ -28,6 +28,15 @@ let _cache = { at: 0, result: null };
 //  · 5시간창은 항상 FIVE_RESERVE%는 남김(대화 세션 급사 방지).
 // 주의: 7일창은 롤링이라 순증이 실사용보다 작게 나올 수 있음(다소 관대). usedToday는 사용자+자동화 합산 근사치.
 const DAILY_CAP_PCT = Number(process.env.ORBIT_CLI_DAILY_CAP_PCT) || 5;
+// [2026-10-29] 사장님 지시 "오늘 주간사용량 15%까지 써도 돼": ~/.orbit/week-cap-today.json {"date":"YYYY-MM-DD"(KST),"weekMax":15}
+//   날짜가 오늘(KST)일 때만 일일 5%p 캡 대신 '7일창 weekMax% 미만이면 진행'. 다른 날엔 무시(자동 원복). 70% 상한은 그대로.
+function _todayWeekMax() {
+  try {
+    const j = JSON.parse(fs.readFileSync(path.join(os.homedir(), '.orbit', 'week-cap-today.json'), 'utf8'));
+    const kst = new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 10);
+    return j && j.date === kst && Number(j.weekMax) > 0 ? Number(j.weekMax) : null;
+  } catch { return null; }
+}
 const ENDWEEK_HOURS = Number(process.env.ORBIT_CLI_ENDWEEK_HOURS) || 24;   // 리셋 임박 판정(시간)
 const ENDWEEK_RESERVE = Number(process.env.ORBIT_CLI_ENDWEEK_RESERVE_PCT) || 10; // 막바지에 남길 %
 const FIVE_RESERVE = Number(process.env.ORBIT_CLI_FIVE_RESERVE_PCT) || 10; // 5시간창 최소 여유 %
@@ -146,6 +155,7 @@ async function checkQuota(reservePct) {
       let weekPause;
       if (week == null) weekPause = false;
       else if (endweek) weekPause = week >= (100 - ENDWEEK_RESERVE);            // 막바지: 10%만 남기고 전부 사용
+      else if (_todayWeekMax() != null) weekPause = week >= Math.min(_todayWeekMax(), threshold); // 오늘만 사장님 지정 주간 상한(일일 캡 대신)
       else weekPause = (usedToday >= DAILY_CAP_PCT) || (week >= threshold);     // 평상시: 일일 5%캡 + 70% 상한
       const pause = fivePause || weekPause;
 
