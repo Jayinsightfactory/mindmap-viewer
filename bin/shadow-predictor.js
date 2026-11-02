@@ -90,6 +90,12 @@ function localCategory(actual) {
 // [2026-10-23 v3] 캡처 이미지 정답지: 해독 텍스트(요약·누락 많음) 대신 실제 다음 캡처 이미지를 채점기가 직접 본다.
 //   사장님 지시 "캡쳐 이미지로 검증테스트". SHADOW_JUDGE=text 면 기존 v2 텍스트 채점.
 const JUDGE = (process.env.SHADOW_JUDGE || 'image').toLowerCase();
+// [2026-11-02] 점수 하락 진단: 10-31~11-02 세 배치가 같은 10/30 세션·같은 cut(c2×3,c3×2,c4,c6,c8)을 반복 채점(96h 창+주말 무활동).
+//   또 cut=2(앞스텝 2장)짜리 단편세션이 배치 절반 → 예측 근거 부족. 이미 채점한 다음스텝은 건너뛰고, 앞스텝 최소 3장을 요구한다.
+const MIN_PREFIX = parseInt(process.env.SHADOW_MIN_PREFIX) || 3;
+const SEEN_FILE = path.join(os.homedir(), '.orbit', 'shadow-scored.json');
+function loadSeen() { try { return new Set(JSON.parse(fs.readFileSync(SEEN_FILE, 'utf8'))); } catch { return new Set(); } }
+function saveSeen(set) { try { fs.mkdirSync(path.dirname(SEEN_FILE), { recursive: true }); fs.writeFileSync(SEEN_FILE, JSON.stringify([...set].slice(-5000))); } catch {} }
 const MAX_GAP = parseInt(process.env.SHADOW_MAX_GAP_SEC) || 600; // 다음 스텝이 10분 넘게 뒤면 '바로 다음'이 아니라 예측점에서 제외
 function downloadImage(urlPath, file) {
   return new Promise(r => { const u = new URL(urlPath, ORBIT_SERVER); const mod = u.protocol === 'https:' ? https : http;
@@ -195,21 +201,24 @@ async function runBatch() {
   try { const q = await require('../src/quota-guard').checkQuota(30); if (q.pause) { console.log('[shadow][quota]', q.reason); return 0; } } catch {}
   // 예측점 수집(직원별 리치세션의 cut 지점)
   const points = [];
+  const seen = loadSeen(); let skippedSeen = 0;
   for (const uid of USERIDS) {
     const who = NAME[uid] || uid;
     const j = await apiGet(`/api/vision/task-sessions?userId=${uid}&hours=${HOURS}`);
     const sessions = (j && j.sessions || []).filter(s => s.stepCount >= 4);
     sessions.forEach((s, si) => {
       const N = s.steps.length;
-      [...new Set([Math.floor(N * 0.5), Math.floor(N * 0.75), N - 1].filter(c => c >= 2 && c < N && (s.steps[c].gapSec == null || s.steps[c].gapSec <= MAX_GAP)))].forEach(c => {
-        points.push({ who, sessionKey: `${who}-s${si}`, cutIdx: c, prefix: s.steps.slice(0, c).map(minStep), actual: minStep(s.steps[c]), thumb: s.steps[c].thumbnailUrl || null,
+      [...new Set([Math.floor(N * 0.5), Math.floor(N * 0.75), N - 1].filter(c => c >= MIN_PREFIX && c < N && (s.steps[c].gapSec == null || s.steps[c].gapSec <= MAX_GAP)))].forEach(c => {
+        const seenKey = `${uid}|${s.steps[c].t || ''}|${s.steps[c].screen || ''}`;
+        if (seen.has(seenKey)) { skippedSeen++; return; }
+        points.push({ seenKey, who, sessionKey: `${who}-s${si}`, cutIdx: c, prefix: s.steps.slice(0, c).map(minStep), actual: minStep(s.steps[c]), thumb: s.steps[c].thumbnailUrl || null,
           winFrom: s.steps[c - 1].t ? new Date(Date.parse(s.steps[c - 1].t) - 10 * 60e3).toISOString() : null, winTo: s.steps[c].t || null });
       });
     });
   }
   // 최신 우선 + 배치 상한
   const batch = points.slice(0, MAX);
-  console.log(`[shadow] 예측점 ${points.length} 중 ${batch.length} 처리 (모델 ${MODEL})`);
+  console.log(`[shadow] 예측점 ${points.length} 중 ${batch.length} 처리 (모델 ${MODEL}, 기채점 스킵 ${skippedSeen})`);
   // 점마다 즉시 적재(중단돼도 부분진행 보존)
   let posted = 0;
   for (const p of batch) {
@@ -219,6 +228,7 @@ async function runBatch() {
     if (r) {
       const res = await apiPost('/api/verification/scores', { scores: [r] });
       const ok = (res && res.inserted) || 0; posted += ok;
+      if (ok) { seen.add(p.seenKey); saveSeen(seen); }
       console.log(`  ${p.who} ${p.sessionKey}#${p.cutIdx} [${r.category}] overall ${Number(r.overall).toFixed(2)} → 적재 ${ok}`);
     } else {
       console.log(`  ${p.who} ${p.sessionKey}#${p.cutIdx} — 예측/채점 실패(스킵)`);
