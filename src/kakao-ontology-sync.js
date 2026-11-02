@@ -59,6 +59,16 @@ function parseSheetTs(row) {
   // ts가 되고, 안정 ID + ON CONFLICT로 재동기화 때 변하지 않는다(과거의 "매 동기화 now()로 중복적재" 수정).
   const raw = pick(row, ['일시', '날짜', '시간', '시각', '발생시각', 'timestamp']);
   if (!raw) return null;
+  // 9월 이후 행은 "2026-09-28 오전 9:12" 형식(KST) — 한국어 오전/오후 파싱
+  const m = String(raw).match(/^(\d{4})-(\d{1,2})-(\d{1,2})\s*(오전|오후)?\s*(\d{1,2}):(\d{2})/);
+  if (m) {
+    let h = Number(m[5]);
+    if (m[4] === '오후' && h < 12) h += 12;
+    if (m[4] === '오전' && h === 12) h = 0;
+    const iso = `${m[1]}-${m[2].padStart(2, '0')}-${m[3].padStart(2, '0')}T${String(h).padStart(2, '0')}:${m[6]}:00+09:00`;
+    const k = new Date(iso);
+    if (!isNaN(k.getTime())) return k;
+  }
   const d = new Date(raw);
   return isNaN(d.getTime()) ? null : d;
 }
@@ -98,6 +108,42 @@ async function bulkInsertRelations(pool, rels) {
   );
 }
 
+// ── 카톡 원문(kakao_messages, nenovakakao 브리지) → 거래처 언급 관계 ─────────────────────
+// 시트(비즈니스이벤트)는 9/28 이후 적재가 멈춰 최근 '원인' 신호가 0 → solution-miner 검증사슬 0.
+// 서버 PG 의 업무방 원문에서 거래처명을 직접 찾는다. 프라이버시: config/privacy-policy.json
+// workRooms(업무방 허용목록) 와 정규화 완전일치하는 방만, 원문은 저장하지 않고 관계(방·매칭명)만 남긴다.
+const MSG_LOOKBACK_DAYS = parseInt(process.env.KAKAO_MSG_MENTION_DAYS) || 30;
+function _loadWorkRooms() {
+  try {
+    const { normalizeRoomName } = require('./privacy-gate');
+    const pol = require('../config/privacy-policy.json');
+    return { norm: normalizeRoomName, set: new Set((pol.workRooms || []).map(r => normalizeRoomName(r)).filter(Boolean)) };
+  } catch { return null; }
+}
+async function deriveMessageMentions(pool, custIndex, workspaceId) {
+  const wr = _loadWorkRooms();
+  if (!wr || !wr.set.size || !custIndex.length) return [];
+  const { rows } = await pool.query(
+    `SELECT id, chatroom, message, created_at FROM kakao_messages
+      WHERE source='nenovakakao' AND created_at >= now() - ($1::int * interval '1 day')
+        AND COALESCE(message,'') <> ''`, [MSG_LOOKBACK_DAYS]);
+  const out = [];
+  for (const m of rows) {
+    const room = String(m.chatroom || '');
+    if (!wr.set.has(wr.norm(room))) continue; // 허용 업무방만
+    const text = String(m.message || '');
+    if (text.includes('�')) continue;
+    const hits = N.findCandidates(text, custIndex).filter(h => h.score >= 0.85);
+    if (!hits.length) continue;
+    const best = hits.sort((a, b) => (b.score - a.score) || ((b.normName || '').length - (a.normName || '').length))[0];
+    const fromRef = `kmsg:${m.id}`;
+    out.push({ id: `rel:kakao_event_mentions_customer:${fromRef}:${best.id}`.slice(0, 200), relType: 'kakao_event_mentions_customer',
+      fromType: 'KakaoMessage', fromRef, toType: 'Customer', toRef: best.id, confidence: 0.85,
+      evidence: { room: room.slice(0, 60), matchedName: best.displayName, from: 'kakao_messages' }, ts: new Date(m.created_at), workspaceId });
+  }
+  return out;
+}
+
 /**
  * @param {import('pg').Pool} pool
  * @param {Function} fetchFn  createProcessMining._fetchKakaoSheetData (호출측에서 주입)
@@ -105,13 +151,15 @@ async function bulkInsertRelations(pool, rels) {
  */
 async function syncKakaoToOntology(pool, fetchFn, workspaceId = 'WS-NENOVA-2026') {
   if (typeof fetchFn !== 'function') return { synced: 0, mentions: 0, error: 'fetch fn missing' };
-  const rows = await fetchFn().catch(() => []);
-  if (!rows.length) return { synced: 0, mentions: 0, rows: 0 };
+  const rows = await fetchFn().catch(() => []); // 시트가 비어도 원문 기반 언급은 계속 도출
 
   const now = new Date();
   const events = [], relations = [];
   const custIndex = await loadCustomerIndex(pool).catch(() => []);
   const roomRegistry = new Map(); // 깨진 방이름 변형 → 대표명 정규화(회사 전체 동기화 1회 스코프)
+  // 시트 꼬리에는 직원 1:1 대화(방이름=사람 이름)도 섞여 있다 → 업무방 허용목록 밖은 적재하지 않음
+  const wr = _loadWorkRooms();
+  const isWorkRoom = (room) => !wr || wr.set.has(wr.norm(room));
 
   for (const r of rows.filter(r => r._tab === '비즈니스이벤트')) {
     const eventType = pick(r, ['이벤트타입', 'event_type', '타입', 'AI분류']);
@@ -119,6 +167,7 @@ async function syncKakaoToOntology(pool, fetchFn, workspaceId = 'WS-NENOVA-2026'
     const cust = pick(r, ['거래처', 'customer']);
     const prod = pick(r, ['품목', 'product', '상품']);
     if (!eventType && !room) continue;
+    if (!isWorkRoom(room)) continue;
     const ts = parseSheetTs(r) || now;
     // ★안정 ID: ts(=now)를 넣으면 매 동기화마다 같은 행이 새 이벤트로 중복 적재됨(실사고).
     // 원문+시각문자열을 해시 재료로만 사용(원문 자체는 프라이버시상 저장 안 함) — 행 고유성 확보.
@@ -137,6 +186,7 @@ async function syncKakaoToOntology(pool, fetchFn, workspaceId = 'WS-NENOVA-2026'
     const room = canonicalizeRoom(pick(r, ['발생방', '방이름', 'room']), roomRegistry);
     const result = pick(r, ['결과', 'status']);
     if (!room) continue;
+    if (!isWorkRoom(room)) continue;
     const ts = parseSheetTs(r) || now;
     const unresolved = !result || result === '미해결';
     // ★안정 ID: 시트의 이슈ID가 행 고유키(실측 컬럼: 이슈ID/발생시각/이슈내용/대응자/결과).
@@ -182,6 +232,7 @@ async function syncKakaoToOntology(pool, fetchFn, workspaceId = 'WS-NENOVA-2026'
       const d = ev.data || {};
       const cust = String(d.customer || '');
       if (!cust || cust.includes('�')) continue; // 깨진 한글은 매칭 불가
+      if (!isWorkRoom(d.room_name || '')) continue;
       const resolved = resolveCustomerRef(cust, custIndex);
       if (!resolved) continue;
       dedupRelations.push({ id: `rel:kakao_event_mentions_customer:${ev.id}:${resolved.ref}`.slice(0, 200), relType: 'kakao_event_mentions_customer', fromType: 'KakaoEvent', fromRef: ev.id, toType: resolved.type, toRef: resolved.ref, confidence: resolved.matched ? 0.85 : 0.5, evidence: { eventType: d.event_type, product: d.product, room: d.room_name, rawName: cust, goldenMatched: resolved.matched, from: 'stored' }, ts: new Date(ev.timestamp), workspaceId });
@@ -190,6 +241,11 @@ async function syncKakaoToOntology(pool, fetchFn, workspaceId = 'WS-NENOVA-2026'
   // kakao_event_mentions_customer/kakao_event_in_room은 매 실행마다 전량 재도출한다(sheet=append-only
   // 원본이라 안전). 골든매칭·방이름 정규화 로직이 바뀌면 to_ref가 달라져 옛 행이 고아로 남으므로
   // 교체 후 재삽입으로 정합성 유지.
+  try {
+    const msgRels = await deriveMessageMentions(pool, custIndex, workspaceId);
+    dedupRelations = dedup(dedupRelations.concat(msgRels));
+  } catch (e) { /* kakao_messages 없으면 skip */ }
+  if (!dedupRelations.length) return { synced: dedupEvents.length, mentions: 0, rows: rows.length };
   await pool.query(`DELETE FROM ops_relation WHERE rel_type IN ('kakao_event_mentions_customer','kakao_event_in_room') AND workspace_id=$1`, [workspaceId]);
   await bulkInsertRelations(pool, dedupRelations);
 
