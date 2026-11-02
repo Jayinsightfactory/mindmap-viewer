@@ -25,9 +25,11 @@ const MODEL_PRED = process.env.SHADOW_MODEL_PRED || MODEL;
 const MAX = parseInt(process.env.SHADOW_MAX) || 16;         // 배치당 예측점 상한
 const HOURS = parseInt(process.env.SHADOW_HOURS) || 96;
 const POLL_MS = parseInt(process.env.SHADOW_POLL_MS) || 6 * 60 * 60 * 1000; // 6h
-// 4인 기본(강명훈·설연주·박성수·조현욱). env로 교체 가능.
-const USERIDS = (process.env.SHADOW_USERIDS || 'MNMSAQJD78E544A631,MNIAFICB3DC88DCB34,MN9B6750A0A37D561D,MN506C7A6A710A046E').split(',').map(s => s.trim()).filter(Boolean);
-const NAME = { MNMSAQJD78E544A631: '강명훈', MNIAFICB3DC88DCB34: '설연주', MN9B6750A0A37D561D: '박성수', MN506C7A6A710A046E: '조현욱' };
+// [2026-11-02] 전 직원 기본(손지윤·임재용은 정책상 제외). env SHADOW_USERIDS로 교체 가능.
+//   이전엔 4인 하드코딩 + points.slice(0,MAX)가 사용자 순서대로 잘라 설연주(2번째) 포인트가 상한을 독식 → 10일간 설연주만 채점됐다.
+const USERIDS = (process.env.SHADOW_USERIDS || 'MNMSAQJD78E544A631,MNIAFICB3DC88DCB34,MN9B6750A0A37D561D,MN506C7A6A710A046E,MNMRX6SR07F5FF7C0C,MNMRVD11EDCCF6E7CE,MNF64400D6CD233E3A,MN1D726A373D679F9A,MN2F3C3CEDBE96B26C,MNMR8568CC8950F81D').split(',').map(s => s.trim()).filter(Boolean);
+const NAME = { MNMSAQJD78E544A631: '강명훈', MNIAFICB3DC88DCB34: '설연주', MN9B6750A0A37D561D: '박성수', MN506C7A6A710A046E: '조현욱',
+  MNMRX6SR07F5FF7C0C: '강현우', MNMRVD11EDCCF6E7CE: '김원빈', MNF64400D6CD233E3A: '김도준', MN1D726A373D679F9A: '아드리아나', MN2F3C3CEDBE96B26C: '김원영', MNMR8568CC8950F81D: '정재훈' };
 const ROLE = {
   '강명훈': '재무/전산 — 금융·정산·재고 조회 + 엑셀 대사',
   '설연주': '영업지원 주문처리 — 카톡→nenova→Excel',
@@ -204,7 +206,9 @@ async function runBatch() {
   const seen = loadSeen(); let skippedSeen = 0;
   for (const uid of USERIDS) {
     const who = NAME[uid] || uid;
-    const j = await apiGet(`/api/vision/task-sessions?userId=${uid}&hours=${HOURS}`);
+    // 40s 타임아웃 null 이면 그 직원이 조용히 0건이 됐다(실측 11-02: 설연주·박성수 동시 누락) → 2회 재시도 + 로그
+    let j = null; for (let t = 0; t < 3 && !j; t++) j = await apiGet(`/api/vision/task-sessions?userId=${uid}&hours=${HOURS}`);
+    if (!j) { console.warn(`[shadow] ${who} 세션 조회 실패(3회) — 이번 배치 제외`); continue; }
     const sessions = (j && j.sessions || []).filter(s => s.stepCount >= 4);
     sessions.forEach((s, si) => {
       const N = s.steps.length;
@@ -216,8 +220,10 @@ async function runBatch() {
       });
     });
   }
-  // 최신 우선 + 배치 상한
-  const batch = points.slice(0, MAX);
+  // 직원별 라운드로빈(각자 최신 세션 우선) + 배치 상한 — 한 사람이 상한을 독식하지 않게
+  const byWho = new Map(); points.forEach(p => { if (!byWho.has(p.who)) byWho.set(p.who, []); byWho.get(p.who).push(p); });
+  const batch = []; for (let i = 0; batch.length < MAX && [...byWho.values()].some(a => a.length > i); i++) for (const a of byWho.values()) if (a[i] && batch.length < MAX) batch.push(a[i]);
+  if (process.argv.includes('--plan')) { const cnt = {}; points.forEach(p => cnt[p.who] = (cnt[p.who] || 0) + 1); const bc = {}; batch.forEach(p => bc[p.who] = (bc[p.who] || 0) + 1); console.log('[shadow][plan] 후보', JSON.stringify(cnt), '배치', JSON.stringify(bc)); return 0; }
   console.log(`[shadow] 예측점 ${points.length} 중 ${batch.length} 처리 (모델 ${MODEL}, 기채점 스킵 ${skippedSeen})`);
   // 점마다 즉시 적재(중단돼도 부분진행 보존)
   let posted = 0;
