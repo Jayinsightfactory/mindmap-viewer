@@ -115,11 +115,15 @@ ${rosterLine}
 거래처(고객)는 발신자가 아니라 메시지 "내용 안에" 등장한다(꽃집·도매상·농장 등 상호).
 각 메시지의 [AI분류|품목|차수] 태그는 있을 때만 참고하라. 빈 태그는 원문 PG 소스의 정상 상태다.
 
-★최우선 식별 = "놓치면 사고나는 운영이슈"(AI가 트래킹·대체해야 할 대상):
-  - 항공스케줄: 비행기/선적 스케줄 변경·지연·결항·앞당김 (예: "네덜란드 항공 선적 월요일 불가")
-  - 주문누락: 주문 접수/전달 과정에서 품목·수량이 빠짐·누락 (예: "우리것만 누락", "○○ 빠졌어요")
-  - 출고누락: 출고/배차에서 빠짐·미출고
-이런 운영이슈는 반드시 critical:true. 불량클레임·단순문의는 critical:false(자동화 우선순위 낮음).
+★critical 판정 기준(엄격) — "오늘 안에 사람이 조치하지 않으면 돈 손실 또는 거래처 피해가 나는 것"만 true:
+  - 대체품 없는 주문취소/결품이 특정 거래처 납품에 영향
+  - 품질 클레임(불량·시듦·파손으로 거래처가 항의/반품/보상 요구)
+  - 확정 주문 대비 물량 부족(입고 부족·분배 부족)
+  - 단가·결제·정산 분쟁(금액 이견, 미수, 오청구)
+  - 출고/배송이 납품일을 넘겨 누락·지연(주문누락·출고누락 포함, 아직 미해결)
+  - 항공/선적 결항·지연으로 확정 주문 납품일이 실제로 어긋나는 경우(미해결)
+★critical:false(대부분의 케이스): 일상 스케줄 공유(도착시간·출발시간 안내), AWB/송장번호 전달, 이미 해결된 건(resolved:true), 단순 확인·문의, 인사·감사, 일반 주문 접수·변경 처리.
+애매하면 false. 한 창(window)에서 critical은 보통 0~1건이다.
 
 분석 단위 = 이슈/케이스(같은 품목+차수로 묶는다). 마크다운·설명 없이 순수 JSON 하나만 출력:
 {
@@ -155,6 +159,24 @@ function parseJson(text) {
 }
 
 // ── S5 교차검증: LLM 케이스 product/seq vs 윈도우 메시지의 태그값 대조 ─────────
+// critical 결정론 후처리 — 모델(haiku) 과잉표시를 규칙으로 걸러낸다.
+const INFO_TYPES = new Set(['항공스케줄', '문의', '기타', '주문', '주문변경추가', '주문변경교체', '재고', '배차출고']);
+const ALWAYS_INFO_TYPES = new Set(['문의', '기타']);
+const RISK_RE = /결항|지연|불가|취소|누락|빠짐|빠졌|부족|모자|결품|클레임|불량|시듦|시들|파손|반품|환불|보상|미수|미입금|오청구|분쟁|항의|못\s*받|안\s*왔|못\s*보|늦어/;
+function applyCriticalFilter(cases) {
+  for (const c of (cases || [])) {
+    if (!c || c.critical !== true) continue;
+    const type = String(c.type || '').trim();
+    const text = `${c.summary || ''} ${c.evidence || ''}`;
+    if (ALWAYS_INFO_TYPES.has(type)) c.critical = false;
+    else if (c.resolved === true) c.critical = false; // 이미 해결 = 오늘 조치 불필요
+    else if (INFO_TYPES.has(type) && !RISK_RE.test(text)) c.critical = false;
+    if (c.critical === false) c.criticalFiltered = true;
+  }
+  return cases;
+}
+module.exports.applyCriticalFilter = applyCriticalFilter;
+
 function crossCheck(cases, msgs) {
   const tagPairs = new Set();
   const products = new Set();
@@ -237,6 +259,7 @@ async function processRoom(room, allMsgs, rosterLine) {
     if (quota.pause) { console.log('[quota]', quota.reason); return { windows: windows.length, done, skipped: processed, quotaPaused: true }; }
     const out = await claudeCli(buildPrompt(room, rosterLine, transcriptOf(win)));
     if (out) {
+      applyCriticalFilter(out.cases);
       const cc = crossCheck(out.cases, win);
       await postEvent({
         id: 'kintel-' + key,
@@ -300,7 +323,7 @@ async function runAll() {
   return total;
 }
 
-(async () => {
+if (require.main === module) (async () => {
   await runAll();
   if (ONCE || MAX_WINDOWS) return;
   setInterval(() => { runAll().catch(e => console.warn('루프 오류:', e.message)); }, POLL_MS);
