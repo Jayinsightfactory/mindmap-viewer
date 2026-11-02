@@ -155,9 +155,38 @@ async function syncKakaoToOntology(pool, fetchFn, workspaceId = 'WS-NENOVA-2026'
   // "affect row a second time"로 실패하므로 필수). 멱등 upsert는 다음 동기화에서 자연히 갱신됨.
   const dedup = arr => [...new Map(arr.map(x => [x.id, x])).values()];
   const dedupEvents = dedup(events);
-  const dedupRelations = dedup(relations);
+  let dedupRelations = dedup(relations);
 
   await bulkInsertEvents(pool, dedupEvents);
+  // 관계 ts = 이벤트의 최초 관측 시각(unified_events.timestamp, 재동기화에도 불변).
+  // 예전엔 매 동기화 DELETE→재삽입 때 ts=now 라 카톡 언급 전부가 '오늘'로 몰려
+  // solution-miner 원인→작업 8h 사슬이 구조적으로 0개였음(2026-11-02 실측 2728/2728 당일).
+  try {
+    const evIds = dedupEvents.map(e => e.id);
+    const { rows: tsRows } = await pool.query(`SELECT id, timestamp FROM unified_events WHERE id = ANY($1)`, [evIds]);
+    const firstSeen = new Map(tsRows.map(r => [r.id, new Date(r.timestamp)]));
+    for (const rel of dedupRelations) {
+      const t = firstSeen.get(rel.fromRef);
+      if (t && !isNaN(t.getTime())) rel.ts = t;
+    }
+  } catch (e) { /* 실패 시 기존 ts 유지 */ }
+  // 시트 fetch 는 일부 행만 돌려줄 때가 있어(실측: 7~8월 행만) 최근 이벤트의 거래처 언급이 통째로 빠짐.
+  // 이미 저장된 전체 kakao.business_event(data.customer)에서 언급 관계를 재도출해 보강(ts=이벤트 시각).
+  try {
+    const have = new Set(dedupRelations.filter(r => r.relType === 'kakao_event_mentions_customer').map(r => r.fromRef));
+    const { rows: stored } = await pool.query(
+      `SELECT id, timestamp, data FROM unified_events
+        WHERE type='kakao.business_event' AND workspace_id=$1 AND COALESCE(data->>'customer','') <> ''`, [workspaceId]);
+    for (const ev of stored) {
+      if (have.has(ev.id)) continue;
+      const d = ev.data || {};
+      const cust = String(d.customer || '');
+      if (!cust || cust.includes('�')) continue; // 깨진 한글은 매칭 불가
+      const resolved = resolveCustomerRef(cust, custIndex);
+      if (!resolved) continue;
+      dedupRelations.push({ id: `rel:kakao_event_mentions_customer:${ev.id}:${resolved.ref}`.slice(0, 200), relType: 'kakao_event_mentions_customer', fromType: 'KakaoEvent', fromRef: ev.id, toType: resolved.type, toRef: resolved.ref, confidence: resolved.matched ? 0.85 : 0.5, evidence: { eventType: d.event_type, product: d.product, room: d.room_name, rawName: cust, goldenMatched: resolved.matched, from: 'stored' }, ts: new Date(ev.timestamp), workspaceId });
+    }
+  } catch (e) { /* 보강 실패 시 시트 도출분만 */ }
   // kakao_event_mentions_customer/kakao_event_in_room은 매 실행마다 전량 재도출한다(sheet=append-only
   // 원본이라 안전). 골든매칭·방이름 정규화 로직이 바뀌면 to_ref가 달라져 옛 행이 고아로 남으므로
   // 교체 후 재삽입으로 정합성 유지.
