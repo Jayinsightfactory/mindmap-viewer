@@ -121,7 +121,7 @@ const _kstDate = s => { if(!s) return '미확인'; try{ return new Date(s).toLoc
 let _healthRows = [];   // 경보 거래처(드릴다운·초안 재료)
 // 거래처의 열린(미해결) case 리스트 — d.issues에서 직접 추출(집계점수의 감사근거).
 function openCasesOf(name, d){
-  return (d.issues||[]).filter(i=>!i.resolved && (i.customers||[]).includes(name))
+  return (d.issues||[]).filter(i=>!i.resolved && !i.expired && (i.customers||[]).includes(name))
     .sort((a,b)=> String(b.lastTs||'').localeCompare(String(a.lastTs||'')));
 }
 function renderHealth(d){
@@ -219,6 +219,7 @@ function renderKpis(d){
     ['분석 윈도우', d.windowsAnalyzed||0],
     ['이슈(케이스)', s.total||0],
     ['미해결', s.unresolved||0, s.unresolved? 'var(--bad)':''],
+    ['만료(차수 지남)', s.expired||0, ''],
     ['교차검증', pct(d.crossCheckAvg)],
     ['거래처', (d.customers||[]).length],
     ['직원', (d.employees||[]).length],
@@ -239,7 +240,7 @@ function renderIssues(d){
       <td>${esc(i.type)}</td>
       <td>${esc(i.raisedBy)||'<span class=muted>—</span>'}</td>
       <td>${(i.customers||[]).map(c=>`<span class="chip">${esc(c)}</span>`).join('')||'<span class=muted>—</span>'}</td>
-      <td>${i.resolved?'<span class="badge b-ok">해결</span>':'<span class="badge b-bad">미해결</span>'}</td>
+      <td>${i.resolved?'<span class="badge b-ok">해결</span>':i.expired?'<span class="badge">만료</span>':'<span class="badge b-bad">미해결</span>'}</td>
       <td class="muted">${esc(i.evidence)}</td>
       <td>${esc(i.summary)}</td></tr>`).join('')+`</tbody></table>`;
 }
