@@ -65,6 +65,23 @@ const SRC_OF = {
   'phone.call.detected': 'call',
 };
 const PROMOTE_TYPES = Object.keys(SRC_OF);
+// 거래처명이 실릴 만한 짧은 문맥만 추출(원문 전체·키보드 입력값은 싣지 않음).
+// screen.analyzed: entities.customers·fields[].currentValue·workflow.caseKey·receivedFrom/handedTo
+// excel.activity: workbook/sheet, order.detected: rawText 앞부분, 그 외: windowTitle
+function custContext(d) {
+  const out = [];
+  const push = (v) => { if (v && typeof v === 'string') { const t = v.trim(); if (t && t.length <= 80) out.push(t); } };
+  const ent = d.entities && typeof d.entities === 'object' ? d.entities : null;
+  if (ent && Array.isArray(ent.customers)) ent.customers.slice(0, 5).forEach(c => push(typeof c === 'string' ? c : (c && c.name)));
+  if (Array.isArray(d.fields)) d.fields.slice(0, 12).forEach(f => push(f && f.currentValue != null ? String(f.currentValue) : ''));
+  if (d.workflow && typeof d.workflow === 'object') push(d.workflow.caseKey);
+  push(d.receivedFrom); push(d.handedTo);
+  push(d.workbook); push(d.sheet);
+  if (typeof d.rawText === 'string') push(d.rawText.slice(0, 60));
+  push(d.windowTitle || d.rawWindowTitle);
+  return out.join(' | ').slice(0, 300);
+}
+
 const conf = (n) => (n >= 3 ? 1.0 : n === 2 ? 0.67 : 0.34);
 // 실제 workspaces.id (T0b — 예전엔 온톨로지 테이블만 별도로 'nenova' 문자열을 썼으나,
 // 진짜 로그인/팀 시스템(workspace_members)의 tenant id는 이것. 2번째 회사가 들어오면
@@ -99,6 +116,7 @@ async function promote(pool, hours, opts = {}) {
       app: normApp(d.app || (d.appContext && d.appContext.currentApp), d.windowTitle), win: (d.windowTitle || '').trim(), inp: (d.inputText || '').trim(),
       clk: d.mouseClicks || 0, va: (d.activity || d.visionActivity || '').trim(),
       vs: (d.screen || d.visionScreen || '').trim(), auto: !!(d.automatable || d.visionAutomatable),
+      ctx: custContext(d),
     };
   });
   // 사용자별 시간창 융합 (gap>120s 또는 앱변경 → 새 동작)
@@ -140,8 +158,10 @@ async function promote(pool, hours, opts = {}) {
     // 필드가 없어 windowTitle 폴백도 못 살림 — 그런데 order 소스가 있으면 "주문서 붙여넣기 처리"라는
     // 뚜렷한 업무 신호라 '기타입력'보다 훨씬 유용하게 명명 가능.
     const appLabel = (a.app === '기타입력' && srcs.includes('order')) ? '주문처리(클립보드)' : a.app;
+    // 거래처 매칭용 문맥(창제목·화면 칸값·엔티티·워크북) — flow-handoff 거래처키 커버리지용
+    const ctx = [...new Set(a.evs.map(e => e.ctx).filter(Boolean))].join(' | ').slice(0, 400);
     const data = {
-      app: appLabel, room, activity: va.slice(0, 200), screen: vs.slice(0, 120),
+      app: appLabel, room, activity: va.slice(0, 200), screen: vs.slice(0, 120), ctx,
       sources: srcs, verified: c >= 0.67, confidence: c, typedChars: typed, clicks,
       durationSec: Math.round((a.end - a.start) / 1000), n: a.evs.length, auto,
       evidence: { events: evIds },
