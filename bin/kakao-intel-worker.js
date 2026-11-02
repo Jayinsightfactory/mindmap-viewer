@@ -305,15 +305,22 @@ async function runAll() {
 
   // 전체 원문 1회 fetch 후 방(정규화)별로 그룹 — 깨진 방이름 변형 자동 병합
   const msgs = source.messages;
+  // 개인정보 게이트: config/privacy-policy.json workRooms(업무방)만 분석 — 1:1·개인방 제외 (2026-11-02, 방 1071개 읽던 문제)
+  const normRoom = (r) => String(r || '').replace(/[s●*]/g, '').toLowerCase();
+  let WORK = null;
+  try { WORK = new Set((require('../config/privacy-policy.json').workRooms || []).map(normRoom)); } catch { WORK = null; }
+  if (!WORK || !WORK.size) { console.warn('  업무방 목록 없음 — 안전상 분석 중단'); return 0; }
   const byRoom = new Map();
+  let skipped = 0;
   for (const m of msgs) {
     const room = canonize(m.room || '');
+    if (!WORK.has(normRoom(room)) && !WORK.has(normRoom(m.room))) { skipped++; continue; }
     if (ONLY_ROOM && room !== ONLY_ROOM && (m.room || '') !== ONLY_ROOM) continue;
     if (!byRoom.has(room)) byRoom.set(room, []);
     byRoom.get(room).push(m);
   }
   const rooms = [...byRoom.keys()].sort((a, b) => byRoom.get(b).length - byRoom.get(a).length);
-  console.log(`  소스 ${source.kind.toUpperCase()} · 원문 ${msgs.length}건 · 방 ${rooms.length}개(정규화 후)`);
+  console.log(`  소스 ${source.kind.toUpperCase()} · 원문 ${msgs.length}건 · 업무방 ${rooms.length}개 분석 (업무방 아님 제외 ${skipped}건)`);
 
   let total = 0;
   for (const room of rooms) {
