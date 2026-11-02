@@ -215,7 +215,7 @@ async function runBatch() {
       [...new Set([Math.floor(N * 0.5), Math.floor(N * 0.75), N - 1].filter(c => c >= MIN_PREFIX && c < N && (s.steps[c].gapSec == null || s.steps[c].gapSec <= MAX_GAP)))].forEach(c => {
         const seenKey = `${uid}|${s.steps[c].t || ''}|${s.steps[c].screen || ''}`;
         if (seen.has(seenKey)) { skippedSeen++; return; }
-        points.push({ seenKey, who, sessionKey: `${who}-s${si}`, cutIdx: c, prefix: s.steps.slice(0, c).map(minStep), actual: minStep(s.steps[c]), thumb: s.steps[c].thumbnailUrl || null,
+        points.push({ seenKey, who, sessionKey: `${who}-s${si}@${String((s.steps[0] && s.steps[0].t) || "").slice(0, 16)}`, cutIdx: c, prefix: s.steps.slice(0, c).map(minStep), actual: minStep(s.steps[c]), thumb: s.steps[c].thumbnailUrl || null,
           winFrom: s.steps[c - 1].t ? new Date(Date.parse(s.steps[c - 1].t) - 10 * 60e3).toISOString() : null, winTo: s.steps[c].t || null });
       });
     });
