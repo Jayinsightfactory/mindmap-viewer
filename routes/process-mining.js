@@ -2873,7 +2873,7 @@ async function _fetchKakaoSheetData() {
   // 시트 탭 목록 조회
   const sheetMeta = await new Promise((resolve) => {
     https.get({ hostname: 'sheets.googleapis.com', path: `/v4/spreadsheets/${KAKAO_SHEET_ID}?fields=sheets.properties`, headers: { Authorization: `Bearer ${token}` } }, res => {
-      let d = ''; res.on('data', c => d += c); res.on('end', () => { try { resolve(JSON.parse(d)); } catch { resolve(null); } });
+      res.setEncoding('utf8'); let d = ''; res.on('data', c => d += c); res.on('end', () => { try { resolve(JSON.parse(d)); } catch { resolve(null); } });
     }).on('error', () => resolve(null));
   });
 
@@ -2885,13 +2885,23 @@ async function _fetchKakaoSheetData() {
   const allEvents = [];
   const targetTabs = tabs.filter(t => ['메시지분류', '비즈니스이벤트', '의사결정추적', '방프로파일', '담당자매핑'].includes(t));
 
+  // ★ 시트는 append-only(메시지분류 7만·비즈니스이벤트 30만 행). 예전 A1:Z5000 은 가장 오래된 5천 행(7월)만
+  // 읽어 최근 행이 통째로 빠졌다 → 헤더 + 마지막 KAKAO_SHEET_TAIL_ROWS 행을 읽는다.
+  // ★ res.setEncoding('utf8') 필수: Buffer 청크를 문자열로 이어붙이면 청크 경계의 한글이 깨져 '�'(�)가 됨.
+  const TAIL = parseInt(process.env.KAKAO_SHEET_TAIL_ROWS) || 5000;
+  const rowCountOf = Object.fromEntries(sheetMeta.sheets.map(s => [s.properties?.title, s.properties?.gridProperties?.rowCount || 0]));
+  const getValues = (rangeStr) => new Promise((resolve) => {
+    https.get({ hostname: 'sheets.googleapis.com', path: `/v4/spreadsheets/${KAKAO_SHEET_ID}/values/${encodeURIComponent(rangeStr)}`, headers: { Authorization: `Bearer ${token}` } }, res => {
+      res.setEncoding('utf8');
+      let d = ''; res.on('data', c => d += c); res.on('end', () => { try { resolve(JSON.parse(d)); } catch { resolve(null); } });
+    }).on('error', () => resolve(null));
+  });
   for (const tab of targetTabs) {
-    const range = encodeURIComponent(`${tab}!A1:Z5000`);
-    const data = await new Promise((resolve) => {
-      https.get({ hostname: 'sheets.googleapis.com', path: `/v4/spreadsheets/${KAKAO_SHEET_ID}/values/${range}`, headers: { Authorization: `Bearer ${token}` } }, res => {
-        let d = ''; res.on('data', c => d += c); res.on('end', () => { try { resolve(JSON.parse(d)); } catch { resolve(null); } });
-      }).on('error', () => resolve(null));
-    });
+    const total = rowCountOf[tab] || 0;
+    const head = await getValues(`${tab}!A1:Z1`);
+    const start = Math.max(2, total - TAIL + 1);
+    const body = total >= 2 ? await getValues(`${tab}!A${start}:Z${total}`) : null;
+    const data = head?.values?.[0] ? { values: [head.values[0], ...((body && body.values) || [])] } : null;
 
     if (data?.values?.length > 1) {
       const headers = data.values[0];
