@@ -197,9 +197,15 @@ function crossCheck(cases, msgs) {
 }
 
 // ── 윈도우 분할(append 순서) ──────────────────────────────────────────────────
+// 창 경계를 KST 날짜에 고정 — 앞쪽 N행 절단이 바뀌어도 지난 날짜의 창·키가 그대로라 재분석 안 함 (2026-11-02: 매 라운드 4~10월 창 재분석 낭비)
+const MAX_AGE_DAYS = +(process.env.KAKAO_INTEL_MAX_AGE_DAYS || 14);
+const kstDay = (ts) => { const t = Date.parse(ts); return Number.isFinite(t) ? new Date(t + 9 * 3600e3).toISOString().slice(0, 10) : ''; };
 function windowize(msgs, size) {
+  const cutoff = new Date(Date.now() + 9 * 3600e3 - MAX_AGE_DAYS * 864e5).toISOString().slice(0, 10);
+  const byDay = new Map();
+  for (const m of msgs) { const d = kstDay(m.ts) || 'nodate'; if (d !== 'nodate' && d < cutoff) continue; if (!byDay.has(d)) byDay.set(d, []); byDay.get(d).push(m); }
   const w = [];
-  for (let i = 0; i < msgs.length; i += size) w.push(msgs.slice(i, i + size));
+  for (const [day, arr] of byDay) for (let i = 0; i < arr.length; i += size) { const c = arr.slice(i, i + size); c.day = day; c.idx = i / size; w.push(c); }
   return w;
 }
 function transcriptOf(msgs) {
@@ -252,7 +258,7 @@ async function processRoom(room, allMsgs, rosterLine) {
     const win = windows[wi];
     if (win.length < 3) continue;
     const first = win[0], last = win[win.length - 1];
-    const key = hash(room + '|w' + wi + '|' + win.length + '|' + String(first.text).slice(0, 40) + '|' + String(last.text).slice(0, 40));
+    const key = hash(room + '|' + win.day + '|c' + win.idx + '|' + win.length + '|' + String(first.text).slice(0, 40) + '|' + String(last.text).slice(0, 40));
     if (_state.processed[key]) { processed++; continue; }
     // 구독 사용량 가드: 70%↑면 이번 라운드 중단(사용자 몫 30% 보전) — 다음 폴링에서 재확인
     const quota = await QUOTA.checkQuota(30).catch(() => ({ pause: false }));
