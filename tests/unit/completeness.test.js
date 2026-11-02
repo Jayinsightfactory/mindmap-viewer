@@ -22,7 +22,7 @@ describe('completeness', () => {
     for (let w = 1; w <= 4; w++) for (let i = 0; i < 7; i++) { const d = new Date(Date.parse(today + 'T00:00:00Z') - (w * 7 + i) * 864e5).toISOString().slice(0, 10); byDay[d] = { capture: 40, analyzed: 30, keyboard: 10, mouse: 10, heartbeat: 100 }; }
     for (let i = 1; i < 7; i++) { const d = new Date(Date.parse(today + 'T00:00:00Z') - i * 864e5).toISOString().slice(0, 10); byDay[d] = { capture: 40, analyzed: 30, keyboard: 10, mouse: 10, heartbeat: 100 }; }
     byDay[today] = { capture: 10, analyzed: 0, keyboard: 5, mouse: 0, heartbeat: 50 };
-    const dead = new Date(Date.parse(today + 'T00:00:00Z') - 864e5).toISOString().slice(0, 10); byDay[dead] = { capture: 1, analyzed: 0, keyboard: 1, mouse: 103, heartbeat: 257 };
+    let dead; for (let i = 1; i < 7; i++) { const d = new Date(Date.parse(today + 'T00:00:00Z') - i * 864e5); if (d.getUTCDay() >= 1 && d.getUTCDay() <= 5) { dead = d.toISOString().slice(0, 10); break; } } /* 최근 평일(주말은 원인분류 안 함) */ byDay[dead] = { capture: 1, analyzed: 0, keyboard: 1, mouse: 103, heartbeat: 257 };
     const rep = buildReport({ byUser: { 홍길동: byDay, U2: {} }, lastHb: { 홍길동: { at: 'x', hostname: 'PC1', userId: 'U1' } }, liveKeys: [], names: { U1: '홍길동' }, uids: { 홍길동: ['U1'] } }, 7);
     const e = rep.employees.find((x) => x.userId === 'U1');
     expect(e.days.filter((d) => d.date !== today).every((d) => d.expected === 40)).toBe(true);
