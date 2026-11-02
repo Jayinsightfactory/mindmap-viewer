@@ -215,7 +215,9 @@ function transcriptOf(msgs) {
 async function getPgMessages() {
   const messages = [];
   for (let offset = 0; ; offset += 1000) {
-    const page = await getPgPage(offset);
+    // 페이지 하나의 일시 오류로 라운드 전체가 시트 폴백(빈 소스)되던 문제 — 3회 재시도 (2026-11-02)
+    let page = null;
+    for (let a = 0; a < 3; a++) { page = await getPgPage(offset).catch(e => ({ ok: false, error: e.message })); if (page && page.ok) break; await new Promise(r => setTimeout(r, 3000 * (a + 1))); }
     if (!page.ok || !Array.isArray(page.messages)) throw new Error(page.error || 'PG messages unavailable');
     messages.push(...page.messages.map(m => ({
       room: m.chatroom || m.chat_id || '',
