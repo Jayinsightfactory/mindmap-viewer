@@ -1662,15 +1662,23 @@ app.get('/api/admin/kakao-intel', async (req, res) => {
       }
       return clusters.map(c => ({ rule: c.rule, count: c.count, variants: c.variants })).sort((a, b) => b.count - a.count);
     }
+    // [2026-11-02] 차수 지난 미해결 = 만료(사실상 종결) — 미해결 목록에서 분리. 차수 대번호≈ISO 주차, 2주 이상 지나면 만료
+    const _kst = new Date(Date.now() + 9 * 3600e3); const _jan4 = new Date(Date.UTC(_kst.getUTCFullYear(), 0, 4));
+    const _curWk = Math.ceil(((_kst - _jan4) / 864e5 + ((_jan4.getUTCDay() + 6) % 7) + 1) / 7);
+    for (const it of issueList) {
+      const m = /^(d{1,2})-/.exec(String(it.seq || '')); const wk = m ? +m[1] : null;
+      it.expired = !it.resolved && wk != null && (wk > _curWk + 10 || _curWk - wk >= 2);
+    }
     const issuesResolved = issueList.filter(i => i.resolved).length;
+    const issuesExpired = issueList.filter(i => i.expired).length;
 
     res.json({
       generatedAt: new Date().toISOString(), windowsAnalyzed: windows, hours,
       crossCheckAvg: ccN ? +(ccSum / ccN).toFixed(2) : null,
       excludedDefects: _exclDefect, // 제외된 불량/불만 케이스 수(검증용)
       // 1) 이슈 트래킹보드 (미해결 우선, 불량/불만 제외)
-      issues: issueList.sort((a, b) => (a.resolved - b.resolved) || (b.occurrences - a.occurrences)).slice(0, 150),
-      issueSummary: { total: issueList.length, resolved: issuesResolved, unresolved: issueList.length - issuesResolved, byType: topN(byType, 20) },
+      issues: issueList.sort((a, b) => (a.resolved - b.resolved) || (a.expired - b.expired) || (b.occurrences - a.occurrences)).slice(0, 150),
+      issueSummary: { total: issueList.length, resolved: issuesResolved, unresolved: issueList.length - issuesResolved - issuesExpired, expired: issuesExpired, byType: topN(byType, 20) },
       // 2) 거래처 성향지도
       customers: Object.values(customers).map(c => ({ name: c.name, mentions: c.mentions, issues: Object.keys(c.issues).length, resolveRate: c.mentions ? +(c.resolved / c.mentions).toFixed(2) : null, types: topN(c.types, 4), tones: topN(c.tones, 3) })).sort((a, b) => b.issues - a.issues).slice(0, 80),
       // 3) 직원 역량매트릭스
