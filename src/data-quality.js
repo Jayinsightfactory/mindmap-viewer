@@ -94,6 +94,8 @@ function looksLikeWindowTitleNoise(raw) {
 function normalizeAppName(raw, fallback = '') {
   const s = compactWhitespace(raw);
   if (!s) return fallback || '';
+  // [2026-11-03] 순수 숫자(유휴ms·PID·창핸들 등)는 앱명이 아님 — win-shell 응답 밀림으로 '15','6361701505' 가 들어왔음
+  if (/^\d+$/.test(s)) return fallback || '';
   if (s.length > 80) return fallback || '';
   if (looksLikeJsonNoise(s) || looksLikeProcessList(s) || looksLikePowerShellCommand(s) || looksLikeVersion(s)) {
     return fallback || '';
@@ -131,6 +133,26 @@ function isClipboardNoise(raw) {
   return false;
 }
 
+// [2026-11-03] 앱명이 비었거나 숫자면 창제목으로 판별, 그래도 모르면 'unknown'. 정상 앱명은 그대로.
+const TITLE_APP_RULES = [
+  [/kakaotalk|카카오톡/i, 'kakaotalk'],
+  [/chrome/i, 'chrome'],
+  [/microsoft edge/i, 'msedge'],
+  [/excel|\.xls[xm]?\b|"workbook"/i, 'excel'],
+  [/nenova|네노바/i, 'nenova'],
+];
+function isNumericAppName(raw) { return /^\s*\d+\s*$/.test(String(raw == null ? '' : raw)); }
+function appFromWindowTitle(title) {
+  const t = String(title || '');
+  for (const [re, app] of TITLE_APP_RULES) if (re.test(t)) return app;
+  return '';
+}
+function resolveAppName(app, windowTitle) {
+  const n = normalizeAppName(app, '');
+  if (n) return n;
+  return appFromWindowTitle(windowTitle) || 'unknown';
+}
+
 function getAppProfileKey(raw) {
   return normalizeAppName(raw, '');
 }
@@ -145,4 +167,7 @@ module.exports = {
   looksLikeWindowTitleNoise,
   normalizeAppName,
   sanitizeWindowTitle,
+  isNumericAppName,
+  appFromWindowTitle,
+  resolveAppName,
 };
