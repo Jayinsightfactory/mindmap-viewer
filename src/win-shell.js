@@ -25,6 +25,10 @@ let _pending = null;          // { resolve, reject, timer }
 let _queue = [];              // [{ cmd, resolve, reject, timeoutMs }]
 let _starting = false;
 let _initFailed = false;       // 초기화 영구 실패 시 true (caller가 폴백 사용)
+// [2026-11-03] 명령마다 고유 sentinel(SENTINEL+seq). 이전엔 공용 sentinel 이라 타임아웃된 명령의 늦은 출력이
+// 다음 명령 응답으로 밀려 들어감(앱명='15'(유휴ms)·'6361701505', 제목='141 KakaoTalk …'/엑셀 JSON). 지난 seq 출력은 버림.
+let _seq = 0;
+const SENTINEL_RE = new RegExp(SENTINEL + '(\\d+)__');
 
 function isAvailable() {
   return os.platform() === 'win32' && !_initFailed;
@@ -110,10 +114,16 @@ function _spawn() {
 
 function _drainStdout() {
   if (!_pending) return;
-  const idx = _stdoutBuf.indexOf(SENTINEL);
-  if (idx < 0) return;
-  const result = _stdoutBuf.slice(0, idx).trim();
-  _stdoutBuf = _stdoutBuf.slice(idx + SENTINEL.length);
+  let m;
+  while ((m = SENTINEL_RE.exec(_stdoutBuf))) {
+    const before = _stdoutBuf.slice(0, m.index);
+    _stdoutBuf = _stdoutBuf.slice(m.index + m[0].length);
+    if (Number(m[1]) !== _pending.seq) continue; // 타임아웃된 이전 명령의 늦은 출력 → 버림
+    return _finish(before.trim());
+  }
+}
+
+function _finish(result) {
   const cb = _pending;
   _pending = null;
   if (cb.timer) clearTimeout(cb.timer);
@@ -144,10 +154,11 @@ function _send(cmd, timeoutMs, resolve, reject) {
       _processQueue();
     }
   }, timeoutMs);
-  _pending = { resolve, reject, timer };
+  const seq = ++_seq;
+  _pending = { resolve, reject, timer, seq };
   try {
     // 명령 실행 후 sentinel 출력 → 응답 끝 식별
-    _ps.stdin.write(`try { ${cmd} } catch {}; Write-Output "${SENTINEL}"\n`);
+    _ps.stdin.write(`try { ${cmd} } catch {}; Write-Output "${SENTINEL}${seq}__"\n`);
   } catch (err) {
     if (timer) clearTimeout(timer);
     _pending = null;

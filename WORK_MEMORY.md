@@ -2239,3 +2239,10 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 - 원인: 스풀 워커 E1(8x8 aHash, 키 userId|app, 최근12 ring)이 ①시간 개념 없음 ②스킵 프레임까지 ring에 push. nenova.exe 그리드(제목 고정 '화훼 관리 프로그램')·앱명이 '15'/'6361701505'로 뭉친 강명훈 PC는 ring이 한 번 차면 영구 중복. 스풀 로그 실측 E1 스킵: T09911T 27/42, L0C2IOT 28/31(정상 직원 ~40%).
 - 수정: _isDupHash — 캡처시각 기준 10분 창(VISION_DEDUP_WINDOW_MS) 안의 해시와만 비교, 분석한 프레임만 ring에 넣음 → 키당 최소 10분 1장. 단위테스트 tests/unit/vision-dedup-window.test.js. 서버 변경 없음(재배포 OOM 위험 무관), 워커는 HEAD 변경 자동 재기동.
 - 남은 위험: 스풀 대기 848→1305 증가 중(처리량 < 유입), 지연 30~60분은 이 백로그 탓. 박성수 PC는 user_id 2개(MN9B6750·MNMR52II) 분열. 강명훈 PC 앱명 숫자화(데몬 app 필드 버그 의심).
+
+## 2026-11-03 데몬 app 필드 숫자('15','6361701505') 버그 수정
+- 검색어: app 숫자, numeric app, win-shell sentinel, 응답 밀림, 중복컷 묶임, DESKTOP-L0C2IOT, 강명훈, byApp 숫자키
+- 증거(DB 3일): 숫자 app 6개 소스(DESKTOP-L0C2IOT 206/2978 screen.capture, MNMSAQJD 285/461, MNMRX6SR 327, MNH03H 195, T09911T 60, S4S2HMU 59). windowTitle 에 '141 KakaoTalk …'(PS_FG_IDLE 의 유휴ms+프로세스+제목), 엑셀 JSON('{"workbook":…}', excel-monitor 출력)이 들어옴 → 다른 명령의 출력이 밀려 들어온 것.
+- 원인: src/win-shell.js 공용 sentinel. 명령 타임아웃 후 늦게 온 출력+sentinel 이 다음 명령의 응답으로 해석됨(app=유휴ms/PID/핸들).
+- 수정: win-shell 명령별 고유 sentinel(seq) + 지난 seq 출력 폐기 / data-quality normalizeAppName 순수숫자 거부(+resolveAppName·appFromWindowTitle) / vision-worker _dedupKey(숫자 app→창제목 키, #40 시간창 유지). 테스트 tests/unit/app-name-numeric.test.js
+- 재발 시: win-shell.js _drainStdout, data-quality.normalizeAppName

@@ -142,6 +142,14 @@ function _isDupHash(h, key, atMs) {
   if (dup) _skipStats.dup++;
   return dup;
 }
+// [2026-11-03] 앱명이 숫자/빈값(구데몬 win-shell 응답 밀림)이면 창제목 기반 키 — 크롬·카톡·엑셀이 한 묶음으로 비교되던 것 방지
+function _dedupKey(userId, app, windowTitle) {
+  const a = String(app || '').trim();
+  if (a && !/^\d+$/.test(a)) return `${userId}|${a}`;
+  const t = String(windowTitle || '');
+  const byTitle = /kakaotalk|카카오톡/i.test(t) ? 'kakaotalk' : /chrome/i.test(t) ? 'chrome' : /excel|\.xls/i.test(t) ? 'excel' : /nenova|네노바/i.test(t) ? 'nenova' : '';
+  return `${userId}|${byTitle || 't:' + t.replace(/^\s*\d+\s+/, '').slice(0, 40)}`;
+}
 function _isDupFrame(base64, key, atMs) {
   if (!DEDUP_ON) return false;
   const h = _perceptualHash(base64);
@@ -1018,7 +1026,7 @@ async function processSpool() {
         }
         console.log(`[vision-spool] ${full.hostname}/${full.app}: ${(full.windowTitle || '').slice(0, 40)}`);
         // [E1] 직전과 시각적으로 같은 화면이면 분석 스킵 + 스풀에서 삭제(드레인)
-        if (_isDupFrame(full.imageBase64, `${it.userId}|${full.app || ''}`, new Date(full.ts || Date.now()).getTime())) {
+        if (_isDupFrame(full.imageBase64, _dedupKey(it.userId, full.app, full.windowTitle), new Date(full.ts || Date.now()).getTime())) {
           console.log(`  ⇢ 중복화면 스킵(E1): ${it.file}`);
           await _spoolReq('DELETE', `/api/vision/spool/file?user=${encodeURIComponent(it.userId)}&file=${encodeURIComponent(it.file)}`);
           continue;
@@ -1144,4 +1152,4 @@ async function main() {
 
 // [2026-09-29] require 시(bin/vision-backfill.js) 메인루프 미실행 — 직접 실행할 때만 동작(기존 동작 불변)
 if (require.main === module) main().catch(e => { console.error(e.message); process.exit(1); });
-module.exports = { visionAnalyze, visionCli, _buildPrompt, _parseResult, _isValidResult, _refreshWfCatalog, _workflowBlock, pickModel, _isDupHash, _dupCache, ORBIT_SERVER, ORBIT_TOKEN, USE_CLI, CLAUDE_CLI };
+module.exports = { visionAnalyze, visionCli, _buildPrompt, _parseResult, _isValidResult, _refreshWfCatalog, _workflowBlock, pickModel, _isDupHash, _dupCache, _dedupKey, ORBIT_SERVER, ORBIT_TOKEN, USE_CLI, CLAUDE_CLI };
