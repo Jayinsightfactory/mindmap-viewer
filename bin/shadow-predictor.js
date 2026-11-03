@@ -22,7 +22,11 @@ const MODEL = process.env.SHADOW_CLI_MODEL || 'sonnet';
 // 예측 모델 분리: 평소 sonnet(저비용 상시), 초정밀 필요시(승격 임계 근접·고위험 스텝) opus로.
 //   확인 실행:  SHADOW_MODEL_PRED=opus node bin/shadow-predictor.js --once
 const MODEL_PRED = process.env.SHADOW_MODEL_PRED || MODEL;
-const MAX = parseInt(process.env.SHADOW_MAX) || 16;         // 배치당 예측점 상한
+const MAX = parseInt(process.env.SHADOW_MAX) || 40;         // 배치당 예측점 상한 (11/03: 16→40, 직원당 표본 확대)
+const CUTS_PER_SESSION = parseInt(process.env.SHADOW_CUTS_PER_SESSION) || 6; // 세션당 예측점(뒤쪽 우선). 기존 50%/75%/끝 3점 → 촘촘히
+// 11/03 A/B: 관찰 절차(workflows) 요약을 예측 재료로 넣은 군(proc) vs 안 넣은 군(base) 반반 → source 로 구분해 효과 측정
+const WF_FILE = process.env.SHADOW_WORKFLOWS || 'C:/Users/USER/nenova-erp-ui-wt-manual/data/work-feature-workflows.json';
+const PROC = (() => { try { const W = JSON.parse(fs.readFileSync(WF_FILE, 'utf8').replace(/^﻿/, '')); const m = {}; for (const p of W.people || []) m[p.name] = (p.workflows || []).map(w => `■ ${w.name}: ` + (w.stepsDetail || []).map(st => st.text).join(' → ')).join('\n').slice(0, 1800); return m; } catch { return {}; } })();
 const HOURS = parseInt(process.env.SHADOW_HOURS) || 96;
 const POLL_MS = parseInt(process.env.SHADOW_POLL_MS) || 6 * 60 * 60 * 1000; // 6h
 // [2026-11-02] 전 직원 기본(손지윤·임재용은 정책상 제외). env SHADOW_USERIDS로 교체 가능.
@@ -138,10 +142,14 @@ async function recentMessages(fromIso, toIso) {
     .slice(0, 15).map(m => ({ t: m.created_at, room: m.chatroom, from: m.sender, text: String(m.message || '').slice(0, 80) }));
 }
 
-async function predictAndScore(who, sessionKey, cutIdx, prefix, actual, thumb, msgs = []) {
+async function predictAndScore(who, sessionKey, cutIdx, prefix, actual, thumb, msgs = [], useProc = false) {
+  const procHint = useProc && PROC[who] ? `
+이 직원의 관찰된 업무 절차(참고 — 앞 스텝이 어느 절차의 몇 번째인지 맞춰 보고 그 다음 단계를 우선 후보로):
+${PROC[who]}
+` : '';
   const roleHint = ROLE[who] ? `직원 역할: ${who} — ${ROLE[who]}.` : `직원: ${who}.`;
   const pred = await cli(`너는 직원의 다음 업무행동을 예측하는 모델이다. ${roleHint}
-아래는 이 직원 작업 세션의 "앞 스텝들"(시간순)이다. 정답(다음 스텝)은 주어지지 않았다.
+${procHint}아래는 이 직원 작업 세션의 "앞 스텝들"(시간순)이다. 정답(다음 스텝)은 주어지지 않았다.
 각 스텝 객체 필드 의미:
 - screen: 화면/앱 이름, activity: 그 화면에서 한 행동 요약, app: 실행 앱
 - nenovaAction: nenova ERP 액션(있으면), gapSec: 이전 스텝과의 시간간격(초)
@@ -196,7 +204,7 @@ note에 "예측 X / 실제 Y" 형식 한 줄 비교.
 순수 JSON 객체 하나로만 출력(마크다운/설명/코드펜스 금지):
 {"screenMatch":0,"actionMatch":0,"targetMatch":0,"coordMatch":0,"valueMatch":0,"overall":0,"note":""}`);
   if (!sc) return null;
-  return { sessionKey, cutIdx, who, category: localCategory(actual), screenMatch: sc.screenMatch, actionMatch: sc.actionMatch, targetMatch: sc.targetMatch, coordMatch: sc.coordMatch, valueMatch: sc.valueMatch, overall: sc.overall, note: (sc.note || '').slice(0, 300), source: (imageSc ? 'shadow-predictor-v3-image' : 'shadow-predictor-v2') + (MODEL_PRED !== MODEL ? '-' + MODEL_PRED : '') };
+  return { sessionKey, cutIdx, who, category: localCategory(actual), screenMatch: sc.screenMatch, actionMatch: sc.actionMatch, targetMatch: sc.targetMatch, coordMatch: sc.coordMatch, valueMatch: sc.valueMatch, overall: sc.overall, note: (sc.note || '').slice(0, 300), source: (imageSc ? 'shadow-predictor-v3-image' : 'shadow-predictor-v2') + (MODEL_PRED !== MODEL ? '-' + MODEL_PRED : '') + (useProc ? '-proc' : '-base') };
 }
 
 async function runBatch() {
@@ -212,7 +220,7 @@ async function runBatch() {
     const sessions = (j && j.sessions || []).filter(s => s.stepCount >= 4);
     sessions.forEach((s, si) => {
       const N = s.steps.length;
-      [...new Set([Math.floor(N * 0.5), Math.floor(N * 0.75), N - 1].filter(c => c >= MIN_PREFIX && c < N && (s.steps[c].gapSec == null || s.steps[c].gapSec <= MAX_GAP)))].forEach(c => {
+      [...Array(N).keys()].filter(c => c >= MIN_PREFIX && c < N && (s.steps[c].gapSec == null || s.steps[c].gapSec <= MAX_GAP)).slice(-CUTS_PER_SESSION).forEach(c => {
         const seenKey = `${uid}|${s.steps[c].t || ''}|${s.steps[c].screen || ''}`;
         if (seen.has(seenKey)) { skippedSeen++; return; }
         points.push({ seenKey, who, sessionKey: `${who}-s${si}@${String((s.steps[0] && s.steps[0].t) || "").slice(0, 16)}`, cutIdx: c, prefix: s.steps.slice(0, c).map(minStep), actual: minStep(s.steps[c]), thumb: s.steps[c].thumbnailUrl || null,
@@ -229,7 +237,8 @@ async function runBatch() {
   let posted = 0;
   for (const p of batch) {
     const msgs = await recentMessages(p.winFrom, p.winTo);
-    const r = await predictAndScore(p.who, p.sessionKey, p.cutIdx, p.prefix, p.actual, p.thumb, msgs);
+    const useProc = !!PROC[p.who] && (batch.indexOf(p) % 2 === 0); // A/B 반반
+    const r = await predictAndScore(p.who, p.sessionKey, p.cutIdx, p.prefix, p.actual, p.thumb, msgs, useProc);
     if (r && msgs.length) r.note = `[카톡${msgs.length}] ` + r.note;
     if (r) {
       const res = await apiPost('/api/verification/scores', { scores: [r] });
