@@ -2232,3 +2232,10 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 - 카나리 추천: 아드리아나 DESKTOP-05VLRN1 1대. `POST /api/daemon/command {"hostname":"DESKTOP-05VLRN1","action":"update"}` — 사장님 승인 후.
 - 발견(미수정): 오너 PC ~/mindmap-viewer 가 Defender 예외 미등록(defenderExcluded=False).
 - 다시 반복되면: docs/DAEMON_SURVIVAL_DESIGN.md 먼저. 원인별 집계는 daemon.crashmoment.causeCode.
+
+## 2026-11-03 강현우·강명훈·박성수 해독 정지 = E1 중복컷 ring 고착 (vision-spool)
+- 검색어: E1, 중복화면 스킵, _isDupFrame, _isDupHash, DEDUP_WINDOW_MS, 해독 정지, vision-spool, T09911T, L0C2IOT, HGNEA1S
+- 증상: 캡처는 15:3x까지 들어오는데 해독 마지막(캡처시각) 강현우 11:56·강명훈 11:31·박성수 12:09. 서버 큐 워커는 7/30 은퇴(42268 --moyi-instance는 nowlink용, 무관) → 해독 경로는 스풀 워커 하나뿐.
+- 원인: 스풀 워커 E1(8x8 aHash, 키 userId|app, 최근12 ring)이 ①시간 개념 없음 ②스킵 프레임까지 ring에 push. nenova.exe 그리드(제목 고정 '화훼 관리 프로그램')·앱명이 '15'/'6361701505'로 뭉친 강명훈 PC는 ring이 한 번 차면 영구 중복. 스풀 로그 실측 E1 스킵: T09911T 27/42, L0C2IOT 28/31(정상 직원 ~40%).
+- 수정: _isDupHash — 캡처시각 기준 10분 창(VISION_DEDUP_WINDOW_MS) 안의 해시와만 비교, 분석한 프레임만 ring에 넣음 → 키당 최소 10분 1장. 단위테스트 tests/unit/vision-dedup-window.test.js. 서버 변경 없음(재배포 OOM 위험 무관), 워커는 HEAD 변경 자동 재기동.
+- 남은 위험: 스풀 대기 848→1305 증가 중(처리량 < 유입), 지연 30~60분은 이 백로그 탓. 박성수 PC는 user_id 2개(MN9B6750·MNMR52II) 분열. 강명훈 PC 앱명 숫자화(데몬 app 필드 버그 의심).
