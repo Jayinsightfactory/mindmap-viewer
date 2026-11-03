@@ -124,19 +124,29 @@ let _skipStats = { dup: 0, blank: 0 };
 function _hamming(a, b) { let d = 0; for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) d++; return d; }
 // [A] 빈/단색 프레임(잠금·로딩·검은/흰 화면): average-hash 1비트 수가 극단 = 시각 무정보 → 분석 불필요
 function _isBlankHash(h) { const ones = (h.match(/1/g) || []).length; return ones <= 3 || ones >= 61; }
-function _isDupFrame(base64, key) {
-  if (!DEDUP_ON) return false;
-  const h = _perceptualHash(base64);
-  if (!h) return false;                 // 해시 실패 → 분석 진행(안전측)
+// [2026-11-03] 시간창 dedup — 이전엔 ring에 시간 개념이 없고 스킵한 프레임까지 ring에 넣어서, 화면 배치가 고정된 앱
+// (nenova.exe 그리드, 앱명이 '15' 같은 숫자로 뭉친 PC)은 ring이 한 번 차면 몇 시간이고 전부 '중복'으로 버려졌다
+// (11/3 실측: 강현우·강명훈·박성수 해독 11:31~12:09 정지, 스풀 로그 E1 스킵 27/42·28/31). 이제는
+//  ① 캡처 시각 기준 DEDUP_WINDOW_MS(기본 10분) 안의 해시와만 비교, ② 실제로 분석한(중복 아닌) 프레임만 ring에 넣음
+// → 같은 화면이 계속돼도 키당 최소 10분에 1장은 해독된다.
+const DEDUP_WINDOW_MS = parseInt(process.env.VISION_DEDUP_WINDOW_MS) || 10 * 60 * 1000;
+function _isDupHash(h, key, atMs) {
+  if (!h) return false;
   if (_isBlankHash(h)) { _skipStats.blank++; return true; }   // [A] 빈/단색 컷
-  // [B] 최근 N개 중 하나라도 시각적으로 같으면 중복(A→B→A 왕복·재등장도 컷)
-  let recent = _dupCache.get(key);
-  if (!recent) { recent = []; _dupCache.set(key, recent); }
-  const dup = recent.some(p => _hamming(p, h) <= DEDUP_MAXDIST);
-  recent.push(h); if (recent.length > DEDUP_RECENT) recent.shift();
+  const at = Number.isFinite(atMs) ? atMs : Date.now();
+  let recent = (_dupCache.get(key) || []).filter(p => Math.abs(at - p.at) < DEDUP_WINDOW_MS);
+  const dup = recent.some(p => _hamming(p.h, h) <= DEDUP_MAXDIST);
+  if (!dup) { recent.push({ h, at }); if (recent.length > DEDUP_RECENT) recent.shift(); }
+  _dupCache.set(key, recent);
   if (_dupCache.size > 500) { const k = _dupCache.keys().next().value; _dupCache.delete(k); }
   if (dup) _skipStats.dup++;
   return dup;
+}
+function _isDupFrame(base64, key, atMs) {
+  if (!DEDUP_ON) return false;
+  const h = _perceptualHash(base64);
+  if (!h) return false;                 // 해시 실패 → 분석 진행(안전측)
+  return _isDupHash(h, key, atMs);
 }
 
 // [2026-06-15] 야간 배치 모드(--night): 낮엔 큐 이미지를 디스크에 보관만(CLI 비용 0),
@@ -1008,7 +1018,7 @@ async function processSpool() {
         }
         console.log(`[vision-spool] ${full.hostname}/${full.app}: ${(full.windowTitle || '').slice(0, 40)}`);
         // [E1] 직전과 시각적으로 같은 화면이면 분석 스킵 + 스풀에서 삭제(드레인)
-        if (_isDupFrame(full.imageBase64, `${it.userId}|${full.app || ''}`)) {
+        if (_isDupFrame(full.imageBase64, `${it.userId}|${full.app || ''}`, new Date(full.ts || Date.now()).getTime())) {
           console.log(`  ⇢ 중복화면 스킵(E1): ${it.file}`);
           await _spoolReq('DELETE', `/api/vision/spool/file?user=${encodeURIComponent(it.userId)}&file=${encodeURIComponent(it.file)}`);
           continue;
@@ -1134,4 +1144,4 @@ async function main() {
 
 // [2026-09-29] require 시(bin/vision-backfill.js) 메인루프 미실행 — 직접 실행할 때만 동작(기존 동작 불변)
 if (require.main === module) main().catch(e => { console.error(e.message); process.exit(1); });
-module.exports = { visionAnalyze, visionCli, _buildPrompt, _parseResult, _isValidResult, _refreshWfCatalog, _workflowBlock, pickModel, ORBIT_SERVER, ORBIT_TOKEN, USE_CLI, CLAUDE_CLI };
+module.exports = { visionAnalyze, visionCli, _buildPrompt, _parseResult, _isValidResult, _refreshWfCatalog, _workflowBlock, pickModel, _isDupHash, _dupCache, ORBIT_SERVER, ORBIT_TOKEN, USE_CLI, CLAUDE_CLI };
