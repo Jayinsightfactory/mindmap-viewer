@@ -12,6 +12,7 @@ const path = require('path');
 const os   = require('os');
 const http = require('http');
 const https = require('https');
+const clickRect = require('./click-rect');
 
 // ── config (~/.orbit-config.json 매번 동적 읽기) ─────────────────────────────
 function _readOrbitConfig() {
@@ -85,7 +86,13 @@ function _onMousedown(e) {
   const app = _getActiveApp();
   const win = _getActiveWindow();
   if (_clickPositions.length < MAX_CLICK_POSITIONS) {
-    _clickPositions.push({ x: e.x, y: e.y, t: Date.now(), button: e.button, app, win });
+    const click = { x: e.x, y: e.y, t: Date.now(), button: e.button, app, win };
+    _clickPositions.push(click);
+    // clickRect 플래그 켜진 경우에만: 전경 창 rect·클라이언트 원점·DPI(+nenova MDI/컨트롤)
+    // 를 비동기 조회해 click.rel 로 보강(실패해도 기존 수집 유지). flush 전에 채워짐.
+    if (clickRect.isEnabled()) {
+      try { clickRect.queryRel(e.x, e.y, (rel) => { click.rel = rel; }); } catch {}
+    }
   }
   const q = `${e.x < 960 ? 'L' : 'R'}${e.y < 540 ? 'T' : 'B'}`;
   _quadrants[q] = (_quadrants[q] || 0) + 1;
