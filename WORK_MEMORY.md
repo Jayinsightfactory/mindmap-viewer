@@ -2310,3 +2310,16 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 - 실증: __InstanceCreationEvent watcher + ppid 귀속 → ocrExtract 6회 우리프로세스 신규스폰 0, 폴백 6. jest 240 PASS.
 - 반복 방지: win-shell로 .ps1 파일 호출 시 스크립트의 `exit`가 상주 셸을 죽인다 → `return`으로 바꿔야 함.
 - 배포: 여전히 보류. 카나리 불가(OrbitCodeSync 10분 origin/main=전 PC). 전사 동시 반영은 사장님 직접 승인 대기.
+
+## 2026-11-04 — conhost 깜빡임 5차: secure-collector 전환 + ps1 $pid 선재버그 (커밋 40ea473)
+- 지시: 4차 '잔존 1순위' secure-collector(은행보안 PC) 전환.
+- _getStatus(1초)/_captureScreen(2분)/_pollProcs(30초)/시작목록 → 상주 win-shell. async화+await, _pollMouse in-flight 가드.
+- 선재버그 발견(내 변경 무관, -File/& 동일): ① ps1의 $pid 가 예약 자동변수(읽기전용) → proc 항상 'powershell' 오검출 +
+  상주셸 try/catch가 종료성예외 삼켜 status 빈출력 → $pid→$wpid 수정(필수). ② capture 가 $args[1](null) 읽어 항상 err
+  (원래 깨짐, 실캡처=native exe) → 동작 보존 위해 $args 미수정.
+- 반복 방지: PowerShell에서 $pid/$host/$input 등 자동변수 이름을 지역변수로 쓰지 말 것. win-shell로 .ps1 호출 시 스크립트
+  내부 종료성 예외는 win-shell의 try/catch에 삼켜져 빈 출력이 됨 → 스크립트가 깨끗이 끝나야 함.
+- 실증: start() 1초루프 8초 우리프로세스 신규 스폰 1회(상주셸 1회성)·conhost 0, status JSON 정상(proc='claude'). jest 240 PASS.
+- 깜빡임 전환 현황: vision-worker/egress(3차)·ocr-triage/self-healer(4차)·secure-collector(5차) 완료.
+  미전환(사유): screen-capture:959(python없는 PC 3순위 폴백·미검증), claude-reaper(owner 전용 120초). dead: keylogger/system-monitor.
+- 배포: 보류 유지(카나리 불가=OrbitCodeSync 10분 origin/main 전PC). 전사 동시반영 사장님 직접 승인 대기.
