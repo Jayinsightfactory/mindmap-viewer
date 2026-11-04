@@ -2246,3 +2246,17 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 - 원인: src/win-shell.js 공용 sentinel. 명령 타임아웃 후 늦게 온 출력+sentinel 이 다음 명령의 응답으로 해석됨(app=유휴ms/PID/핸들).
 - 수정: win-shell 명령별 고유 sentinel(seq) + 지난 seq 출력 폐기 / data-quality normalizeAppName 순수숫자 거부(+resolveAppName·appFromWindowTitle) / vision-worker _dedupKey(숫자 app→창제목 키, #40 시간창 유지). 테스트 tests/unit/app-name-numeric.test.js
 - 재발 시: win-shell.js _drainStdout, data-quality.normalizeAppName
+
+## 2026-11-04 해독 워커 병렬화 + 해독 전 싼신호 선별(선별 먼저, 병렬 카나리 뒤)
+- 요청: "해독 워커 CLI 병렬 가능?" → 안전장치 갖춰 병렬화. 사장님 추가지시로 순서변경: (1)선별 보강→실측 (2)그 다음 병렬 카나리.
+- 검색어: claude-cli.lock, _acquireCliLock, visionCli, quota-guard _liveToken, _isDupFrame, _triageSeen, ocr-triage, trigger priority, vision value selection
+- 원인 파악: bin/vision-worker.js 가 ~/.orbit/claude-cli.lock 파일락으로 claude -p 를 전 구간 1개씩 직렬화(시간당 ~30건). 락 이유=동시호출 중 OAuth refreshToken 회전 갱신 겹침→로그인 소실(메모리 orbit-cli-oauth-expiry-quota-guard).
+- 수정 파일:
+  - src/cli-gate.js (신규): 토큰 안전구간만 직렬. 평상시 ORBIT_CLI_PARALLEL(기본 1=기존동작, 최대 3)까지 동시. 만료 15분 이내만 cross-process 리프레시락+가드(_liveToken) 경유 갱신. 401/invalid_grant 감지→전 워커 병렬1 강등(~/.orbit/cli-parallel-demoted)+decode-boost.log. ★기본 1로 둬서 배포만으로 동작 불변(카나리 보존) — 브리프의 "기본 2"는 실험 시 세팅값으로 해석.
+  - src/vision-prefilter.js (신규): 해독 전 메타(앱·창제목·트리거)만으로 저정보 화면(잠금·바탕화면·유튜브/영상·설정·새탭) 컷 + 전환/입력 트리거 상위정렬. 업무키워드(nenova/ERP/엑셀/메일/카톡/견적…) 있으면 통과·승격. env VISION_PREFILTER=off 로 비활성. 스킵사유 카운터(logLine).
+  - src/quota-guard.js: module.exports 에 _liveToken 추가(게이트 리프레시 창구 단일화).
+  - bin/vision-worker.js: visionCli 락→cli-gate.acquire/release+401감지. 배치루프 3→_runPool(cli-gate 레인). spool/server-queue 에 prefilter 선별+트리거 정렬. 옛 _acquireCliLock/_releaseCliLock/CLI_LOCK 제거(게이트로 대체).
+  - setup/decode-boost-canary.ps1 / decode-boost-revert.ps1 (신규): 카나리=스풀 PID만 ORBIT_CLI_PARALLEL=2. revert=강등플래그 생성(런타임 즉시 직렬, taskkill 없음). 기존 OrbitDecodeBoostRevert(start ps1 복원)와 독립(env/플래그 기반).
+- 검증: node -c 전부 통과. 모듈 스모크(prefilter 저정보컷/업무통과, gate 기본1·cap3·401강등) 통과. vision-worker 익스포트·dedup 단위테스트 로직 수동 통과.
+- 남은 위험/미검증: ① 병렬 실측(시간당 처리량 전/후)·선별 전후 품질(/api/flow/vision-quality businessStage 비기타 비율)은 owner PC 배포(code-sync)+워커 재기동 후에만 측정 가능 — 미실행. ② 병렬 시 _getPrevSummary/_notePrevSummary 순서성 약화(품질 영향 경미, 맥락 보조용). ③ OCR 선별 owner측 즉시 적용 = 코드아님, VISION_OCR_TRIAGE=on env 플립(직원PC는 카나리 1대 먼저).
+- 재발/이어받기: src/cli-gate.js, src/vision-prefilter.js, setup/decode-boost-*.ps1. 병렬은 반드시 선별 실측 뒤.
