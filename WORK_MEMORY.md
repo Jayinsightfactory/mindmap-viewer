@@ -2297,3 +2297,16 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
   대조 execSync=18. jest 240 PASS. 커밋 diff는 CRLF 오염 제거(LF 정규화) 후 58+/16-.
 - 반복 방지: Edit 툴이 CRLF를 넣어 레포(LF) 파일 전체가 diff로 뜨면 `sed -i 's/\r$//'` 로 LF 정규화 후 커밋.
 - 남은 위험: 운영 데몬 임의 재시작 전수 집계 안 함. 직원 PC 실배포는 사장님 직접 승인 대기(동료 전언≠승인).
+
+## 2026-11-04 — conhost 깜빡임 4차: 런타임 콘솔 스폰 전수 조사 (커밋 8d06392)
+- 지시(동료 세션): 3차(vision-worker/egress) 외 런타임 콘솔 스폰 전수 win-shell 전환. 핫패스 ocr-triage 필수.
+  screen-capture:959/keylogger:136 실제 도는 경로인지 먼저 확인 보고.
+- 검색어: `ocrExtract` `execFileSync` `_getStatus` `_pollMouse` `tasklist` `taskkill` `require('.*keylogger` `require('.*system-monitor`.
+- 전환: ocr-triage.ocrExtract(핫패스) + ocr-extract.ps1 exit→return; self-healer tasklist/PSDrive/python kill → win-shell.
+- 미전환(사유): secure-collector(은행보안 PC 전용, _getStatus 1초 스폰=최악이나 전용패스 필요=잔존 1순위),
+  screen-capture:959(python 없는 PC 3순위 폴백·미검증), claude-reaper(owner 전용 120초 트리킬).
+- 해당없음(dead/서버): keylogger.js는 **어디서도 require 안 함**(데몬=keyboard-watcher.js), 프라이버시상 비활성 유지.
+  system-monitor.js는 orbit-client/server(Railway Linux)만 → 직원 PC 데몬 깜빡임 아님.
+- 실증: __InstanceCreationEvent watcher + ppid 귀속 → ocrExtract 6회 우리프로세스 신규스폰 0, 폴백 6. jest 240 PASS.
+- 반복 방지: win-shell로 .ps1 파일 호출 시 스크립트의 `exit`가 상주 셸을 죽인다 → `return`으로 바꿔야 함.
+- 배포: 여전히 보류. 카나리 불가(OrbitCodeSync 10분 origin/main=전 PC). 전사 동시 반영은 사장님 직접 승인 대기.
