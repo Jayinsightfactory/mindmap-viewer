@@ -88,6 +88,24 @@ work.action FOCUS             btn    '새로고침'
 
 **실증(`__InstanceCreationEvent` 외부 watcher, ppid 귀속)**: 실제 `ocr-triage.ocrExtract()` 6회 — **win-shell 경로 우리프로세스 신규 스폰=0**(전체 0), OCR 정상(ok=true, 'ORBIT 12345'→2단어 인식), 상주셸 생존(isAvailable=true, probe=2 → exit→return 확인). 대조 폴백(execFileSync -File)=우리프로세스 powershell 6회(+conhost 다수). jest 240 PASS.
 
+## 콘솔창 깜빡임(conhost) 5차: secure-collector(은행보안 PC) 전환 + ps1 선재버그 수정 (2026-11-04)
+4차에서 '잔존 1순위'로 미뤘던 `src/secure-collector.js`(은행보안 훅차단 PC 전용)를 전환. `_getStatus()`가
+**1초마다** `execSync(powershell -File orbit-sc.ps1 status)`로 콘솔앱을 스폰하던 최악의 핫루프.
+- **전환**: `_getStatus`/`_captureScreen`/`_pollProcs`/시작 프로세스목록 → 상주 win-shell(`& 'ps1' status|capture`).
+  모두 async화, 호출부(`_pollMouse` 1초/`_pollApp` 30초/`_captureTimer` 2분) await. `_pollMouse`는 in-flight 가드로
+  1초 틱이 win-shell 큐에 적체되지 않게. 비Windows/상주셸 실패 시 execSync 폴백.
+- **검증 중 발견한 선재버그(내 변경과 무관, `-File`·`&` 양쪽 동일 재현) 2건:**
+  1. **`$pid` 는 PowerShell 예약(읽기전용) 자동변수** — ps1이 `$pid=[uint32]0`/`[ref]$pid` 로 덮어써 '읽기전용' 에러 →
+     `GetWindowThreadProcessId` 실패 → **`proc` 가 항상 수집기 자신('powershell')으로 잘못 잡혀 왔다**. 게다가 상주
+     win-shell의 try/catch 가 이 종료성 예외를 삼켜 **status 가 빈 출력**(전환시 회귀). → **`$pid`→`$wpid` 로 수정**
+     (전환 성립에 필수). 수정 후 `proc` 가 실제 포그라운드 앱으로 정상(실측 'claude').
+  2. **`capture` 가 `$args[1]`(=null) 를 outPath 로 읽어 항상 `err:경로 형식 잘못`** — 이 JS/ps1 캡처 경로는 원래부터
+     깨져 있었다(실제 캡처는 native secure-collector.exe 주경로). **동작 보존 위해 그대로 둠**(은행 PC에 새 업로드를
+     켜지 않으려 `$args` 는 미수정). 캡처 전환은 전송 결과 동일(err)·깜빡임만 제거. → 별도 결정 필요시 보고.
+- **실증(`__InstanceCreationEvent` watcher + ppid 귀속)**: 모듈 실제 start()로 1초 루프 8초 — 우리프로세스 신규
+  콘솔 스폰 **1회(powershell, 상주 win-shell 최초기동 1회성)·conhost 0** (구코드는 매초 powershell+conhost).
+  `& ps1 status` JSON 정상(`currentApp='claude'` 포착), 상주셸 생존(probe OK). jest 240 PASS.
+
 ## 미검증 / 잔존 위험
 - **배포 안 함.** 직원 PC 실배포·원격명령 미실시. push≠데몬반영(재시작 전까지 구코드).
 - **AhnLab V3/Defender**: `~/.orbit/bin`에 런타임 생성된 x86 exe(SetWinEventHook 사용)를 백신이 격리할 가능성. 기존 AV 자가예외 경로가 커버하는지 실배포에서 확인 필요(현재 미검증). 격리되면 state='disabled'로 떨어져 데몬엔 무해.

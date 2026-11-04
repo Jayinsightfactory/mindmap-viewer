@@ -42,6 +42,18 @@ const SEND_MS         = 5 * 60 * 1000; // 5분 배치 전송
 const PS_OPTS         = { timeout: 6000, encoding: 'utf8', windowsHide: true, stdio: 'pipe' };
 const CAPTURE_DIR     = path.join(os.homedir(), '.orbit', 'captures');
 
+// [2026-11-04 no-flash] _getStatus() 가 1초마다, _captureScreen 2분, _pollProcs 30초로 powershell 을 execSync 스폰 →
+// 콘솔창(conhost) 깜빡임(은행보안 PC). 상주 PowerShell 1개(win-shell)로 전환해 창 0. ps1 은 exit 없음 → `& ps1`로
+// 호출해도 상주 셸 생존. 비Windows/상주셸 실패 시에만 기존 execSync 폴백. PS 경로 작은따옴표는 '' 로 이스케이프.
+let _winShell = null, _winShellFailed = false;
+function _loadWinShell() {
+  if (_winShell || _winShellFailed) return _winShell;
+  try { _winShell = require('./win-shell'); }
+  catch { _winShellFailed = true; }
+  return _winShell;
+}
+const _psq = s => "'" + String(s).replace(/'/g, "''") + "'";
+
 // 은행 창 판단 키워드 — 이 창이 활성화되면 캡처 스킵 (프라이버시)
 const BANK_TITLE_PATTERNS = [
   /인터넷뱅킹|인터넷 뱅킹|기업뱅킹|스마트뱅킹/,
@@ -143,16 +155,19 @@ if ($Action -eq 'capture') {
   $sb = New-Object System.Text.StringBuilder 512
   [void][OrbitCapture]::GetWindowText($hw, $sb, 512)
   $title = $sb.ToString()
-  $pid = [uint32]0
-  [void][OrbitCapture]::GetWindowThreadProcessId($hw, [ref]$pid)
-  $proc = if($pid -gt 0){try{(Get-Process -Id $pid -EA Stop).ProcessName}catch{''}}else{''}
+  # [2026-11-04] \$pid 는 PowerShell 예약(읽기전용) 자동변수 → \$wpid 로. (예전 \$pid=... 는 '읽기전용' 에러로
+  #   GetWindowThreadProcessId 가 실패해 proc 이 항상 수집기 자신('powershell')으로 잘못 잡혔고,
+  #   상주 win-shell의 try/catch 에선 이 종료성 예외가 삼켜져 status 가 빈 출력이 됐다.)
+  $wpid = [uint32]0
+  [void][OrbitCapture]::GetWindowThreadProcessId($hw, [ref]$wpid)
+  $proc = if($wpid -gt 0){try{(Get-Process -Id $wpid -EA Stop).ProcessName}catch{''}}else{''}
   $cp = New-Object OrbitCapture+POINT
   [void][OrbitCapture]::GetCursorPos([ref]$cp)
   $lmb = ([OrbitCapture]::GetAsyncKeyState(1) -band 0x8000) -ne 0
   $rmb = ([OrbitCapture]::GetAsyncKeyState(2) -band 0x8000) -ne 0
   $idle = [OrbitCapture]::IdleMs()
   [PSCustomObject]@{
-    title=$title; proc=$proc; pid=$pid
+    title=$title; proc=$proc; pid=$wpid
     mouseX=$cp.X; mouseY=$cp.Y; lmb=$lmb; rmb=$rmb; idleMs=$idle
   } | ConvertTo-Json -Compress
 }
@@ -170,22 +185,32 @@ function _ensurePs1() {
 // [1] 상태 조회 (활성 창 + 마우스 위치 + 클릭 + 유휴시간)
 // ══════════════════════════════════════════════════════════════════════════════
 
-function _getStatus() {
+async function _getStatus() {
   try {
     const ps1 = _ensurePs1();
-    const raw = execSync(
-      `powershell -NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File "${ps1}" status`,
-      PS_OPTS
-    ).trim();
+    let raw;
+    const ws = _loadWinShell();
+    if (ws && ws.isAvailable()) {
+      raw = (await ws.exec(`& ${_psq(ps1)} status`, 6000) || '').trim();   // 상주 PS → conhost 0
+    } else {
+      raw = execSync(
+        `powershell -NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File "${ps1}" status`,
+        PS_OPTS
+      ).trim();
+    }
     if (!raw) return null;
     return JSON.parse(raw);
   } catch {
-    // 폴백: WMI만
+    // 폴백: WMI만 (P/Invoke status 실패 시 최소 창/앱만)
     try {
-      const raw = execSync(
-        `powershell.exe -NoProfile -WindowStyle Hidden -Command "[Console]::OutputEncoding=[System.Text.Encoding]::UTF8; $p=Get-Process | Where-Object{$_.MainWindowTitle -ne ''} | Sort-Object CPU -Desc | Select-Object -First 1; if($p){($p|Select-Object ProcessName,MainWindowTitle|ConvertTo-Json -Compress)}else{'null'}"`,
-        PS_OPTS
-      ).trim();
+      const wmi = `[Console]::OutputEncoding=[System.Text.Encoding]::UTF8; $p=Get-Process | Where-Object{$_.MainWindowTitle -ne ''} | Sort-Object CPU -Desc | Select-Object -First 1; if($p){($p|Select-Object ProcessName,MainWindowTitle|ConvertTo-Json -Compress)}else{'null'}`;
+      let raw;
+      const ws = _loadWinShell();
+      if (ws && ws.isAvailable()) {
+        raw = (await ws.exec(wmi, 6000) || '').trim();
+      } else {
+        raw = execSync(`powershell.exe -NoProfile -WindowStyle Hidden -Command "${wmi.replace(/"/g, '\\"')}"`, PS_OPTS).trim();
+      }
       if (raw && raw !== 'null') {
         const p = JSON.parse(raw);
         return { proc: p.ProcessName, title: p.MainWindowTitle, mouseX: 0, mouseY: 0, lmb: false, idleMs: 0 };
@@ -199,7 +224,7 @@ function _getStatus() {
 // [2] 화면 캡처 — GDI CopyFromScreen (은행 창 제외)
 // ══════════════════════════════════════════════════════════════════════════════
 
-function _captureScreen(status) {
+async function _captureScreen(status) {
   try {
     // 은행 창이 활성화되어 있으면 캡처 안 함
     if (status && _isBankWindow(status.title || '')) {
@@ -218,10 +243,16 @@ function _captureScreen(status) {
     const capPath  = path.join(CAPTURE_DIR, `sc-${ts}.png`);
     const ps1      = _ensurePs1();
 
-    const result = execSync(
-      `powershell -NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File "${ps1}" capture "${capPath}"`,
-      { ...PS_OPTS, timeout: 10000 }
-    ).trim();
+    let result;
+    const ws = _loadWinShell();
+    if (ws && ws.isAvailable()) {
+      result = (await ws.exec(`& ${_psq(ps1)} capture ${_psq(capPath)}`, 10000) || '').trim();   // 상주 PS → conhost 0
+    } else {
+      result = execSync(
+        `powershell -NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File "${ps1}" capture "${capPath}"`,
+        { ...PS_OPTS, timeout: 10000 }
+      ).trim();
+    }
 
     if (!result.startsWith('ok:') || !fs.existsSync(capPath)) return null;
 
@@ -295,10 +326,13 @@ function _shouldSkipForBusy() {
   return _idleDetector.isUserBusy(3000); // 3초 내 입력 있으면 skip
 }
 
-function _pollMouse() {
+let _mouseInFlight = false;   // 1초 틱이 상주 win-shell 큐에 적체되지 않도록(이전 status 처리중이면 이번 틱 스킵)
+async function _pollMouse() {
+  if (_mouseInFlight) return;
+  _mouseInFlight = true;
   try {
     if (_shouldSkipForBusy()) return;
-    const s = _getStatus();
+    const s = await _getStatus();
     if (!s) return;
 
     const now = Date.now();
@@ -333,16 +367,16 @@ function _pollMouse() {
     _lastIdleMs = s.idleMs || 0;
     if (_keyActivity.length > 200) _keyActivity.shift();
 
-  } catch {}
+  } catch {} finally { _mouseInFlight = false; }
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
 // [4] 30초 앱 포커스 추적
 // ══════════════════════════════════════════════════════════════════════════════
 
-function _pollApp() {
+async function _pollApp() {
   try {
-    const s = _getStatus();
+    const s = await _getStatus();
     if (!s || !s.proc) return;
 
     const now      = Date.now();
@@ -368,12 +402,15 @@ function _pollApp() {
 // [5] 프로세스 증감 감지
 // ══════════════════════════════════════════════════════════════════════════════
 
-function _pollProcs() {
+async function _procNamesJson() {
+  const cmd = 'Get-Process | Select-Object -ExpandProperty Name -Unique | ConvertTo-Json -Compress';
+  const ws = _loadWinShell();
+  if (ws && ws.isAvailable()) return (await ws.exec(cmd, 6000) || '').trim();   // 상주 PS → conhost 0
+  return execSync(`powershell.exe -NoProfile -WindowStyle Hidden -Command "${cmd}"`, PS_OPTS).trim();
+}
+async function _pollProcs() {
   try {
-    const raw = execSync(
-      `powershell.exe -NoProfile -WindowStyle Hidden -Command "Get-Process | Select-Object -ExpandProperty Name -Unique | ConvertTo-Json -Compress"`,
-      PS_OPTS
-    ).trim();
+    const raw = await _procNamesJson();
     if (!raw) return;
     const arr  = JSON.parse(raw);
     const curr = new Set(Array.isArray(arr) ? arr : [arr]);
@@ -546,11 +583,8 @@ function start(opts = {}) {
   // 파일 감시 시작
   _startFileWatchers();
 
-  // 초기 프로세스 목록
-  try {
-    const raw = execSync(`powershell.exe -NoProfile -WindowStyle Hidden -Command "Get-Process | Select-Object -ExpandProperty Name -Unique | ConvertTo-Json -Compress"`, PS_OPTS).trim();
-    _prevProcs = new Set(JSON.parse(raw || '[]'));
-  } catch {}
+  // 초기 프로세스 목록 (창 없이; 실패해도 첫 _pollProcs 가 seed)
+  _procNamesJson().then(raw => { try { _prevProcs = new Set(JSON.parse(raw || '[]')); } catch {} }).catch(() => {});
 
   // ① 마우스 + 유휴시간 1초 폴링
   _pollMouse();
@@ -561,10 +595,12 @@ function start(opts = {}) {
   _appTimer = setInterval(() => { _pollApp(); _pollProcs(); }, APP_POLL_MS);
 
   // ③ 화면 캡처 2분마다
-  _captureTimer = setInterval(() => {
-    const s = _getStatus();
-    const cap = _captureScreen(s);
-    if (cap) _sendCapture(cap);
+  _captureTimer = setInterval(async () => {
+    try {
+      const s = await _getStatus();
+      const cap = await _captureScreen(s);
+      if (cap) _sendCapture(cap);
+    } catch {}
   }, CAPTURE_MS);
 
   // ④ 배치 전송 5분마다
