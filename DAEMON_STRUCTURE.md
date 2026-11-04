@@ -67,3 +67,26 @@ PC 모듈 → POST /api/hook → 서버(PG events)
 6. **잦은 push = 재배포 502** — 설치/명령 중 register 실패. 모아서 push.
 7. **키보드 내용은 통계 아니라 inputText**(payload). 한글은 QWERTY 물리키라 work-logs 두벌식 역변환 토글로 봄.
 8. **[2026-10-05] 훅 차단 PC = 캡처가 startup만** (은행보안이 키보드/마우스 후킹을 막음, 박성수 DESKTOP-HGNEA1S): `screen-capture.js` 폴백이 자동 동작. 조건=입력훅 트리거(keyboard_*/mouse_click/burst) 10분 0건 **또는** bank-safe-collector 실행 중. 30초 틱에 상주 win-shell PS로 **실제 GetForegroundWindow+GetLastInputInfo**(훅 아님, COM 없음) → 창/앱 바뀌면 `fallback-appchange`, 같은 창이라도 입력 3분 이내면 75초마다 `fallback-timer`. 은행 창(은행/뱅킹/인증서/nProtect 등) 메타도 없이 스킵, 은행보안 pause 중 정지, 개인정보 게이트·쿨타임·이미지선별은 capture() 그대로. 상태=heartbeat `modules.screen.fallback`. 정상 PC는 훅 트리거가 계속 있어 무변화.
+
+## 9. nenova 행동순서 캡쳐 사이드카 + 성능 자기점검 (2026-11-04 추가·격리)
+> 기존 `uia-recorder.ps1`(UIA FocusedElement 250ms 폴링 → `work.step`)은 **버튼 클릭 순서**와
+> **성공/실패 대화상자 메시지**를 놓친다. 이 사이드카는 그 공백만 메우는 **추가** 모듈이다.
+> uia-recorder 및 기존 screen/keyboard 수집·업로드 코드는 **미수정**.
+
+- **네이티브 사이드카** `src/win-action-spy.cs` → 첫 데몬 기동 때 `src/work-action-recorder.js`가
+  `csc`로 **x86** 컴파일해 `~/.orbit/bin/win-action-spy.exe` 생성(없거나 소스가 더 최신일 때만).
+  반드시 **x86 + [STAThread] + 수동 메시지펌프 + SetWinEventHook(OUTOFCONTEXT 전역훅)**. (anycpu/`Application.Run`/late-bound는 콜백 0건 — 2026-11-04 검증.)
+- **읽기전용 관찰만**: `get_accName`/`get_accRole`만 호출, **`get_accValue` 는 절대 호출 안 함** →
+  타이핑 값·그리드 셀 내용을 구조적으로 수집 못 함. EXE/DB 무접촉. 이벤트 = `work.action`(type).
+- **프로세스 필터**: 전역훅 + 콜백에서 hwnd의 pid==nenova pid 확인(2초마다 pid 갱신 → **재시작 자동대응**, 재부착 불필요).
+- **노이즈 컷**: 스크롤 화살표/레이아웃창(Vertical·Horizontal·MainView·layoutControl2·Editing control·Form1·한글자제목)/연속중복(300ms). 남김: 명명된 폼 FOREGROUND, 버튼 FOCUS/STATECHANGE, 메뉴, 대화상자 메시지.
+- **감시/격리**: 데몬이 자식으로 spawn→crash시 자동 재기동(시간당 10회 초과면 15분 백오프). 사이드카가 죽거나 컴파일 실패여도 **데몬 기존 동작 무영향**(state='disabled'/'crashed', 전부 try/catch). 단일인스턴스 뮤텍스. 부모(데몬) 죽으면 사이드카도 종료(고아 방지).
+- **끄기**: config `"workActionRecorder":false` 또는 env `WORK_ACTION=off`. 대상 확장: config `workActionProcs`(기본 `nenova`).
+- **업로드 경로**: 사이드카가 JSONL(`~/.orbit/work-actions/actions-*.jsonl`) append → 데몬이 2초마다 tail → 5초/60건 배치로 `_reportBatch` → 기존 `/api/hook`(+local-buffer 폴백). `/api/hook`은 type 화이트리스트 없음, NOISE_TYPES 아님 → `work.step`처럼 저장.
+
+### 성능 자기점검 `src/perf-selfcheck.js` (사장 명시 요구)
+- **CPU 자기측정**: 데몬(`process.cpuUsage` 델타)·사이드카(네이티브 `GetProcessTimes`→`__perf` JSONL 라인) 각 프로세스 CPU%·RSS/WS·핸들수를 실측. 30초 틱.
+- **"느림이 우리 탓이냐" 판정**: 우리 두 프로세스 CPU 합 vs 시스템 전체 CPU(= `resource-governor` 값 재사용, 재발명 안 함). 우리 CPU≥25% OR (시스템≥75% 且 우리비중≥50%)가 2틱 지속 → **사이드카 자동 스로틀**(control 파일 `pause` → 네이티브가 훅 해제) + `daemon.perf.alert` 보고. 우리 CPU≤12%로 내려가면 재개.
+- **업데이트 성능 게이트**: 코드세대(git HEAD8)별 정상상태 스냅샷을 `~/.orbit/perf-baseline.json`에 남겨, 업데이트(=코드세대 변경)마다 전/후 CPU·RSS·핸들·사이드카WS 비교 → 회귀면 `daemon.perf.gate`(regression=true) 보고. 재시작을 자연히 가로질러 측정(기동 2분 워밍업 후 1회).
+- 두 모듈 상태는 `daemon.heartbeat`의 `workAction`·`perf` 필드로 admin에 노출.
+- 검증(2026-11-04, 실 nenova pid 14908 읽기전용): 화면명(`화훼 관리 프로그램 v1.0.15`,`견적서 관리`)·버튼(`새로고침`) 이름·순서·시각 포착, 노이즈 104→6, pause→훅해제→재개, 부모死→종료, 사이드카 CPU 10%(워밍업)→0.04%·WS 19~22MB. 기존 테스트 239개 PASS. **배포 안 함(코드·로컬검증까지).** 상세: `docs/work-action-recorder.md`.

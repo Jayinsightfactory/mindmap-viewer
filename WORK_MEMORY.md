@@ -2266,3 +2266,13 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 - 구현: src/vision-prefilter.selectByOperation(key=user|app|title, trigger, item, atMs). OP_WINDOW_MS(기본 10분, 마지막 '해독' 기준). 스킵카운터 무조작컷.
 - 적용: spool(저정보컷→조작선별→E1), server-queue(옛 3분 _triageSeen 시간컷 제거→조작선별). _triageSeen 선언 삭제.
 - 검증: 스모크 통과(무조작 반복 누락·조작/클릭증거 유지·제목변경 유지·창 경과 재해독).
+
+---
+## 2026-11-04 nenova 행동순서 캡쳐 사이드카 + 성능 자기점검 (브랜치 claude/orbit-workflow-capture-570204)
+- 요청: nenova.exe '화면→버튼→순서→시각→성공대화상자' 캡쳐를 기존 데몬에 추가모듈로 통합(기존 미수정·실패격리) + CPU 자기측정·느림판정·업데이트 성능게이트.
+- 검색/확인: `uia-recorder.ps1`(UIA 250ms 폴링 → work.step)이 이미 있으나 '버튼 클릭 순서·대화상자 메시지'는 못 잡음 → 보완 추가(재발명 아님). 검증기법은 SetWinEventHook(x86+STAThread+수동펌프) — 프로토타입 `C:\Users\USER\nw-exe-workflow-audit\tools\exe-audit\WinEventWorkflowSpy.cs`.
+- 추가 파일: src/win-action-spy.cs(네이티브 사이드카), src/work-action-recorder.js(감시자), src/perf-selfcheck.js(성능). personal-agent.js에 _reportBatch + 기동 2블록(②-c'/②-c'') + heartbeat workAction/perf + shutdown 정리.
+- 이벤트 type = work.action. 업로드 = JSONL tail → 배치 /api/hook(+local-buffer). 개인정보: get_accValue 미호출(값 수집 불가).
+- 검증(실 nenova pid 14908 읽기전용, 창활성화만): 화면/버튼 이름·순서·시각 포착, pid필터 targets=1, 노이즈 104→6, pause/resume, 부모死 종료, Node 감시자 compile→spawn→tail→batch, 기존 jest 239 PASS. 상세 docs/work-action-recorder.md.
+- 미검증: 실배포(안 함), AhnLab/Defender의 런타임 x86 exe 격리 여부, csc 부재 PC(→disabled), 저장 end-to-end(DB쓰기 금지 — 프로토타입 스파이크로 실증됨).
+- 반복 시 먼저 볼 곳: DAEMON_STRUCTURE.md §9, docs/work-action-recorder.md.

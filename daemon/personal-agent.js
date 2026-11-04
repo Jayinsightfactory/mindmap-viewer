@@ -252,6 +252,31 @@ function _reportEvent(type, data) {
   } catch {}
 }
 
+// ── 배치 이벤트 리포트 헬퍼 (여러 이벤트를 한 /api/hook 로) ───────────────────
+// work-action-recorder 가 tail 한 다수 행동 이벤트를 1건씩 보내면 HTTP 폭주 → 배치 전송.
+// 전송 실패 시 기존 local-buffer 로 폴백(기존 파이프라인 재사용).
+function _reportBatch(type, dataArray) {
+  if (!REMOTE_URL || !Array.isArray(dataArray) || dataArray.length === 0) return;
+  try {
+    const base = type.replace(/\./g, '-');
+    const now = Date.now();
+    const body = {
+      events: dataArray.map((d, i) => ({
+        id: base + '-' + now + '-' + i,
+        type,
+        source: 'personal-agent',
+        sessionId: 'daemon-' + os.hostname(),
+        timestamp: (d && d.t) || new Date().toISOString(),
+        data: { ...d, hostname: os.hostname() },
+      })),
+    };
+    const payload = JSON.stringify(body);
+    _sendHookPayload(payload, type).then((ok) => {
+      if (!ok) _localBuffer?.enqueue?.(type, body);
+    });
+  } catch {}
+}
+
 // ── 은행 보안프로그램 감지 (Windows 전용) ────────────────────────────────────
 const { execSync } = require('child_process');
 
@@ -678,6 +703,8 @@ let mouseWatcher    = null;
 let keyboardWatcher = null;
 let screenCapture   = null;
 let resourceGovernor = null;
+let workActionRecorder = null; // nenova 행동순서 캡쳐 사이드카 감시자 (추가·격리)
+let perfSelfCheck   = null;    // CPU 자기측정/느림판정/업데이트 성능게이트 (추가·격리)
 const _daemonStartedAt = Date.now();
 // 코드세대(git HEAD 8자) — 데몬 수명 동안 불변(code-sync가 HEAD 바뀌면 재시작)이라 1회 계산 후 캐시.
 let _codeVersion = null;
@@ -723,6 +750,8 @@ function _emitHeartbeat() {
       gov: gov ? { level: gov.level, cpu: gov.cpu, ram: gov.ram, ramTier: gov.ramTier, totalGB: gov.totalGB, floor: gov.floor, visionPaused: gov.visionPaused } : null,
       work: (() => { try { return _workUploaderRef && _workUploaderRef.getStats ? _workUploaderRef.getStats() : null; } catch { return null; } })(),
       egress: (() => { try { return _egressRef && _egressRef.getStats ? _egressRef.getStats() : null; } catch { return null; } })(), // 유출 이력 감시 통계 // 업무 드라이브 업로더 통계(원격 진단)
+      workAction: (() => { try { return workActionRecorder && workActionRecorder.getStatus ? workActionRecorder.getStatus() : null; } catch { return null; } })(), // nenova 행동순서 캡쳐 사이드카 상태
+      perf: (() => { try { return perfSelfCheck && perfSelfCheck.getStatus ? perfSelfCheck.getStatus() : null; } catch { return null; } })(), // 우리 프로세스 CPU%/RSS/핸들 + 느림판정
       codeVersion: _getCodeVersion(), // git HEAD(8) — fleet 코드세대 가시화(누가 최신인지)
     });
   } catch (e) {
@@ -891,6 +920,41 @@ async function main() {
     if (keyboardWatcher?.setScreenCapture) keyboardWatcher.setScreenCapture(screenCapture);
   } catch (err) {
     console.error('[personal-agent] 스크린 캡처 시작 실패:', err.message);
+  }
+
+  // ②-c' [골 S1c] nenova 행동순서 캡쳐 사이드카 (추가·격리 모듈, Windows 전용)
+  //   기존 uia-recorder.ps1(포커스 폴링)은 못 잡는 '버튼 클릭 순서·성공/실패 대화상자'를
+  //   SetWinEventHook(이벤트구동, EXE/DB 무접촉)로 읽어 work.action 으로 보낸다.
+  //   사이드카 크래시/미기동이어도 데몬 기존 동작 무영향(try/catch·감시·자동 재기동).
+  //   끄려면 config "workActionRecorder":false 또는 env WORK_ACTION=off.
+  try {
+    _stage('work-action-recorder');
+    workActionRecorder = require(path.join(ROOT, 'src/work-action-recorder'));
+    workActionRecorder.start({
+      root: ROOT,
+      config: _orbitConfig,
+      report: _reportBatch, // 배치 업로드(기존 /api/hook + local-buffer 폴백)
+    });
+  } catch (err) {
+    console.warn('[personal-agent] 행동순서 캡쳐 사이드카 시작 실패(계속):', err.message);
+    _reportError('work-action-recorder', err.message, err.stack);
+  }
+
+  // ②-c'' 성능 자기점검 (추가·격리): 우리 프로세스 CPU 자기측정 + '느림이 우리 탓이냐' 판정
+  //   + 업데이트마다 전/후 성능 재점검 게이트. 시스템 전체 CPU 는 resource-governor 것을 재사용.
+  try {
+    _stage('perf-selfcheck');
+    perfSelfCheck = require(path.join(ROOT, 'src/perf-selfcheck'));
+    perfSelfCheck.start({
+      report: _reportEvent,
+      getCodeVersion: _getCodeVersion,
+      getSystemCpu: () => { try { const s = resourceGovernor?.getStatus?.(); return s ? s.cpu : 0; } catch { return 0; } },
+      getSidecar:   () => { try { const s = workActionRecorder?.getStatus?.(); return s ? s.sidecar : null; } catch { return null; } },
+      onThrottle:   (paused) => { try { workActionRecorder?.setPaused?.(paused); } catch {} },
+    });
+  } catch (err) {
+    console.warn('[personal-agent] 성능 자기점검 시작 실패(계속):', err.message);
+    _reportError('perf-selfcheck', err.message, err.stack);
   }
 
   // ②-d Google Drive 캡처 업로드 초기화
@@ -1250,6 +1314,8 @@ async function main() {
     try { fileChangeWatcher?.stop(); } catch {}
     try { require(path.join(ROOT, 'src/chrome-url-watcher'))?.stop?.(); } catch {}
     try { resourceGovernor?.stop?.(); } catch {}
+    try { workActionRecorder?.stop?.(); } catch {}
+    try { perfSelfCheck?.stop?.(); } catch {}
     if (_isKstWorkHours()) {
       try {
         if (driveUploader?.isEnabled?.()) {
