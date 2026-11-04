@@ -70,6 +70,24 @@ work.action FOCUS             btn    '새로고침'
 - **`src/egress-monitor.js` `ps()`**: 인쇄 폴러 5초·LogicalDisk·DiskDrive 등 `execFile('powershell …')` 단일 초크포인트 → 동일하게 win-shell 경로 전환, 폴백만 execFile. win-shell은 spawn 시 OutputEncoding=UTF8 설정이라 한글 프린터명·사용자명 보존.
 - **실증(scratchpad, `__InstanceCreationEvent` 외부 watcher)**: _makeThumb+_perceptualHash 실제 PS 스크립트를 6 캡처사이클(PS 12회) 돌려 conhost/cmd/powershell 신규 생성 집계 — **win-shell 경로=0**, 대조 execSync 경로=18(샘플에 `cmd.exe ppid=<node>` 확인=깜빡임 원인). perceptual hash 64bit 출력 정상(hashOk=true). jest 240 PASS(회귀 없음).
 
+## 콘솔창 깜빡임(conhost) 4차: 런타임 콘솔 스폰 전수 조사 + 핫패스 추가 제거 (2026-11-04)
+동료 세션 사장 PC 재추적으로 3차(vision-worker/egress)로도 안 끝나는 소스들 확인. 전수 조사 결과와 처리:
+
+**이번에 win-shell로 전환(실증 완료):**
+- **`src/ocr-triage.js` `ocrExtract`**(핫패스, 캡처당 1회, `VISION_OCR_TRIAGE=on/shadow`일 때) — `execFileSync('powershell -File ocr-extract.ps1')` → 상주 win-shell `& ocr-extract.ps1`. 호출부 async화(`bin/vision-worker.js:591`, `scripts/ocr-triage-measure.js` await). `setup/ocr-extract.ps1`의 `exit 0`→`return`(상주 셸을 죽이지 않게, `-File` 모드도 정상 종료). 비Windows/상주셸 실패 시만 execFileSync 폴백.
+- **`src/self-healer.js`** 주기 점검의 `tasklist`(powershell 수/python 수)·`(Get-PSDrive C).Free`·python kill → win-shell `Get-Process`/`Stop-Process`. 실패 시 tasklist/taskkill 폴백 유지.
+
+**조사 후 '이번 미전환'(사유 명시):**
+- **`src/secure-collector.js`** — `_getStatus()`가 **1초마다** `execSync(powershell -File …)` 스폰(실측 확인, 코드에 `_shouldSkipForBusy`='창 깜빡임 방지' 주석 존재) = 최악의 잔존 소스. **단, 은행보안 훅차단 PC에서만 실행**(소수, 예: 박성수 DESKTOP-HGNEA1S). 1초 핫루프 + 멀티모드 `.ps1`(exit 포함 가능) 전환은 코어 은행우회 수집기 리그레션 위험 커서 **별도 전용 패스+은행모드 PC 검증 필요**. → **잔존 1순위.**
+- **`src/screen-capture.js:959`** — PowerShell CopyFromScreen은 **3순위 최후수단 폴백**(PIL·pyautogui 둘 다 실패=python 없는 PC). 실측 미포착. 동기 capture() 경로라 async 전환 ripple. → 폴백 PC에서만 발생(**미검증**).
+- **`bin/claude-reaper.js:28`** — owner PC 전용 독립 프로세스(120초), 조건부 `taskkill /T`(트리킬). win-shell 등가 대체 까다로움. → owner 전용·저빈도.
+
+**조사 결과 '해당 없음'(안 돎):**
+- **`src/keylogger.js:136`** — **미사용(dead)**: 저장소 어디서도 `require` 안 함(데몬은 `keyboard-watcher.js` 사용). 실행 경로 아님 → 전환 불필요. 프라이버시 헌법상 keylogger는 비활성 유지.
+- **`src/system-monitor.js:186`** — 데몬 기동 경로에 없음. `orbit-client.js`/`server.js`(Railway Linux)만 require → 직원 PC 데몬 깜빡임 원인 아님(Windows 분기 안 탐).
+
+**실증(`__InstanceCreationEvent` 외부 watcher, ppid 귀속)**: 실제 `ocr-triage.ocrExtract()` 6회 — **win-shell 경로 우리프로세스 신규 스폰=0**(전체 0), OCR 정상(ok=true, 'ORBIT 12345'→2단어 인식), 상주셸 생존(isAvailable=true, probe=2 → exit→return 확인). 대조 폴백(execFileSync -File)=우리프로세스 powershell 6회(+conhost 다수). jest 240 PASS.
+
 ## 미검증 / 잔존 위험
 - **배포 안 함.** 직원 PC 실배포·원격명령 미실시. push≠데몬반영(재시작 전까지 구코드).
 - **AhnLab V3/Defender**: `~/.orbit/bin`에 런타임 생성된 x86 exe(SetWinEventHook 사용)를 백신이 격리할 가능성. 기존 AV 자가예외 경로가 커버하는지 실배포에서 확인 필요(현재 미검증). 격리되면 state='disabled'로 떨어져 데몬엔 무해.

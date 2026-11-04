@@ -1,14 +1,16 @@
 # ocr-extract.ps1 — Windows 내장 OCR(Windows.Media.Ocr)로 이미지 텍스트 추출.
 # 설치 불필요·$0·quota無. 한글은 사용자 언어에 한국어 OCR 팩이 있으면 인식.
 # 사용: powershell -NoProfile -ExecutionPolicy Bypass -File ocr-extract.ps1 -Path C:\img.png
-# 출력: 인식된 텍스트(실패/불가 시 빈 문자열, exit 0 — 호출측이 '불가'로 처리해 Vision으로 승격).
+# 출력: 인식된 텍스트(실패/불가 시 빈 문자열 — 호출측이 '불가'로 처리해 Vision으로 승격).
+# [2026-11-04 no-flash] 종료는 'exit' 대신 'return' — 상주 win-shell(단일 PS)에서 `& ocr-extract.ps1`로 호출해도
+#   exit가 호스트 셸을 죽이지 않도록. -File 모드에서도 return은 스크립트를 정상 종료(exit 0)한다.
 param([Parameter(Mandatory=$true)][string]$Path)
 $ErrorActionPreference = 'Stop'
 # 파이프 리다이렉트 시 한글이 깨지지 않도록 stdout을 UTF-8로 고정(호출측 node는 utf8로 디코드).
 try { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8 } catch {}
 $OutputEncoding = [System.Text.Encoding]::UTF8
 try {
-  if (-not (Test-Path $Path)) { Write-Output ''; exit 0 }
+  if (-not (Test-Path $Path)) { Write-Output ''; return }
   Add-Type -AssemblyName System.Runtime.WindowsRuntime | Out-Null
   $null = [Windows.Media.Ocr.OcrEngine,           Windows.Foundation, ContentType=WindowsRuntime]
   $null = [Windows.Graphics.Imaging.BitmapDecoder, Windows.Foundation, ContentType=WindowsRuntime]
@@ -27,7 +29,7 @@ try {
   }
 
   $engine = [Windows.Media.Ocr.OcrEngine]::TryCreateFromUserProfileLanguages()
-  if (-not $engine) { Write-Output ''; exit 0 }   # OCR 언어팩 없음 → 불가
+  if (-not $engine) { Write-Output ''; return }   # OCR 언어팩 없음 → 불가
 
   $file    = Await ([Windows.Storage.StorageFile]::GetFileFromPathAsync($Path)) ([Windows.Storage.StorageFile])
   $stream  = Await ($file.OpenAsync([Windows.Storage.FileAccessMode]::Read))    ([Windows.Storage.Streams.IRandomAccessStream])
@@ -39,5 +41,5 @@ try {
 } catch {
   # 어떤 오류든 '불가'로 처리(빈 출력) → 호출측이 Vision으로 안전 승격
   Write-Output ''
-  exit 0
+  return
 }

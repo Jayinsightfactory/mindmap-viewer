@@ -88,6 +88,29 @@ function _exec(cmd, timeoutMs = 5000) {
     return execSync(cmd, { timeout: timeoutMs, windowsHide: true, encoding: 'utf8' }).trim();
   } catch { return ''; }
 }
+// [2026-11-04 no-flash] 주기 점검의 tasklist/powershell 호출이 conhost 깜빡임 유발 → 상주 win-shell(단일 PS)로.
+// 비Windows/상주셸 실패 시 reject → 호출측이 기존 _exec 폴백.
+let _winShell = null, _winShellFailed = false;
+function _loadWinShell() {
+  if (_winShell || _winShellFailed) return _winShell;
+  try { _winShell = require('./win-shell'); }
+  catch { _winShellFailed = true; }
+  return _winShell;
+}
+// PowerShell 명령을 창 없이 실행(win-shell). 실패 시 null 반환 → 호출측이 폴백 결정.
+async function _psWin(cmd, timeoutMs = 5000) {
+  const ws = _loadWinShell();
+  if (!ws || !ws.isAvailable()) return null;
+  try { return (await ws.exec(cmd, timeoutMs) || '').trim(); } catch { return null; }
+}
+// 이름별 실행 중 프로세스 수(창 없이). win-shell 불가 시 tasklist(cmd) 폴백.
+async function _procCount(imageName) {
+  const name = imageName.replace(/\.exe$/i, '');
+  const out = await _psWin(`@(Get-Process ${name} -ErrorAction SilentlyContinue).Count`, 4000);
+  if (out !== null) { const n = parseInt(out, 10); return Number.isFinite(n) ? n : 0; }
+  const csv = _exec(`tasklist /FI "IMAGENAME eq ${imageName}" /NH /FO CSV 2>nul`, 4000);
+  return (csv.match(new RegExp(imageName.replace('.', '\\.'), 'gi')) || []).length;
+}
 
 // ── 컴포넌트 재시작 ───────────────────────────────────────────────────────────
 async function _restartComponent(name) {
@@ -152,11 +175,7 @@ async function _checkPerfIssues() {
 
   // ── 3. PowerShell 창 팝업 감지 (3개 이상 = Orbit 코드 문제) ─────────────────
   try {
-    const psOut = _exec(
-      'tasklist /FI "IMAGENAME eq powershell.exe" /NH /FO CSV 2>nul',
-      4000
-    );
-    const psCount = (psOut.match(/powershell\.exe/gi) || []).length;
+    const psCount = await _procCount('powershell.exe');   // 창 없이 집계(상주 win-shell 1개는 과대계상 영향 미미)
     if (psCount >= 3) {
       _reportIssue('powershell_flood', {
         psCount,
@@ -167,18 +186,15 @@ async function _checkPerfIssues() {
 
   // ── 4. Python 좀비 프로세스 (screen-capture 잔여 프로세스) ──────────────────
   try {
-    const pyOut = _exec(
-      'tasklist /FI "IMAGENAME eq python.exe" /NH /FO CSV 2>nul',
-      4000
-    );
-    const pyCount = (pyOut.match(/python\.exe/gi) || []).length;
+    const pyCount = await _procCount('python.exe');       // 창 없이 집계
     if (pyCount >= 3) {
       _reportIssue('python_zombie', {
         pyCount,
         cause: 'Python 캡처 프로세스 좀비 — screen-capture 누적',
       });
-      // 자동 정리: 오래된 python 프로세스 종료 (kill all python)
-      try { _exec('taskkill /F /IM python.exe /T 2>nul', 5000); } catch {}
+      // 자동 정리: python 프로세스 종료(창 없이 win-shell, 실패 시 taskkill 폴백)
+      const killed = await _psWin('Get-Process python -ErrorAction SilentlyContinue | Stop-Process -Force', 5000);
+      if (killed === null) { try { _exec('taskkill /F /IM python.exe /T 2>nul', 5000); } catch {} }
       await _restartComponent('screen-capture');
     }
   } catch {}
@@ -431,7 +447,9 @@ async function _checkConfigHealth() {
   // C-6: disk space check (< 500MB free = warning)
   if (os.platform() === 'win32') {
     try {
-      const out = _exec('powershell -WindowStyle Hidden -Command "(Get-PSDrive C).Free"', 5000);
+      // 창 없이 디스크 여유 조회(win-shell), 실패 시 기존 powershell 폴백
+      let out = await _psWin('(Get-PSDrive C).Free', 5000);
+      if (out === null) out = _exec('powershell -WindowStyle Hidden -Command "(Get-PSDrive C).Free"', 5000);
       const freeBytes = parseInt(out, 10);
       if (freeBytes && freeBytes < 500 * 1024 * 1024) {
         _reportIssue('disk_low', { freeMB: Math.round(freeBytes / 1024 / 1024), cause: 'disk space < 500MB' });

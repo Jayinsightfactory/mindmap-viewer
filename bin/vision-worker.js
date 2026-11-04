@@ -588,7 +588,7 @@ async function visionAnalyze(base64, ctx) {
   let _triageText = null; // Vision 결과가 나오면 그걸 라벨로 되먹임(judge kNN 학습) — 규칙만으론 0.8%만 OCR로 가는 실측(9/17~) 때문
   if (_tmode !== 'off') {
     try {
-      const _ocr = _ocrTriage.ocrExtract(base64);
+      const _ocr = await _ocrTriage.ocrExtract(base64);
       const _dec = await _ocrTriage.classifyJudged(ctx, _ocr); // judge 계층(캐시→규칙→로컬 kNN), 결정 로그 ~/.orbit/judge-log.jsonl
       _triageText = _ocrTriage.triageText(ctx, _ocr);
       _ocrTriage.tally(_dec, ctx);

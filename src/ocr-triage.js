@@ -18,6 +18,18 @@ const { execFileSync } = require('child_process');
 
 const OCR_PS1 = path.join(__dirname, '..', 'setup', 'ocr-extract.ps1');
 
+// [2026-11-04 no-flash] OCR은 핫패스(캡처당 1회) — execFileSync('powershell -File …')가 캡처마다 콘솔창(conhost)
+// 깜빡임을 일으킨다(사장님이 보는 깜빡임, VISION_OCR_TRIAGE on/shadow PC에서 실측). 상주 PowerShell 1개(win-shell)로
+// `& ocr-extract.ps1`를 호출해 창을 안 띄운다. ocr-extract.ps1은 exit→return 으로 바꿔 상주 셸을 죽이지 않음.
+// 비Windows/상주셸 실패 시에만 기존 execFileSync 폴백(비Windows라 창 문제 없음).
+let _winShell = null, _winShellFailed = false;
+function _loadWinShell() {
+  if (_winShell || _winShellFailed) return _winShell;
+  try { _winShell = require('./win-shell'); }
+  catch { _winShellFailed = true; }
+  return _winShell;
+}
+
 // 핵심(고가치) 화면 키워드 — worker의 VISION_HIGH_VALUE_RE와 동일 기본값(환경변수로 통일 오버라이드).
 const HIGH_VALUE_RE = new RegExp(process.env.VISION_HIGH_VALUE_RE ||
   'nenova|ecount|이카운트|화훼|주문|출고|발주|견적|재고|erp|excel|엑셀|정산|채권|채무|무역|통관|검수|분배|kakao|카카오|카톡|sheets|docs|스프레드시트|구글시트|송장|배송|운송|택배|invoice|인보이스|명세|청구|입금|출금|송금|결제|매출|매입|카네이션|carnation|화환|장미|거래처|납품|수주',
@@ -31,16 +43,24 @@ function mode() {
 }
 
 // base64 PNG → { ok, text, wordCount }. 실패/불가 시 ok:false(호출측은 Vision으로 승격).
-function ocrExtract(base64) {
+async function ocrExtract(base64) {
   let tmp = null;
   try {
     if (!base64 || base64.length < 2000) return { ok: false, text: '', wordCount: 0 };
     tmp = path.join(os.tmpdir(), `ocr-${Date.now()}-${Math.floor(Math.random() * 1e6)}.png`);
     fs.writeFileSync(tmp, Buffer.from(base64, 'base64'));
-    const out = execFileSync('powershell.exe',
-      ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', OCR_PS1, '-Path', tmp],
-      { timeout: 20000, maxBuffer: 8 * 1024 * 1024, windowsHide: true }
-    ).toString('utf8');
+    let out;
+    const ws = _loadWinShell();
+    if (ws && ws.isAvailable()) {
+      // 상주 PS에서 스크립트 파일 호출(무창). 경로의 작은따옴표는 PS 규칙대로 '' 로 이스케이프.
+      const q = s => "'" + String(s).replace(/'/g, "''") + "'";
+      out = await ws.exec(`& ${q(OCR_PS1)} -Path ${q(tmp)}`, 20000);
+    } else {
+      out = execFileSync('powershell.exe',
+        ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', OCR_PS1, '-Path', tmp],
+        { timeout: 20000, maxBuffer: 8 * 1024 * 1024, windowsHide: true }
+      ).toString('utf8');
+    }
     const text = (out || '').trim();
     const wordCount = text ? (text.split(/\s+/).filter(Boolean).length) : 0;
     return { ok: text.length > 0, text, wordCount };
