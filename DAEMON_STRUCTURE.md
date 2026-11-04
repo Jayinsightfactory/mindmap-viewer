@@ -76,6 +76,7 @@ PC 모듈 → POST /api/hook → 서버(PG events)
 - **네이티브 사이드카** `src/win-action-spy.cs` → 첫 데몬 기동 때 `src/work-action-recorder.js`가
   `csc`로 **x86** 컴파일해 `~/.orbit/bin/win-action-spy.exe` 생성(없거나 소스가 더 최신일 때만).
   반드시 **x86 + [STAThread] + 수동 메시지펌프 + SetWinEventHook(OUTOFCONTEXT 전역훅)**. (anycpu/`Application.Run`/late-bound는 콜백 0건 — 2026-11-04 검증.)
+  빌드는 **`/target:winexe`**(콘솔 없는 서브시스템) → 실행해도 conhost 창 0(직원 포커스 뺏김/깜빡임 차단). 실증: 콘솔빌드 conhost=1 vs winexe=0, PE Subsystem=2.
 - **읽기전용 관찰만**: `get_accName`/`get_accRole`만 호출, **`get_accValue` 는 절대 호출 안 함** →
   타이핑 값·그리드 셀 내용을 구조적으로 수집 못 함. EXE/DB 무접촉. 이벤트 = `work.action`(type).
 - **프로세스 필터**: 전역훅 + 콜백에서 hwnd의 pid==nenova pid 확인(2초마다 pid 갱신 → **재시작 자동대응**, 재부착 불필요).

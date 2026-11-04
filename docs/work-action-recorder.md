@@ -54,6 +54,14 @@ work.action FOCUS             btn    '새로고침'
 - **Node 감시자 통합**: 모듈이 exe 컴파일→spawn(pid)→tail→`work.action` 배치 report(sent=2)→getStatus→stop 전 과정 동작.
 - **추가성**: 기존 jest 단위 테스트 239개 PASS. `/api/hook`은 type 화이트리스트 없음·NOISE 아님 → work.action 저장됨.
 
+## 콘솔창 깜빡임(conhost) 대응 (2026-11-04 추가)
+실측(사장 PC 45초 conhost 86개)의 범인 패턴은 Orbit **분석 워커**를
+`cmd.exe /c "node bin/XXX-worker.js > log 2>&1"`로 띄우는 것(부모 ps1은 Hidden이나 손자 cmd가 안 숨겨짐).
+- **이 사이드카**: `/target:winexe`(콘솔 없는 서브시스템)로 빌드 → 실행해도 conhost 생성 0. `windowsHide:true`로 spawn.
+  실증: 콘솔빌드(/target:exe)는 conhost child=1, winexe는 **0**(기능 정상, perf 라인 유입). PE Subsystem=2 확인.
+- **in-repo 런처는 clean**: 데몬 기동/재기동(`guardian-start-daemon.ps1` `& $nodeExe ... 2>&1 |`, `guardian-watchdog.ps1` `Start-Process -WindowStyle Hidden`)은 cmd.exe 미경유. `decode-boost-canary.ps1`/`remote-vision-worker.ps1`은 `& node ... *>> $log`(PS 네이티브). screen-capture execSync 깜빡임은 2026-09-18 선수정됨.
+- **미해결(이 저장소 밖)**: vision-worker/kakao-intel-worker/ops-agent-worker/solution-miner를 띄우는 **분석 워커 런처**는 이 저장소에 없음(사장 PC의 수작업/생성된 `~/.orbit/*-start.ps1`). 그 파일에서 `cmd.exe /c "node ... > log 2>&1"` → `Start-Process node -ArgumentList ... -WindowStyle Hidden -RedirectStandardOutput <log> -RedirectStandardError <err>` (cmd 미경유)로 바꿔야 함. 배포 단계에서 함께 처리.
+
 ## 미검증 / 잔존 위험
 - **배포 안 함.** 직원 PC 실배포·원격명령 미실시. push≠데몬반영(재시작 전까지 구코드).
 - **AhnLab V3/Defender**: `~/.orbit/bin`에 런타임 생성된 x86 exe(SetWinEventHook 사용)를 백신이 격리할 가능성. 기존 AV 자가예외 경로가 커버하는지 실배포에서 확인 필요(현재 미검증). 격리되면 state='disabled'로 떨어져 데몬엔 무해.

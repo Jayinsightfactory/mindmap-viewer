@@ -13,8 +13,10 @@
 //   WinForms 에서 accName 은 컨트롤의 라벨/캡션이지 입력 내용이 아니다.
 //   DevExpress 그리드 셀은 accName 이 'Editing control' 만 주므로 자동으로 걸러진다.
 //
-// 빌드:  csc /noconfig /platform:x86 /target:exe /reference:System.dll
+// 빌드:  csc /noconfig /platform:x86 /target:winexe /reference:System.dll /reference:System.Core.dll
 //              /reference:<...>\Accessibility.dll /out:win-action-spy.exe win-action-spy.cs
+//   /target:winexe = 콘솔 없는 서브시스템 → 실행해도 conhost 창이 안 뜬다(직원 포커스 뺏김/깜빡임 차단).
+//   콘솔 출력(Console.Error)은 창이 없으니 무시될 뿐 크래시 안 남. JSONL 산출물은 파일이라 무관.
 // 실행:  win-action-spy.exe <jsonlPath> <controlPath> <parentPid> <procNamesCsv> <maxMinutes>
 //   jsonlPath   : 캡쳐 이벤트를 append 할 UTF-8 JSONL 파일 (데몬이 tail 해서 업로드)
 //   controlPath : "pause"/"run" 제어 파일 (데몬 perf-selfcheck 가 과부하 시 pause 기록)

@@ -79,8 +79,10 @@ function _ensureExe(root) {
     fs.mkdirSync(BIN_DIR, { recursive: true });
     _state = 'compiling';
     // x86 + /noconfig + System.Core(HashSet) + 명시 Accessibility.dll
+    // /target:winexe = 콘솔 없는 서브시스템 → conhost 창이 절대 안 뜬다(깜빡임 원인 원천 차단).
+    //   콘솔 exe면 실행 순간 conhost.exe 창이 떠서 직원 포커스를 뺏을 수 있다.
     execFileSync(csc, [
-      '/nologo', '/noconfig', '/platform:x86', '/target:exe',
+      '/nologo', '/noconfig', '/platform:x86', '/target:winexe',
       '/reference:System.dll', '/reference:System.Core.dll', '/reference:' + acc,
       '/out:' + exe, src,
     ], { timeout: 60000, windowsHide: true, stdio: 'pipe' });
