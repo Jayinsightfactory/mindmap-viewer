@@ -31,9 +31,13 @@ const ORBIT_SERVER = process.env.ORBIT_SERVER_URL || 'https://mindmap-viewer-pro
 // Claude CLI 경로 감지
 const CLAUDE_CLI = (() => {
   try {
-    return execSync(process.platform === 'win32' ? 'where claude' : 'which claude', { timeout: 3000 })
-      .toString().trim().split('\n')[0];
-  } catch { return null; }
+    return execSync(process.platform === 'win32' ? 'where claude' : 'which claude', { timeout: 15000 })
+      .toString().trim().split('\n')[0].trim();
+  } catch {
+    // 11/04: CPU 포화 시 'where' 3초 타임아웃 → CLI 없음 판정으로 워커·백필 기동 실패(0x1). 기본 설치 경로 폴백.
+    const p = path.join(os.homedir(), '.local', 'bin', process.platform === 'win32' ? 'claude.exe' : 'claude');
+    return fs.existsSync(p) ? p : null;
+  }
 })();
 const USE_CLI = !ANTHROPIC_KEY && !!CLAUDE_CLI;
 const TEMP_DIR = path.join(os.tmpdir(), 'orbit-vision');
