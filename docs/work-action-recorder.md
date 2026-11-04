@@ -64,6 +64,12 @@ work.action FOCUS             btn    '새로고침'
   - 실증(scratchpad 복사본, 실제 pre-fix 런처 3종+경계케이스): migrated 4 / skip(already·no-cmd) 2 / fail 0, 재실행 멱등(migrated=[]), start-daemon.ps1 이름제외. 치환된 런처 실행 결과 **exit 0, conhost 신규 0**, 로그 UTF-8 `한글OK`(hex ed959c eab880 4f4b) 바이트 보존.
   - **직원 PC 범위**: 코어 데몬(personal-agent.js, 전 PC)은 이 cmd 워커들을 띄우지 않음 — 5개 런처는 사장/분석 PC용. 직원 PC 실제 on-disk 런처 유무는 **미검증**(원격 디스크 확인 안 함) — 있으면 업데이트 시 자동 마이그레이션됨.
 
+## 콘솔창 깜빡임(conhost) 3차: 데몬 런타임 자식 프로세스 (2026-11-04 추가)
+런처(2차)가 아니라 **데몬/워커 런타임이 캡처 사이클마다 콘솔앱(powershell)을 스폰**하는 게 진짜 범인(동료 세션 사장 PC 28초 `__InstanceCreationEvent` 추적). 메커니즘은 런처 때와 동일 — 콘솔 없는 부모(windowsHide node)가 콘솔앱을 스폰하면 Windows가 새 conhost를 **강제 할당**해서 `windowsHide:true`/`CREATE_NO_WINDOW`가 신뢰성 있게 창을 못 막는다. 유일한 무창 경로 = 상주 PowerShell 1개(`src/win-shell.js`, 데몬 수명 1개 유지, 이미 bank-mode-toggle/click-rect/clipboard-watcher가 이 경로로 깜빡임 0 달성).
+- **`bin/vision-worker.js` `_makeThumb`/`_perceptualHash`**: 캡처당 1회씩 `execSync('powershell … Add-Type System.Drawing …')` 호출 → win-shell 경로로 전환(두 함수 async화, 호출부 6곳 `await`). `ws.isAvailable()==false`(비Windows/상주셸 실패) 때만 기존 execSync 폴백(비Windows라 창 문제 없음).
+- **`src/egress-monitor.js` `ps()`**: 인쇄 폴러 5초·LogicalDisk·DiskDrive 등 `execFile('powershell …')` 단일 초크포인트 → 동일하게 win-shell 경로 전환, 폴백만 execFile. win-shell은 spawn 시 OutputEncoding=UTF8 설정이라 한글 프린터명·사용자명 보존.
+- **실증(scratchpad, `__InstanceCreationEvent` 외부 watcher)**: _makeThumb+_perceptualHash 실제 PS 스크립트를 6 캡처사이클(PS 12회) 돌려 conhost/cmd/powershell 신규 생성 집계 — **win-shell 경로=0**, 대조 execSync 경로=18(샘플에 `cmd.exe ppid=<node>` 확인=깜빡임 원인). perceptual hash 64bit 출력 정상(hashOk=true). jest 240 PASS(회귀 없음).
+
 ## 미검증 / 잔존 위험
 - **배포 안 함.** 직원 PC 실배포·원격명령 미실시. push≠데몬반영(재시작 전까지 구코드).
 - **AhnLab V3/Defender**: `~/.orbit/bin`에 런타임 생성된 x86 exe(SetWinEventHook 사용)를 백신이 격리할 가능성. 기존 AV 자가예외 경로가 커버하는지 실배포에서 확인 필요(현재 미검증). 격리되면 state='disabled'로 떨어져 데몬엔 무해.

@@ -22,6 +22,16 @@ const http = require('http');
 const { execFile, execSync } = require('child_process');
 const _ocrTriage = require('../src/ocr-triage');   // OCR/Vision 분류기(기본 off)
 const _prefilter = require('../src/vision-prefilter'); // 해독 전 싼 신호 선별(저정보 컷·전환 우선, Claude $0)
+// [2026-11-04 no-flash] _makeThumb/_perceptualHash 의 execSync('powershell …')가 캡처당 콘솔창(conhost) 깜빡임을 유발.
+// windowsHide:true 를 줘도 콘솔없는 부모(node)가 콘솔앱(powershell)을 스폰하면 Windows가 새 conhost를 강제 할당 → 깜빡임.
+// 유일한 무창 경로 = 상주 PowerShell 1개(src/win-shell.js). Windows가 아니거나 상주셸 초기화 실패 시에만 기존 execSync 폴백.
+let _winShell = null, _winShellFailed = false;
+function _loadWinShell() {
+  if (_winShell || _winShellFailed) return _winShell;
+  try { _winShell = require('../src/win-shell'); }
+  catch { _winShellFailed = true; }
+  return _winShell;
+}
 
 const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY || (() => {
   try { return JSON.parse(fs.readFileSync(path.join(os.homedir(), '.orbit-config.json'), 'utf8')).anthropicApiKey || ''; }
@@ -51,7 +61,7 @@ try { fs.mkdirSync(TEMP_DIR, { recursive: true }); } catch {}
 // [화면 타임라인] 썸네일을 base64 자르기(→화면 상단만 보임) 대신 전체 화면을 축소해 저장.
 // owner PC(Windows)의 System.Drawing으로 폭 900px JPEG로 리사이즈 → 전체 화면이 다 보이면서 작음.
 // 실패 시 기존 방식(substring) 폴백. execSync는 무겁지만 캡처당 1회라 감당 가능.
-function _makeThumb(base64) {
+async function _makeThumb(base64) {
   try {
     if (!base64 || base64.length < 2000) return (base64 || '').substring(0, 100000);
     const inP = path.join(TEMP_DIR, `thin-${Date.now()}-${Math.floor(Math.random()*1e6)}.png`);
@@ -66,7 +76,13 @@ function _makeThumb(base64) {
       + `$q=[System.Drawing.Imaging.Encoder]::Quality; $eps.Param[0]=New-Object System.Drawing.Imaging.EncoderParameter($q,[long]62); `
       + `$codec=[System.Drawing.Imaging.ImageCodecInfo]::GetImageEncoders()|?{$_.MimeType -eq 'image/jpeg'}; `
       + `$bmp.Save('${outP}',$codec,$eps); $img.Dispose(); $bmp.Dispose()`;
-    execSync(`powershell -NoProfile -NonInteractive -Command "${ps.replace(/"/g,'\\"')}"`, { timeout: 15000, windowsHide: true, stdio: 'pipe' });
+    const ws = _loadWinShell();
+    if (ws && ws.isAvailable()) {
+      await ws.exec(ps, 15000);                 // 상주 PS → conhost 깜빡임 0
+    } else {
+      // 폴백: 비Windows/상주셸 실패 시에만(비Windows라 콘솔창 문제 없음). Windows 실패 시에도 기능 보존 우선.
+      execSync(`powershell -NoProfile -NonInteractive -Command "${ps.replace(/"/g,'\\"')}"`, { timeout: 15000, windowsHide: true, stdio: 'pipe' });
+    }
     const out = fs.readFileSync(outP).toString('base64');
     try { fs.unlinkSync(inP); fs.unlinkSync(outP); } catch {}
     return out.length ? out : base64.substring(0, 100000);
@@ -75,7 +91,7 @@ function _makeThumb(base64) {
 
 // [2026-07-17 E1] 지각해시 중복컷 — 시각적으로 같은 프레임은 CLI 부르기 전에 걸러 사용량 절감.
 // 8x8 그레이스케일 average hash(64bit). System.Drawing(=_makeThumb 동일 경로). 실패 시 null(중복판정 안 함=안전).
-function _perceptualHash(base64) {
+async function _perceptualHash(base64) {
   try {
     if (!base64 || base64.length < 2000) return null;
     const inP = path.join(TEMP_DIR, `ph-${Date.now()}-${Math.floor(Math.random() * 1e6)}.png`);
@@ -86,8 +102,14 @@ function _perceptualHash(base64) {
       + `$g.InterpolationMode='HighQualityBicubic'; $g.DrawImage($img,0,0,8,8); `
       + `$v=@(); for($y=0;$y -lt 8;$y++){for($x=0;$x -lt 8;$x++){$p=$bmp.GetPixel($x,$y); $v+=[int](($p.R*30+$p.G*59+$p.B*11)/100)}}; `
       + `$img.Dispose(); $bmp.Dispose(); $a=($v|Measure-Object -Average).Average; `
-      + `-join ($v|ForEach-Object{ if($_ -gt $a){'1'}else{'0'} })`;
-    const out = execSync(`powershell -NoProfile -NonInteractive -Command "${ps.replace(/"/g, '\\"')}"`, { timeout: 10000, windowsHide: true, stdio: 'pipe' }).toString().trim();
+      + `Write-Output (-join ($v|ForEach-Object{ if($_ -gt $a){'1'}else{'0'} }))`;
+    const ws = _loadWinShell();
+    let out;
+    if (ws && ws.isAvailable()) {
+      out = (await ws.exec(ps, 10000) || '').trim();   // 상주 PS → conhost 깜빡임 0
+    } else {
+      out = execSync(`powershell -NoProfile -NonInteractive -Command "${ps.replace(/"/g, '\\"')}"`, { timeout: 10000, windowsHide: true, stdio: 'pipe' }).toString().trim();
+    }
     try { fs.unlinkSync(inP); } catch {}
     return /^[01]{64}$/.test(out) ? out : null;
   } catch { return null; }
@@ -139,9 +161,9 @@ function _dedupKey(userId, app, windowTitle) {
   const byTitle = /kakaotalk|카카오톡/i.test(t) ? 'kakaotalk' : /chrome/i.test(t) ? 'chrome' : /excel|\.xls/i.test(t) ? 'excel' : /nenova|네노바/i.test(t) ? 'nenova' : '';
   return `${userId}|${byTitle || 't:' + t.replace(/^\s*\d+\s+/, '').slice(0, 40)}`;
 }
-function _isDupFrame(base64, key, atMs) {
+async function _isDupFrame(base64, key, atMs) {
   if (!DEDUP_ON) return false;
-  const h = _perceptualHash(base64);
+  const h = await _perceptualHash(base64);
   if (!h) return false;                 // 해시 실패 → 분석 진행(안전측)
   return _isDupHash(h, key, atMs);
 }
@@ -597,12 +619,12 @@ async function visionAnalyze(base64, ctx) {
 }
 
 // ── 결과 서버 전송 ────────────────────────────────────────────────────────────
-function sendToServer(cap, analysis, base64Thumbnail) {
+async function sendToServer(cap, analysis, base64Thumbnail) {
   const eventData = { fileId:cap.id, filename:cap.name, hostname:cap.hostname, ...analysis };
   // 썸네일 포함 (100KB 이하로 리사이즈 — 원본의 처음 부분)
   if (base64Thumbnail) {
     // base64 이미지의 앞 100KB만 전송 (썸네일 용도)
-    eventData.thumbnail = _makeThumb(base64Thumbnail);  // 전체 화면 축소(잘라내기 아님)
+    eventData.thumbnail = await _makeThumb(base64Thumbnail);  // 전체 화면 축소(잘라내기 아님)
   }
   const payload = JSON.stringify({ events:[{
     id:`vision-${Date.now()}-${cap.id.substring(0,6)}`, type:'screen.analyzed', source:'vision-worker',
@@ -746,7 +768,7 @@ async function processBatch() {
           continue;
         }
         // [E1+] Drive 모드에도 중복/빈화면 컷(기존 누락) — Claude 호출 전 스킵해 사용량 절감
-        if (_isDupFrame(b64, `drive|${cap.hostname || ''}`)) {
+        if (await _isDupFrame(b64, `drive|${cap.hostname || ''}`)) {
           console.log(`  ⇢ 중복/빈화면 스킵(Drive): ${cap.name}`);
           try { await gApi('DELETE', `https://www.googleapis.com/drive/v3/files/${cap.id}`, token, null); } catch {}
           continue;
@@ -860,7 +882,7 @@ async function processServerQueue() {
             ..._whereCtx(item),
             app: result.app || item.app || '',
             // 썸네일 (100KB 이하 — 관리자 대시보드 표시용)
-            thumbnail: item.imageBase64 ? _makeThumb(item.imageBase64) : undefined,  // 전체 화면 축소
+            thumbnail: item.imageBase64 ? await _makeThumb(item.imageBase64) : undefined,  // 전체 화면 축소
           },
         }] });
 
@@ -937,7 +959,7 @@ async function processLocalDir() {
         const base64 = fs.readFileSync(full).toString('base64');
         const iso = new Date(c.epoch).toISOString();
         // [E1] 직전과 시각적으로 같은 화면이면 분석 스킵(처리완료 기록해 재스캔 방지)
-        if (_isDupFrame(base64, `local|${host}`)) { _localDone.add(c.f); continue; }
+        if (await _isDupFrame(base64, `local|${host}`)) { _localDone.add(c.f); continue; }
         const result = await visionAnalyze(base64, {
           hostname: host, name: 'capture', windowTitle: '', trigger: c.trigger,
           forceModel: LOCAL_FORCE_MODEL,
@@ -951,7 +973,7 @@ async function processLocalDir() {
           sessionId: `local-${host}-${Math.floor(c.epoch / 1800000)}`, // 30분 버킷 = 세션 형성 도움
           userId: LOCAL_USER, timestamp: iso,
           data: { hostname: host, originalCaptureId: c.f, trigger: c.trigger, ...result,
-            app: result.app || '', thumbnail: _makeThumb(base64) },
+            app: result.app || '', thumbnail: await _makeThumb(base64) },
         }] });
         const ok = await new Promise(resolve => {
           const sUrl = new URL('/api/hook', ORBIT_SERVER);
@@ -1039,7 +1061,7 @@ async function processSpool() {
       }
       console.log(`[vision-spool] ${full.hostname}/${full.app}: ${(full.windowTitle || '').slice(0, 40)}`);
       // [E1] 직전과 시각적으로 같은 화면이면 분석 스킵 + 스풀에서 삭제(드레인)
-      if (_isDupFrame(full.imageBase64, _dedupKey(it.userId, full.app, full.windowTitle), new Date(full.ts || Date.now()).getTime())) {
+      if (await _isDupFrame(full.imageBase64, _dedupKey(it.userId, full.app, full.windowTitle), new Date(full.ts || Date.now()).getTime())) {
         console.log(`  ⇢ 중복화면 스킵(E1): ${it.file}`);
         await _spoolReq('DELETE', `/api/vision/spool/file?user=${encodeURIComponent(it.userId)}&file=${encodeURIComponent(it.file)}`);
         return false;
@@ -1057,7 +1079,7 @@ async function processSpool() {
         sessionId: `spool-${full.hostname || it.userId}-${Math.floor(new Date(full.ts || Date.now()).getTime() / 1800000)}`,
         userId: full.userId || it.userId, timestamp: full.ts || new Date().toISOString(),
         data: { hostname: full.hostname, originalCaptureId: it.file, trigger: full.trigger, ...result,
-          app: result.app || full.app || '', thumbnail: _makeThumb(full.imageBase64), ..._whereCtx(full) },
+          app: result.app || full.app || '', thumbnail: await _makeThumb(full.imageBase64), ..._whereCtx(full) },
       }] });
       const ok = await new Promise(resolve => {
         const sUrl = new URL('/api/hook', ORBIT_SERVER); const sMod = sUrl.protocol === 'https:' ? https : http;

@@ -31,9 +31,23 @@ const _seenMail = new Set();  // Outlook EntryID
 let _lastMailCheck = null;
 let _dialogSeen = { file: '', at: 0 };
 
+// [2026-11-04 no-flash] execFile('powershell …')는 windowsHide:true 여도 콘솔없는 부모(데몬 node)가 콘솔앱을
+// 스폰하면 Windows가 새 conhost를 강제 할당 → 깜빡임(인쇄 폴러 5초 간격이 가장 잦음). 상주 PowerShell 1개(win-shell)로 전환.
+// win-shell 은 spawn 시 OutputEncoding=UTF8 을 이미 설정(한글 프린터명·사용자명 보존). 비Windows/상주셸 실패 시에만 execFile 폴백.
+let _winShell = null, _winShellFailed = false;
+function _loadWinShell() {
+  if (_winShell || _winShellFailed) return _winShell;
+  try { _winShell = require('./win-shell'); }
+  catch { _winShellFailed = true; }
+  return _winShell;
+}
 function ps(script, timeoutMs = 20000) {
+  const ws = _loadWinShell();
+  if (ws && ws.isAvailable()) {
+    return ws.exec(script, timeoutMs).catch(() => '');   // 상주 PS → conhost 깜빡임 0
+  }
   return new Promise((resolve) => {
-    // 한글 프린터명·사용자명이 '????'로 깨지던 것(2026-09-28 실측) → 출력 인코딩을 UTF-8로 고정
+    // 폴백(비Windows/상주셸 실패): 한글 프린터명·사용자명이 '????'로 깨지던 것(2026-09-28) → 출력 인코딩 UTF-8 고정
     const child = execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', '[Console]::OutputEncoding=[System.Text.Encoding]::UTF8; ' + script], { timeout: timeoutMs, windowsHide: true, maxBuffer: 4 * 1024 * 1024 }, (err, stdout) => resolve(err ? '' : String(stdout || '')));
     child.on('error', () => resolve(''));
   });
