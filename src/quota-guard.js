@@ -209,4 +209,5 @@ async function readUsage() {
   return snap;
 }
 
-module.exports = { checkQuota, readUsage };
+// _liveToken: cli-gate 가 토큰 만료 임박 시 "가드 경유 리프레시"로 재사용(회전 토큰 보존 창구 단일화).
+module.exports = { checkQuota, readUsage, _liveToken };

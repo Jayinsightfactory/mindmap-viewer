@@ -21,6 +21,7 @@ const http = require('http');
 
 const { execFile, execSync } = require('child_process');
 const _ocrTriage = require('../src/ocr-triage');   // OCR/Vision 분류기(기본 off)
+const _prefilter = require('../src/vision-prefilter'); // 해독 전 싼 신호 선별(저정보 컷·전환 우선, Claude $0)
 
 const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY || (() => {
   try { return JSON.parse(fs.readFileSync(path.join(os.homedir(), '.orbit-config.json'), 'utf8')).anthropicApiKey || ''; }
@@ -43,25 +44,9 @@ const USE_CLI = !ANTHROPIC_KEY && !!CLAUDE_CLI;
 const TEMP_DIR = path.join(os.tmpdir(), 'orbit-vision');
 try { fs.mkdirSync(TEMP_DIR, { recursive: true }); } catch {}
 
-// ── Claude CLI 전역 직렬화 락 ────────────────────────────────────────────────
-// 여러 워커(--local/--spool 등)가 동시에 claude -p 를 호출하면 회전(rotating)
-// OAuth refreshToken 을 경쟁 갱신하다 소실 → 자격증명 죽음(재로그인 후 하루 만에 반복 만료).
-// 크로스프로세스 파일락으로 claude 호출을 한 번에 하나만 실행해 토큰을 보존한다.
-const CLI_LOCK = path.join(os.homedir(), '.orbit', 'claude-cli.lock');
-const CLI_LOCK_STALE_MS = 180000; // 3분(claude timeout 120s) 초과 점유 = 죽은 프로세스로 보고 회수
-function _cliSleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
-async function _acquireCliLock(waitMs = 300000) {
-  const start = Date.now();
-  for (;;) {
-    try { const fd = fs.openSync(CLI_LOCK, 'wx'); fs.writeSync(fd, String(process.pid)); fs.closeSync(fd); return true; }
-    catch {
-      try { const st = fs.statSync(CLI_LOCK); if (Date.now() - st.mtimeMs > CLI_LOCK_STALE_MS) { fs.unlinkSync(CLI_LOCK); continue; } } catch {}
-      if (Date.now() - start > waitMs) return false; // 과도한 대기 방지: 못 얻어도 진행
-      await _cliSleep(400 + Math.floor(Math.random() * 400));
-    }
-  }
-}
-function _releaseCliLock() { try { fs.unlinkSync(CLI_LOCK); } catch {} }
+// [해독 병렬화] claude -p 호출 동시성은 src/cli-gate.js 가 관리(평상시 ORBIT_CLI_PARALLEL까지
+// 동시, 토큰 만료 임박 구간만 직렬 리프레시로 회전 토큰 보존). 과거의 전 구간 파일락
+// (~/.orbit/claude-cli.lock)은 이 게이트로 대체됨.
 
 // [화면 타임라인] 썸네일을 base64 자르기(→화면 상단만 보임) 대신 전체 화면을 축소해 저장.
 // owner PC(Windows)의 System.Drawing으로 폭 900px JPEG로 리사이즈 → 전체 화면이 다 보이면서 작음.
@@ -170,7 +155,7 @@ const PENDING_DIR = path.join(os.homedir(), '.orbit', 'vision-pending');
 try { fs.mkdirSync(PENDING_DIR, { recursive: true }); } catch {}
 function _isNight() { const h = new Date().getHours(); return (h >= NIGHT_START || h < NIGHT_END); }
 function _savePending(item) { try { fs.writeFileSync(path.join(PENDING_DIR, `${(item.id||Date.now())}.json`), JSON.stringify(item)); } catch {} }
-const _triageSeen = new Map(); // `${user}|${app}|${win}` → 마지막 분석 캡처시각 (중복화면 컷)
+// [2026-11-04] 같은 창 반복 컷은 vision-prefilter.selectByOperation(조작 기반)으로 통일 — 옛 _triageSeen(3분 시간컷) 제거
 function _pendingCount() { try { return fs.readdirSync(PENDING_DIR).filter(f=>f.endsWith('.json')).length; } catch { return 0; } }
 let _pqBusy = false; // 재진입 방지 (야간 CLI는 분당 수십초 소요 → setInterval 겹침 방지)
 const ORBIT_TOKEN = process.env.ORBIT_TOKEN || (() => {
@@ -492,7 +477,10 @@ async function visionCli(base64, ctx, model) {
   // CLI는 프롬프트에 파일 경로를 포함하면 Read 도구로 이미지 인식
   const prompt = `${tmpFile} ${_buildPrompt(ctx)}`;
 
-  const _locked = await _acquireCliLock(); // 여러 워커 동시 claude 호출 직렬화(회전 토큰 보존)
+  // [해독 병렬화] 전 구간 직렬락 → cli-gate 로 교체: 평상시 ORBIT_CLI_PARALLEL까지 동시,
+  // 토큰 만료 임박 구간만 직렬 리프레시(회전 토큰 보존). 401/invalid_grant 감지 시 자동 병렬 1 강등.
+  const _gate = require('../src/cli-gate');
+  await _gate.acquire();
   return new Promise((resolve) => {
     // VISION_CLI_MODEL로 모델 지정(예: sonnet / haiku). 미설정 시 CLI 계정 기본모델.
     const _args = ['-p', prompt, '--allowedTools', 'Read', '--add-dir', TEMP_DIR];
@@ -501,8 +489,11 @@ async function visionCli(base64, ctx, model) {
     execFile(CLAUDE_CLI, _args,
       { timeout: 120000, maxBuffer: 2 * 1024 * 1024 }, (err, stdout) => {
       try { fs.unlinkSync(tmpFile); } catch {}
-      if (_locked) _releaseCliLock();
-      if (err) { console.warn(`  CLI 분석 실패: ${err.message}`); resolve(null); return; }
+      _gate.release();
+      if (err) {
+        _gate.detectAuthFailure((err.message || '') + ' ' + String(stdout || '')); // 자격증명 이상이면 전 워커 병렬 1 강등
+        console.warn(`  CLI 분석 실패: ${err.message}`); resolve(null); return;
+      }
       resolve(_parseResult(String(stdout)));
     });
   });
@@ -823,22 +814,23 @@ async function processServerQueue() {
     // [2026-07-13] 10분→3분 완화: 작업세션 판정(/api/vision/task-sessions)이 "10분 내 분석 3장+"를
     // 요구하는데, 큐 항목의 app·windowTitle이 빈 값이 많아 유저당 키 1개로 뭉개짐 → 10분 컷이면
     // 유저당 최대 1장/10분이라 세션이 구조적으로 형성 불가. 3분 컷 = 유저·키당 최대 3~4장/10분.
-    work.sort((a, b) => new Date(b.ts || 0) - new Date(a.ts || 0)); // 최신 우선
+    // [선별] 전환/입력 트리거 상위 → 동순위면 최신 우선(루틴 파악 가치 최대)
+    work.sort((a, b) => (_prefilter.triggerRank(a.trigger) - _prefilter.triggerRank(b.trigger)) || (new Date(b.ts || 0) - new Date(a.ts || 0)));
     const before = work.length;
     work = work.filter(item => {
+      // [선별] 메타만으로 비업무/저정보 화면 컷(Claude $0). 업무 키워드 있으면 통과.
+      const _pf = _prefilter.evaluate(item.app, item.windowTitle, item.trigger);
+      if (_pf.skip) { if (item.__pf) { try { fs.unlinkSync(item.__pf); } catch {} } return false; }
+      // [조작 기반 선별] 같은 창 반복은 그 사이 조작(클릭·타이핑·스크롤)이 있어야 유지, 무조작이면 누락.
+      // 제목이 바뀌면 새 키 → 1장 해독. (기존 3분 시간컷을 조작 기준으로 통일)
       const key = `${item.userId || item.hostname}|${item.app || ''}|${(item.windowTitle || '').slice(0, 40)}`;
       const itemMs = new Date(item.ts || Date.now()).getTime();
-      const last = _triageSeen.get(key);
-      if (last && Math.abs(itemMs - last) < 3 * 60 * 1000) {
-        if (item.__pf) { try { fs.unlinkSync(item.__pf); } catch {} } // 누적분도 컷하면 파일 정리
-        return false;
-      }
-      _triageSeen.set(key, itemMs);
-      if (_triageSeen.size > 800) { const k = _triageSeen.keys().next().value; _triageSeen.delete(k); }
+      const _op = _prefilter.selectByOperation(key, item.trigger, item, itemMs);
+      if (_op.skip) { if (item.__pf) { try { fs.unlinkSync(item.__pf); } catch {} } return false; }
       return true;
     });
     const cut = before - work.length;
-    console.log(`[vision-queue] 처리 ${work.length}건 (트리아지 컷 ${cut}, 큐:${batch.length} 누적:${pending.length}, 대기:${queueData.pending || 0})`);
+    console.log(`[vision-queue] 처리 ${work.length}건 (트리아지 컷 ${cut}, 큐:${batch.length} 누적:${pending.length}, 대기:${queueData.pending || 0}) · ${_prefilter.logLine()}`);
 
     let done = 0;
     for (const item of work) {
@@ -1020,49 +1012,66 @@ async function processSpool() {
     const list = await _spoolReq('GET', `/api/vision/spool/list?n=${SPOOL_BATCH_N}`);
     const batch = (list && list.batch) || [];
     if (!batch.length) { console.log(`[vision-spool] 신규 없음 (대기 ${list ? list.pending : '?'})`); return 0; }
-    console.log(`[vision-spool] 대상 ${batch.length}건 (전체 대기 ${list.pending})`);
-    let done = 0;
-    for (const it of batch) {
-      try {
-        const full = await _spoolReq('GET', `/api/vision/spool/file?user=${encodeURIComponent(it.userId)}&file=${encodeURIComponent(it.file)}`);
-        if (!full || !full.imageBase64) { // 못 읽으면 삭제해 무한루프 방지
-          await _spoolReq('DELETE', `/api/vision/spool/file?user=${encodeURIComponent(it.userId)}&file=${encodeURIComponent(it.file)}`); continue;
-        }
-        console.log(`[vision-spool] ${full.hostname}/${full.app}: ${(full.windowTitle || '').slice(0, 40)}`);
-        // [E1] 직전과 시각적으로 같은 화면이면 분석 스킵 + 스풀에서 삭제(드레인)
-        if (_isDupFrame(full.imageBase64, _dedupKey(it.userId, full.app, full.windowTitle), new Date(full.ts || Date.now()).getTime())) {
-          console.log(`  ⇢ 중복화면 스킵(E1): ${it.file}`);
-          await _spoolReq('DELETE', `/api/vision/spool/file?user=${encodeURIComponent(it.userId)}&file=${encodeURIComponent(it.file)}`);
-          continue;
-        }
-        const result = await visionAnalyze(full.imageBase64, {
-          hostname: full.hostname, name: full.app || 'capture', windowTitle: full.windowTitle || '', trigger: full.trigger,
-          recentClicks: full.recentClicks,  // [골:실행좌표 융합/A3] 서버가 붙인 캡처 직전 클릭 → clickXY 특정
-          userId: full.userId || it.userId, prevSummary: _getPrevSummary(full.userId || it.userId || full.hostname),
-        });
-        if (!result) { console.warn(`  ✗ 분석 실패 — 다음 폴 재시도: ${it.file}`); continue; } // 삭제 안 함(재시도)
-        console.log(`  → ${result.app || '?'}: ${(result.activity || '').substring(0, 50)}`);
-        _notePrevSummary(full.userId || it.userId || full.hostname, result.screen, result.activity);
-        const payload = JSON.stringify({ events: [{
-          id: `vision-spool-${it.userId}-${it.file.replace(/\.json$/, '')}`, type: 'screen.analyzed', source: 'vision-spool-worker',
-          sessionId: `spool-${full.hostname || it.userId}-${Math.floor(new Date(full.ts || Date.now()).getTime() / 1800000)}`,
-          userId: full.userId || it.userId, timestamp: full.ts || new Date().toISOString(),
-          data: { hostname: full.hostname, originalCaptureId: it.file, trigger: full.trigger, ...result,
-            app: result.app || full.app || '', thumbnail: _makeThumb(full.imageBase64), ..._whereCtx(full) },
-        }] });
-        const ok = await new Promise(resolve => {
-          const sUrl = new URL('/api/hook', ORBIT_SERVER); const sMod = sUrl.protocol === 'https:' ? https : http;
-          const sh = { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) };
-          if (ORBIT_TOKEN) sh['Authorization'] = 'Bearer ' + ORBIT_TOKEN;
-          const sr = sMod.request({ hostname: sUrl.hostname, port: sUrl.port || 443, path: sUrl.pathname, method: 'POST', headers: sh, timeout: 10000 },
-            r => { r.resume(); resolve(r.statusCode < 300); });
-          sr.on('error', () => resolve(false)); sr.write(payload); sr.end();
-        });
-        if (ok) { await _spoolReq('DELETE', `/api/vision/spool/file?user=${encodeURIComponent(it.userId)}&file=${encodeURIComponent(it.file)}`); done++; } // 전송 성공분만 스풀에서 삭제
-        await new Promise(r => setTimeout(r, 2000)); // CLI 쿨다운
-      } catch (e) { console.warn(`  분석 실패: ${e.message}`); }
-    }
-    console.log(`[vision-spool] 처리 ${done}건 전송·삭제`);
+    // [선별] 전환/입력 트리거를 상위로(루틴 파악 가치 최대), 주기·유휴성은 하위 → 배치 상한에서 먼저 밀림
+    batch.sort((a, b) => _prefilter.triggerRank(a.trigger) - _prefilter.triggerRank(b.trigger));
+    console.log(`[vision-spool] 대상 ${batch.length}건 (전체 대기 ${list.pending}, 병렬 ${require('../src/cli-gate').parallelLimit()})`);
+    // [해독 병렬화] 항목을 cli-gate 레인으로 동시 처리(레인=1이면 기존 직렬과 동일)
+    const done = await _runPool(batch, async (it) => {
+      const full = await _spoolReq('GET', `/api/vision/spool/file?user=${encodeURIComponent(it.userId)}&file=${encodeURIComponent(it.file)}`);
+      if (!full || !full.imageBase64) { // 못 읽으면 삭제해 무한루프 방지
+        await _spoolReq('DELETE', `/api/vision/spool/file?user=${encodeURIComponent(it.userId)}&file=${encodeURIComponent(it.file)}`); return false;
+      }
+      // [선별] 메타만으로 비업무/저정보 화면 컷(Claude $0). 업무 키워드 있으면 통과. 스풀에서 삭제(드레인).
+      const _pf = _prefilter.evaluate(full.app, full.windowTitle, full.trigger);
+      if (_pf.skip) {
+        console.log(`  ⇢ 저정보 스킵(${_pf.reason}): ${full.app}/${(full.windowTitle || '').slice(0, 30)}`);
+        await _spoolReq('DELETE', `/api/vision/spool/file?user=${encodeURIComponent(it.userId)}&file=${encodeURIComponent(it.file)}`);
+        return false;
+      }
+      // [조작 기반 선별] 같은 창이 반복돼도 그 사이 조작(클릭·타이핑·스크롤)이 있었으면 유지, 무조작이면 누락.
+      // 제목이 바뀌면 키가 새로 생겨 1장은 해독. recentClicks/lastClick 로 조작 증거 보강.
+      const _opKey = `${full.userId || it.userId || full.hostname}|${full.app || ''}|${(full.windowTitle || '').slice(0, 40)}`;
+      const _op = _prefilter.selectByOperation(_opKey, full.trigger, full, new Date(full.ts || Date.now()).getTime());
+      if (_op.skip) {
+        console.log(`  ⇢ 같은창·무조작 스킵: ${full.app}/${(full.windowTitle || '').slice(0, 30)}`);
+        await _spoolReq('DELETE', `/api/vision/spool/file?user=${encodeURIComponent(it.userId)}&file=${encodeURIComponent(it.file)}`);
+        return false;
+      }
+      console.log(`[vision-spool] ${full.hostname}/${full.app}: ${(full.windowTitle || '').slice(0, 40)}`);
+      // [E1] 직전과 시각적으로 같은 화면이면 분석 스킵 + 스풀에서 삭제(드레인)
+      if (_isDupFrame(full.imageBase64, _dedupKey(it.userId, full.app, full.windowTitle), new Date(full.ts || Date.now()).getTime())) {
+        console.log(`  ⇢ 중복화면 스킵(E1): ${it.file}`);
+        await _spoolReq('DELETE', `/api/vision/spool/file?user=${encodeURIComponent(it.userId)}&file=${encodeURIComponent(it.file)}`);
+        return false;
+      }
+      const result = await visionAnalyze(full.imageBase64, {
+        hostname: full.hostname, name: full.app || 'capture', windowTitle: full.windowTitle || '', trigger: full.trigger,
+        recentClicks: full.recentClicks,  // [골:실행좌표 융합/A3] 서버가 붙인 캡처 직전 클릭 → clickXY 특정
+        userId: full.userId || it.userId, prevSummary: _getPrevSummary(full.userId || it.userId || full.hostname),
+      });
+      if (!result) { console.warn(`  ✗ 분석 실패 — 다음 폴 재시도: ${it.file}`); return false; } // 삭제 안 함(재시도)
+      console.log(`  → ${result.app || '?'}: ${(result.activity || '').substring(0, 50)}`);
+      _notePrevSummary(full.userId || it.userId || full.hostname, result.screen, result.activity);
+      const payload = JSON.stringify({ events: [{
+        id: `vision-spool-${it.userId}-${it.file.replace(/\.json$/, '')}`, type: 'screen.analyzed', source: 'vision-spool-worker',
+        sessionId: `spool-${full.hostname || it.userId}-${Math.floor(new Date(full.ts || Date.now()).getTime() / 1800000)}`,
+        userId: full.userId || it.userId, timestamp: full.ts || new Date().toISOString(),
+        data: { hostname: full.hostname, originalCaptureId: it.file, trigger: full.trigger, ...result,
+          app: result.app || full.app || '', thumbnail: _makeThumb(full.imageBase64), ..._whereCtx(full) },
+      }] });
+      const ok = await new Promise(resolve => {
+        const sUrl = new URL('/api/hook', ORBIT_SERVER); const sMod = sUrl.protocol === 'https:' ? https : http;
+        const sh = { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) };
+        if (ORBIT_TOKEN) sh['Authorization'] = 'Bearer ' + ORBIT_TOKEN;
+        const sr = sMod.request({ hostname: sUrl.hostname, port: sUrl.port || 443, path: sUrl.pathname, method: 'POST', headers: sh, timeout: 10000 },
+          r => { r.resume(); resolve(r.statusCode < 300); });
+        sr.on('error', () => resolve(false)); sr.write(payload); sr.end();
+      });
+      if (ok) await _spoolReq('DELETE', `/api/vision/spool/file?user=${encodeURIComponent(it.userId)}&file=${encodeURIComponent(it.file)}`); // 전송 성공분만 스풀에서 삭제
+      await new Promise(r => setTimeout(r, 2000)); // CLI 쿨다운(레인별)
+      return ok;
+    });
+    console.log(`[vision-spool] 처리 ${done}건 전송·삭제 · ${_prefilter.logLine()}`);
     return done;
   } catch (e) { console.error('[vision-spool] 에러:', e.message); return 0; }
   finally { _spoolBusy = false; }
@@ -1107,6 +1116,22 @@ function _reloadIfCodeChanged() {
   } catch (e) { console.error('[vision-worker] 재기동 실패(옛 코드로 계속):', e.message); return false; }
 }
 function _loop(fn, ms) { setInterval(() => { if (!_reloadIfCodeChanged()) fn(); }, ms); }
+
+// [해독 병렬화] 배치 항목을 cli-gate.parallelLimit() 레인으로 동시에 처리한다. 레인 수가 1이면
+// 기존 직렬 처리와 동일. fn(item) 이 truthy 를 반환하면 done 으로 센다. 호출 수는 cli-gate 의
+// in-process 세마포어가 한 번 더 상한을 걸어 안전(토큰 만료 임박엔 자동 직렬 리프레시).
+async function _runPool(items, fn) {
+  const limit = require('../src/cli-gate').parallelLimit();
+  let idx = 0, done = 0;
+  const lanes = Array.from({ length: Math.max(1, limit) }, async () => {
+    while (idx < items.length) {
+      const it = items[idx++];
+      try { if (await fn(it)) done++; } catch (e) { console.warn(`  분석 실패: ${e.message}`); }
+    }
+  });
+  await Promise.all(lanes);
+  return done;
+}
 
 async function main() {
   console.log('[vision-worker] Claude Vision 분석 워커');
