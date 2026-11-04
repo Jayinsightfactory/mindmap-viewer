@@ -60,7 +60,9 @@ work.action FOCUS             btn    '새로고침'
 - **이 사이드카**: `/target:winexe`(콘솔 없는 서브시스템)로 빌드 → 실행해도 conhost 생성 0. `windowsHide:true`로 spawn.
   실증: 콘솔빌드(/target:exe)는 conhost child=1, winexe는 **0**(기능 정상, perf 라인 유입). PE Subsystem=2 확인.
 - **in-repo 런처는 clean**: 데몬 기동/재기동(`guardian-start-daemon.ps1` `& $nodeExe ... 2>&1 |`, `guardian-watchdog.ps1` `Start-Process -WindowStyle Hidden`)은 cmd.exe 미경유. `decode-boost-canary.ps1`/`remote-vision-worker.ps1`은 `& node ... *>> $log`(PS 네이티브). screen-capture execSync 깜빡임은 2026-09-18 선수정됨.
-- **미해결(이 저장소 밖)**: vision-worker/kakao-intel-worker/ops-agent-worker/solution-miner를 띄우는 **분석 워커 런처**는 이 저장소에 없음(사장 PC의 수작업/생성된 `~/.orbit/*-start.ps1`). 그 파일에서 `cmd.exe /c "node ... > log 2>&1"` → `Start-Process node -ArgumentList ... -WindowStyle Hidden -RedirectStandardOutput <log> -RedirectStandardError <err>` (cmd 미경유)로 바꿔야 함. 배포 단계에서 함께 처리.
+- **로컬 런처 자동 마이그레이션 추가** (`src/daemon-updater.js` `_migrateLauncherNoWindow`, `_postUpdate`에서 호출): 분석 워커 런처(`~/.orbit/*-start.ps1`, `start-daemon.ps1` 제외)의 `& cmd /c "node ... > log 2>&1"` 한 줄을 **cmd 리디렉션(UTF-8 로그 보존)은 유지**하되 `ProcessStartInfo(UseShellExecute=$false, CreateNoWindow=$true)`로 띄우는 블록으로 **치환**. 백업(launcher-backup-auto-*) 후 치환, 이미 CreateNoWindow면 skip(멱등), 매칭 없으면 미수정. 생성 템플릿은 저장소에 없음(로컬 수작업 파일, '생성 주체 미발견') → 업데이트 때마다 이 마이그레이션이 적용.
+  - 실증(scratchpad 복사본, 실제 pre-fix 런처 3종+경계케이스): migrated 4 / skip(already·no-cmd) 2 / fail 0, 재실행 멱등(migrated=[]), start-daemon.ps1 이름제외. 치환된 런처 실행 결과 **exit 0, conhost 신규 0**, 로그 UTF-8 `한글OK`(hex ed959c eab880 4f4b) 바이트 보존.
+  - **직원 PC 범위**: 코어 데몬(personal-agent.js, 전 PC)은 이 cmd 워커들을 띄우지 않음 — 5개 런처는 사장/분석 PC용. 직원 PC 실제 on-disk 런처 유무는 **미검증**(원격 디스크 확인 안 함) — 있으면 업데이트 시 자동 마이그레이션됨.
 
 ## 미검증 / 잔존 위험
 - **배포 안 함.** 직원 PC 실배포·원격명령 미실시. push≠데몬반영(재시작 전까지 구코드).

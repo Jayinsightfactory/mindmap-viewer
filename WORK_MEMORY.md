@@ -2276,3 +2276,10 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 - 검증(실 nenova pid 14908 읽기전용, 창활성화만): 화면/버튼 이름·순서·시각 포착, pid필터 targets=1, 노이즈 104→6, pause/resume, 부모死 종료, Node 감시자 compile→spawn→tail→batch, 기존 jest 239 PASS. 상세 docs/work-action-recorder.md.
 - 미검증: 실배포(안 함), AhnLab/Defender의 런타임 x86 exe 격리 여부, csc 부재 PC(→disabled), 저장 end-to-end(DB쓰기 금지 — 프로토타입 스파이크로 실증됨).
 - 반복 시 먼저 볼 곳: DAEMON_STRUCTURE.md §9, docs/work-action-recorder.md.
+
+## 2026-11-04 (추가) 콘솔창 깜빡임(conhost) 제거
+- 사이드카: /target:winexe(콘솔없음)로 빌드 → conhost 0(실증: 콘솔빌드=1, PE Subsystem=2). work-action-recorder.js 컴파일 플래그.
+- 로컬 워커 런처 마이그레이션: src/daemon-updater.js _migrateLauncherNoWindow(_postUpdate에서 호출). ~/.orbit/*-start.ps1(start-daemon 제외)의 `& cmd /c "node ... > log 2>&1"` → ProcessStartInfo(UseShellExecute=$false,CreateNoWindow=$true), cmd리디렉션/UTF-8 유지. 백업 후 치환·멱등·매칭없으면 미수정.
+- 실증(scratchpad 복사본): migrated 4/skip 2/fail 0, 재실행 멱등, 치환런처 exit0·conhost신규0·로그 UTF-8 '한글OK' 보존.
+- in-repo 데몬 기동(guardian-*.ps1)은 cmd 미경유로 이미 clean. 분석워커 런처 '생성 주체'는 저장소에 없음(로컬 수작업). 직원 PC on-disk 런처 유무 미검증.
+- 커밋: 195eee0(winexe), +이번(마이그레이션). 배포는 사장님 직접 승인 후 별도.

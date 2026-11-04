@@ -331,6 +331,56 @@ function pullAndRestart(reason) {
   }
 }
 
+// ── [2026-11-04] 콘솔창 깜빡임 제거 마이그레이션 (로컬 워커 런처) ──────────────
+// 사장/분석 PC 의 ~/.orbit/*-start.ps1 이 `& cmd /c "node ... > log 2>&1"` 로 워커를 띄우면
+// cmd 가 conhost 창을 만들어 직원 포커스를 뺏고 화면이 깜빡인다(사장 PC 실측 conhost 86/45s).
+// cmd 리디렉션(UTF-8 로그 바이트 보존)은 그대로 두고, .NET ProcessStartInfo
+// (UseShellExecute=$false, CreateNoWindow=$true)로 띄워 창만 안 뜨게 한다(peer 실측 conhost 증가 0).
+// 백업 후 치환, 이미 CreateNoWindow 있으면 skip(멱등). 생성 템플릿은 저장소에 없음(로컬 수작업 파일).
+// start-daemon.ps1 은 cmd 미경유라 제외. 매칭 실패 파일은 건드리지 않고 skip 기록.
+function _migrateLauncherNoWindow(orbitDirArg) {
+  const results = { scanned: 0, migrated: [], skipped: [], failed: [], backupDir: null };
+  try {
+    const orbitDir = orbitDirArg || path.join(os.homedir(), '.orbit');
+    if (!fs.existsSync(orbitDir)) return results;
+    const files = fs.readdirSync(orbitDir)
+      .filter(f => /-start\.ps1$/i.test(f) && f.toLowerCase() !== 'start-daemon.ps1');
+    // 한 줄: [indent] [&] cmd[.exe] /c "<inner>"  — inner 는 원본 PS 문자열(백틱이스케이프 포함) 그대로 보존
+    const re = /^([ \t]*)&?[ \t]*cmd(?:\.exe)?[ \t]+\/c[ \t]+"(.+)"[ \t]*$/im;
+    let backupDir = null;
+    for (const f of files) {
+      const fp = path.join(orbitDir, f);
+      let text;
+      try { text = fs.readFileSync(fp, 'utf8'); } catch (e) { results.failed.push(f + ':read:' + e.message); continue; }
+      results.scanned++;
+      if (/CreateNoWindow/i.test(text)) { results.skipped.push(f + ':already-nowindow'); continue; }
+      const m = text.match(re);
+      if (!m) { results.skipped.push(f + ':no-cmd-pattern'); continue; }
+      const indent = m[1] || '';
+      const inner = m[2]; // 원본 inner PS 문자열 — verbatim 재삽입(평가 시 올바른 cmd 명령 생성)
+      const block = [
+        indent + '# 2026-11-04 no-flash: keep cmd redirect (UTF-8 logs) + CreateNoWindow suppresses console window',
+        indent + '$__psi = New-Object System.Diagnostics.ProcessStartInfo',
+        indent + '$__psi.FileName = "cmd.exe"',
+        indent + "$__psi.Arguments = '/c ' + \"" + inner + "\"",
+        indent + '$__psi.UseShellExecute = $false',
+        indent + '$__psi.CreateNoWindow = $true',
+        indent + '$__psi.WorkingDirectory = (Get-Location).Path',
+        indent + '([System.Diagnostics.Process]::Start($__psi)).WaitForExit()',
+      ].join('\r\n');
+      const next = text.replace(re, () => block); // 함수형 replace: $ 치환패턴 해석 방지
+      if (next === text) { results.skipped.push(f + ':noop'); continue; }
+      try {
+        if (!backupDir) { backupDir = path.join(orbitDir, 'launcher-backup-auto-' + Date.now()); fs.mkdirSync(backupDir, { recursive: true }); results.backupDir = backupDir; }
+        fs.writeFileSync(path.join(backupDir, f), text, 'utf8');
+        fs.writeFileSync(fp, next, 'utf8');
+        results.migrated.push(f);
+      } catch (e) { results.failed.push(f + ':write:' + e.message); }
+    }
+  } catch (e) { results.failed.push('scan:' + e.message); }
+  return results;
+}
+
 function _postUpdate(step) {
   // npm install if package.json changed
   try {
@@ -350,6 +400,14 @@ function _postUpdate(step) {
   _loadConfig();
   reportStatus('update_success', step);
   _regenerateBatFile();
+  // 콘솔창 깜빡임 제거: 로컬 워커 런처의 cmd 직접기동 → CreateNoWindow 치환(멱등, 백업 후)
+  try {
+    const mig = _migrateLauncherNoWindow();
+    if (mig.migrated.length || mig.failed.length) {
+      console.log('[daemon-updater] launcher no-flash 마이그레이션: migrated=' + JSON.stringify(mig.migrated) + ' skipped=' + mig.skipped.length + ' failed=' + JSON.stringify(mig.failed));
+      reportStatus('launcher_migrate', 'migrated=' + mig.migrated.join(',') + ' failed=' + mig.failed.join(','));
+    }
+  } catch (e) { console.warn('[daemon-updater] launcher 마이그레이션 실패(계속):', e.message); }
   // watchdog.ps1 자동 업데이트 — 다음 watchdog 실행 시 적용
   try {
     const watchdogSrc = path.join(ROOT, 'setup', 'guardian-watchdog.ps1');
@@ -952,4 +1010,4 @@ function stop() {
   if (_gitCheckTimer) { clearInterval(_gitCheckTimer); _gitCheckTimer = null; }
 }
 
-module.exports = { start, stop, getLocalVersion, pullAndRestart, checkServerVersion, reportStatus };
+module.exports = { start, stop, getLocalVersion, pullAndRestart, checkServerVersion, reportStatus, _migrateLauncherNoWindow };
