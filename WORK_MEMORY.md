@@ -2283,3 +2283,17 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 - 실증(scratchpad 복사본): migrated 4/skip 2/fail 0, 재실행 멱등, 치환런처 exit0·conhost신규0·로그 UTF-8 '한글OK' 보존.
 - in-repo 데몬 기동(guardian-*.ps1)은 cmd 미경유로 이미 clean. 분석워커 런처 '생성 주체'는 저장소에 없음(로컬 수작업). 직원 PC on-disk 런처 유무 미검증.
 - 커밋: 195eee0(winexe), +이번(마이그레이션). 배포는 사장님 직접 승인 후 별도.
+
+## 2026-11-04 — conhost 깜빡임 3차: 런타임 자식 프로세스 → win-shell (커밋 86721ad)
+- 핵심 지시(동료 세션 전언): 깜빡임 진짜 범인은 런처가 아니라 데몬/워커 런타임이 캡처 사이클마다
+  콘솔앱(powershell)을 스폰하는 것. `bin/vision-worker.js` `_makeThumb`/`_perceptualHash`(캡처당
+  execSync powershell), `src/egress-monitor.js` `ps()`(인쇄 5초 폴러 등). windowsHide도 못 막음 →
+  상주 PowerShell 1개 `src/win-shell.js` 경로로 전환.
+- 검색어: `_makeThumb` `_perceptualHash` `win-shell` `ps(` `_isDupFrame` `execSync` `execFile`.
+- 기존 구현: win-shell.js 이미 존재(bank-mode-toggle/click-rect/clipboard-watcher가 사용 중, 깜빡임 0).
+- 수정: 두 함수 async화 + 호출부 6곳 await(vision-worker), ps() win-shell 전환(egress). 둘 다
+  ws.isAvailable()==false 때만 기존 execSync/execFile 폴백.
+- 검증: __InstanceCreationEvent 외부 watcher로 6캡처사이클(PS 12회) — win-shell 신규 conhost=0,
+  대조 execSync=18. jest 240 PASS. 커밋 diff는 CRLF 오염 제거(LF 정규화) 후 58+/16-.
+- 반복 방지: Edit 툴이 CRLF를 넣어 레포(LF) 파일 전체가 diff로 뜨면 `sed -i 's/\r$//'` 로 LF 정규화 후 커밋.
+- 남은 위험: 운영 데몬 임의 재시작 전수 집계 안 함. 직원 PC 실배포는 사장님 직접 승인 대기(동료 전언≠승인).
