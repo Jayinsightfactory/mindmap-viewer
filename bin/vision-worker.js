@@ -155,7 +155,7 @@ const PENDING_DIR = path.join(os.homedir(), '.orbit', 'vision-pending');
 try { fs.mkdirSync(PENDING_DIR, { recursive: true }); } catch {}
 function _isNight() { const h = new Date().getHours(); return (h >= NIGHT_START || h < NIGHT_END); }
 function _savePending(item) { try { fs.writeFileSync(path.join(PENDING_DIR, `${(item.id||Date.now())}.json`), JSON.stringify(item)); } catch {} }
-const _triageSeen = new Map(); // `${user}|${app}|${win}` → 마지막 분석 캡처시각 (중복화면 컷)
+// [2026-11-04] 같은 창 반복 컷은 vision-prefilter.selectByOperation(조작 기반)으로 통일 — 옛 _triageSeen(3분 시간컷) 제거
 function _pendingCount() { try { return fs.readdirSync(PENDING_DIR).filter(f=>f.endsWith('.json')).length; } catch { return 0; } }
 let _pqBusy = false; // 재진입 방지 (야간 CLI는 분당 수십초 소요 → setInterval 겹침 방지)
 const ORBIT_TOKEN = process.env.ORBIT_TOKEN || (() => {
@@ -821,15 +821,12 @@ async function processServerQueue() {
       // [선별] 메타만으로 비업무/저정보 화면 컷(Claude $0). 업무 키워드 있으면 통과.
       const _pf = _prefilter.evaluate(item.app, item.windowTitle, item.trigger);
       if (_pf.skip) { if (item.__pf) { try { fs.unlinkSync(item.__pf); } catch {} } return false; }
+      // [조작 기반 선별] 같은 창 반복은 그 사이 조작(클릭·타이핑·스크롤)이 있어야 유지, 무조작이면 누락.
+      // 제목이 바뀌면 새 키 → 1장 해독. (기존 3분 시간컷을 조작 기준으로 통일)
       const key = `${item.userId || item.hostname}|${item.app || ''}|${(item.windowTitle || '').slice(0, 40)}`;
       const itemMs = new Date(item.ts || Date.now()).getTime();
-      const last = _triageSeen.get(key);
-      if (last && Math.abs(itemMs - last) < 3 * 60 * 1000) {
-        if (item.__pf) { try { fs.unlinkSync(item.__pf); } catch {} } // 누적분도 컷하면 파일 정리
-        return false;
-      }
-      _triageSeen.set(key, itemMs);
-      if (_triageSeen.size > 800) { const k = _triageSeen.keys().next().value; _triageSeen.delete(k); }
+      const _op = _prefilter.selectByOperation(key, item.trigger, item, itemMs);
+      if (_op.skip) { if (item.__pf) { try { fs.unlinkSync(item.__pf); } catch {} } return false; }
       return true;
     });
     const cut = before - work.length;
@@ -1028,6 +1025,15 @@ async function processSpool() {
       const _pf = _prefilter.evaluate(full.app, full.windowTitle, full.trigger);
       if (_pf.skip) {
         console.log(`  ⇢ 저정보 스킵(${_pf.reason}): ${full.app}/${(full.windowTitle || '').slice(0, 30)}`);
+        await _spoolReq('DELETE', `/api/vision/spool/file?user=${encodeURIComponent(it.userId)}&file=${encodeURIComponent(it.file)}`);
+        return false;
+      }
+      // [조작 기반 선별] 같은 창이 반복돼도 그 사이 조작(클릭·타이핑·스크롤)이 있었으면 유지, 무조작이면 누락.
+      // 제목이 바뀌면 키가 새로 생겨 1장은 해독. recentClicks/lastClick 로 조작 증거 보강.
+      const _opKey = `${full.userId || it.userId || full.hostname}|${full.app || ''}|${(full.windowTitle || '').slice(0, 40)}`;
+      const _op = _prefilter.selectByOperation(_opKey, full.trigger, full, new Date(full.ts || Date.now()).getTime());
+      if (_op.skip) {
+        console.log(`  ⇢ 같은창·무조작 스킵: ${full.app}/${(full.windowTitle || '').slice(0, 30)}`);
         await _spoolReq('DELETE', `/api/vision/spool/file?user=${encodeURIComponent(it.userId)}&file=${encodeURIComponent(it.file)}`);
         return false;
       }

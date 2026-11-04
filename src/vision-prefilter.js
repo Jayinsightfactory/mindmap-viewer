@@ -40,10 +40,41 @@ function triggerRank(trigger) {
 }
 function isLowValueTrigger(trigger) { return triggerRank(trigger) >= 8; }
 
+// ── 조작 기반 선별(사장님 확정 2026-11-04) ───────────────────────────────────
+// 기준 하나로 통일: 같은 app+창제목이 반복돼도 그 사이 "조작(클릭·타이핑·스크롤)"이
+// 있었으면 작업이 진행된 것 → 해독 유지. 조작 없이 같은 창이면 과감히 누락.
+// 단, 창 제목이 바뀌면(문서 전환 등) 조작 없어도 키가 새로 생겨 1장은 해독.
+// 조작 증거: 조작성 트리거(클릭/키입력/수식확정/인쇄…) 또는 캡처에 붙은 recentClicks/lastClick.
+const OP_TRIGGERS = new Set(['mouse_click', 'keyboard_done', 'keyboard_flush', 'click_burst', 'key_burst', 'excel_formula', 'ctrl_print', 'file_write', 'manual', 'tool_end', 'scroll']);
+const OP_WINDOW_MS = Number(process.env.VISION_OP_WINDOW_MS) || 10 * 60 * 1000; // 같은 창 "조작 없음" 판정 시간창
+const _opSeen = new Map(); // key(user|app|title) → 마지막 해독 캡처시각
+function hasOperation(trigger, item) {
+  if (OP_TRIGGERS.has(String(trigger || ''))) return true;
+  if (item && Array.isArray(item.recentClicks) && item.recentClicks.length) return true;
+  if (item && item.lastClick) return true;
+  return false;
+}
+/**
+ * 같은 창 반복을 조작 유무로 선별. key 는 user|app|title 권장.
+ * @returns {{skip:boolean, reason:string}}
+ */
+function selectByOperation(key, trigger, item, atMs) {
+  if (!ENABLED) return { skip: false, reason: 'prefilter_off' };
+  const at = Number.isFinite(atMs) ? atMs : Date.now();
+  const last = _opSeen.get(key);
+  const seenRecently = last != null && Math.abs(at - last) < OP_WINDOW_MS;
+  if (!seenRecently) { _opSeen.set(key, at); _trim(_opSeen); return { skip: false, reason: 'new_or_title_change' }; } // 새 창/제목 → 1장 해독
+  if (hasOperation(trigger, item)) { _opSeen.set(key, at); return { skip: false, reason: 'operated' }; }             // 조작 있었음 → 유지
+  stats.skipNoOp++; _bump('same_window_no_op');
+  return { skip: true, reason: 'same_window_no_op' };                                                               // 같은 창·무조작 → 누락
+}
+function _trim(m) { if (m.size > 1000) { const k = m.keys().next().value; m.delete(k); } }
+function _resetState() { _opSeen.clear(); } // 테스트용
+
 const ENABLED = process.env.VISION_PREFILTER !== 'off';
 
 // 측정용 스킵 사유 누적(오너 소비측). per-batch 로그 + ~/.orbit 스냅샷으로 전/후 비교.
-const stats = { total: 0, skipLowInfo: 0, passBiz: 0, byReason: {} };
+const stats = { total: 0, skipLowInfo: 0, skipNoOp: 0, passBiz: 0, byReason: {} };
 function _bump(reason) { stats.byReason[reason] = (stats.byReason[reason] || 0) + 1; }
 
 /**
@@ -62,8 +93,8 @@ function evaluate(app, windowTitle, trigger) {
 
 function snapshot() { return JSON.parse(JSON.stringify(stats)); }
 function logLine() {
-  return `prefilter total=${stats.total} 저정보컷=${stats.skipLowInfo} 업무통과=${stats.passBiz}` +
+  return `prefilter total=${stats.total} 저정보컷=${stats.skipLowInfo} 무조작컷=${stats.skipNoOp} 업무통과=${stats.passBiz}` +
     (Object.keys(stats.byReason).length ? ` 사유=${JSON.stringify(stats.byReason)}` : '');
 }
 
-module.exports = { evaluate, triggerRank, isLowValueTrigger, snapshot, logLine, ENABLED };
+module.exports = { evaluate, selectByOperation, hasOperation, triggerRank, isLowValueTrigger, snapshot, logLine, _resetState, ENABLED };

@@ -2260,3 +2260,9 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 - 검증: node -c 전부 통과. 모듈 스모크(prefilter 저정보컷/업무통과, gate 기본1·cap3·401강등) 통과. vision-worker 익스포트·dedup 단위테스트 로직 수동 통과.
 - 남은 위험/미검증: ① 병렬 실측(시간당 처리량 전/후)·선별 전후 품질(/api/flow/vision-quality businessStage 비기타 비율)은 owner PC 배포(code-sync)+워커 재기동 후에만 측정 가능 — 미실행. ② 병렬 시 _getPrevSummary/_notePrevSummary 순서성 약화(품질 영향 경미, 맥락 보조용). ③ OCR 선별 owner측 즉시 적용 = 코드아님, VISION_OCR_TRIAGE=on env 플립(직원PC는 카나리 1대 먼저).
 - 재발/이어받기: src/cli-gate.js, src/vision-prefilter.js, setup/decode-boost-*.ps1. 병렬은 반드시 선별 실측 뒤.
+
+### 추가 2026-11-04: 같은 창 반복=조작 기반 선별로 통일(사장님 확정)
+- 규칙 통일: 같은 app+창제목이라도 그 사이 조작(클릭·타이핑·스크롤=OP_TRIGGERS 또는 recentClicks/lastClick) 있으면 해독 유지, 무조작이면 과감히 누락. 창 제목 바뀌면(새 키) 조작 없어도 1장 해독. ERP/메일 느슨 예외 제거.
+- 구현: src/vision-prefilter.selectByOperation(key=user|app|title, trigger, item, atMs). OP_WINDOW_MS(기본 10분, 마지막 '해독' 기준). 스킵카운터 무조작컷.
+- 적용: spool(저정보컷→조작선별→E1), server-queue(옛 3분 _triageSeen 시간컷 제거→조작선별). _triageSeen 선언 삭제.
+- 검증: 스모크 통과(무조작 반복 누락·조작/클릭증거 유지·제목변경 유지·창 경과 재해독).
