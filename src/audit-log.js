@@ -11,11 +11,95 @@
 const fs   = require('fs');
 const path = require('path');
 const { createHash } = require('crypto');
+const { StringDecoder } = require('string_decoder');
 
 const AUDIT_DIR  = path.join(__dirname, '..', 'data', 'audit');
 const AUDIT_FILE = path.join(AUDIT_DIR, 'audit.jsonl');
 
 if (!fs.existsSync(AUDIT_DIR)) fs.mkdirSync(AUDIT_DIR, { recursive: true });
+
+// ─── 메모리/디스크 안전 설정 ──────────────────────
+// 파일당 상한(기본 50MB). 넘으면 audit.jsonl → audit.1.jsonl 로 로테이션.
+const AUDIT_MAX_BYTES    = parseInt(process.env.AUDIT_MAX_BYTES, 10)    || 50 * 1024 * 1024;
+// 보관 아카이브 수. 0 = 무제한(오래된 것 삭제 안 함). 오래된 아카이브 삭제는 #3(승인 필요)라 기본 OFF.
+const AUDIT_MAX_ARCHIVES = parseInt(process.env.AUDIT_MAX_ARCHIVES, 10) || 0;
+// 이보다 큰 단일 파일은 통째로 안 읽고 끝에서 필요한 만큼만(tail) 읽는다(레거시 대용량 아카이브 방어).
+const _SAFE_READ_BYTES   = AUDIT_MAX_BYTES * 2;
+
+function _archivePath(n) { return path.join(AUDIT_DIR, `audit.${n}.jsonl`); }
+
+// audit 파일 목록을 '오래된 → 최신' 순으로. (audit.N 의 N 이 클수록 오래됨, 그다음 audit.jsonl 이 최신)
+function _auditFilesChrono() {
+  const archives = [];
+  for (let n = 1; fs.existsSync(_archivePath(n)); n++) archives.push(n);
+  archives.sort((a, b) => b - a); // 큰 N(오래된) 먼저
+  const files = archives.map(_archivePath);
+  if (fs.existsSync(AUDIT_FILE)) files.push(AUDIT_FILE); // 현재가 가장 최신
+  return files;
+}
+
+// 상한 초과 시 로테이션. 체인(메모리 prevHash)은 그대로 유지돼 파일 경계를 넘어 연속된다.
+let _appendsSinceCheck = 0;
+function _rotateIfNeeded() {
+  let size = 0;
+  try { size = fs.statSync(AUDIT_FILE).size; } catch { return; }
+  if (size < AUDIT_MAX_BYTES) return;
+  let last = 0;
+  for (let n = 1; fs.existsSync(_archivePath(n)); n++) last = n;
+  for (let n = last; n >= 1; n--) {
+    try { fs.renameSync(_archivePath(n), _archivePath(n + 1)); } catch {}
+  }
+  try { fs.renameSync(AUDIT_FILE, _archivePath(1)); } catch { return; }
+  if (AUDIT_MAX_ARCHIVES > 0) { // 기본 0 = 아무것도 안 지움(#3는 별도 승인)
+    for (let n = AUDIT_MAX_ARCHIVES + 1; fs.existsSync(_archivePath(n)); n++) {
+      try { fs.unlinkSync(_archivePath(n)); } catch {}
+    }
+  }
+}
+
+// 파일 끝에서 최대 maxLines 줄만 읽기(뒤→앞 청크). 누적 버퍼를 한 번에 디코드해 멀티바이트 경계 안전.
+function _tailLines(file, maxLines) {
+  let fd;
+  try { fd = fs.openSync(file, 'r'); } catch { return []; }
+  try {
+    let pos = fs.fstatSync(fd).size;
+    const CHUNK = 64 * 1024;
+    let buf = Buffer.alloc(0);
+    while (pos > 0) {
+      const len = Math.min(CHUNK, pos);
+      pos -= len;
+      const chunk = Buffer.alloc(len);
+      fs.readSync(fd, chunk, 0, len, pos);
+      buf = Buffer.concat([chunk, buf]);
+      const n = buf.toString('utf8').split('\n').filter(Boolean).length;
+      if (n > maxLines) break;
+    }
+    return buf.toString('utf8').split('\n').filter(Boolean).slice(-maxLines);
+  } finally { try { fs.closeSync(fd); } catch {} }
+}
+
+// 파일을 청크 스트리밍으로 한 줄씩 콜백(상수 메모리, 멀티바이트 경계 안전). 크기 무관.
+function _forEachLineSync(file, cb) {
+  let fd;
+  try { fd = fs.openSync(file, 'r'); } catch { return; }
+  try {
+    const size = fs.fstatSync(fd).size;
+    const CHUNK = 256 * 1024;
+    const buf = Buffer.alloc(CHUNK);
+    const dec = new StringDecoder('utf8');
+    let pos = 0, leftover = '';
+    while (pos < size) {
+      const len = fs.readSync(fd, buf, 0, Math.min(CHUNK, size - pos), pos);
+      if (len <= 0) break;
+      pos += len;
+      const parts = (leftover + dec.write(buf.slice(0, len))).split('\n');
+      leftover = parts.pop();
+      for (const line of parts) if (line) cb(line);
+    }
+    leftover += dec.end();
+    if (leftover) cb(leftover);
+  } finally { try { fs.closeSync(fd); } catch {} }
+}
 
 // ─── 감사 이벤트 타입 ──────────────────────────────
 const AUDIT_TYPES = {
@@ -35,7 +119,15 @@ const AUDIT_TYPES = {
 // ─── 감사 로그 기록 ──────────────────────────────
 let prevHash = '';
 
+// 재시작 시 체인 연속성 복원: 마지막 기록의 hash 를 이어받는다.
+// (이전엔 재시작마다 prevHash 가 ''로 리셋돼 그 지점에서 체인이 끊겼음)
+try {
+  const _last = _tailLines(AUDIT_FILE, 1);
+  if (_last.length) { const _e = JSON.parse(_last[0]); if (_e && _e.hash) prevHash = _e.hash; }
+} catch {}
+
 function appendAuditLog(type, data, meta = {}) {
+  if ((_appendsSinceCheck++ % 50) === 0) _rotateIfNeeded();
   const entry = {
     id:        Date.now() + '-' + Math.random().toString(36).slice(2, 8),
     type,
@@ -61,18 +153,40 @@ function appendAuditLog(type, data, meta = {}) {
 
 // ─── 감사 로그 쿼리 ──────────────────────────────
 function queryAuditLog({ from, to, type, channel, memberId, limit = 1000 } = {}) {
-  if (!fs.existsSync(AUDIT_FILE)) return [];
+  const files = _auditFilesChrono(); // 오래된 → 최신
+  if (!files.length) return [];
 
-  const lines = fs.readFileSync(AUDIT_FILE, 'utf8').split('\n').filter(Boolean);
-  let entries = lines.map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
+  const applyFilters = (entries) => {
+    if (from)     entries = entries.filter(e => e.timestamp >= from);
+    if (to)       entries = entries.filter(e => e.timestamp <= to);
+    if (type)     entries = entries.filter(e => e.type === type);
+    if (channel)  entries = entries.filter(e => e.meta?.channel === channel);
+    if (memberId) entries = entries.filter(e => e.meta?.memberId === memberId);
+    return entries;
+  };
 
-  if (from)     entries = entries.filter(e => e.timestamp >= from);
-  if (to)       entries = entries.filter(e => e.timestamp <= to);
-  if (type)     entries = entries.filter(e => e.type === type);
-  if (channel)  entries = entries.filter(e => e.meta?.channel === channel);
-  if (memberId) entries = entries.filter(e => e.meta?.memberId === memberId);
+  let collected = [];
+  // 최신 파일부터(뒤→앞) 훑어, 필터 통과분을 limit 만큼 모으면 멈춘다 → 파일 크기와 무관하게 상한 메모리.
+  for (let i = files.length - 1; i >= 0; i--) {
+    const f = files[i];
+    let size = 0; try { size = fs.statSync(f).size; } catch {}
+    let lines;
+    if (size > _SAFE_READ_BYTES) {
+      // 과대 파일(로테이션된 레거시 대용량)은 통째로 안 읽고 끝에서 필요한 만큼만.
+      const need = Math.min(limit + collected.length + 2000, 200000);
+      lines = _tailLines(f, need);
+    } else {
+      lines = fs.readFileSync(f, 'utf8').split('\n').filter(Boolean);
+    }
+    const entries = applyFilters(
+      lines.map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean)
+    );
+    collected = entries.concat(collected); // 더 오래된 파일을 앞에 붙임
+    // 날짜 하한(from) 범위질의가 아니면 최신 limit 로 충분 → 더 오래된 파일은 안 읽음.
+    if (!from && collected.length >= limit) break;
+  }
 
-  return entries.slice(-limit);
+  return collected.slice(-limit);
 }
 
 // ─── 이벤트 → 감사 로그 자동 변환 ──────────────────
@@ -95,22 +209,24 @@ function auditFromEvents(events) {
 
 // ─── 무결성 검증 ─────────────────────────────────
 function verifyIntegrity() {
-  if (!fs.existsSync(AUDIT_FILE)) return { valid: true, checked: 0, broken: [] };
+  const files = _auditFilesChrono(); // 오래된 → 최신: 체인은 파일 경계를 넘어 이어진다
+  if (!files.length) return { valid: true, checked: 0, broken: [] };
 
-  const lines   = fs.readFileSync(AUDIT_FILE, 'utf8').split('\n').filter(Boolean);
-  const entries = lines.map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
-  const broken  = [];
+  const broken = [];
   let prev = '';
+  let checked = 0;
 
-  for (const entry of entries) {
-    const { hash, prevHash: ep, ...rest } = entry;
-    const expected = createHash('sha256').update(ep + JSON.stringify({ ...rest, prevHash: ep })).digest('hex').slice(0, 16);
-    // Note: simplified check — compare stored prevHash chain
-    if (ep !== prev) broken.push({ id: entry.id, reason: 'chain broken' });
-    prev = entry.hash;
+  // 파일 크기와 무관하게 청크 스트리밍으로 한 줄씩 검증(상수 메모리).
+  for (const f of files) {
+    _forEachLineSync(f, (line) => {
+      let entry; try { entry = JSON.parse(line); } catch { return; }
+      checked++;
+      if (entry.prevHash !== prev) broken.push({ id: entry.id, reason: 'chain broken' });
+      prev = entry.hash;
+    });
   }
 
-  return { valid: broken.length === 0, checked: entries.length, broken };
+  return { valid: broken.length === 0, checked, broken };
 }
 
 // ─── HTML 리포트 생성 ─────────────────────────────
