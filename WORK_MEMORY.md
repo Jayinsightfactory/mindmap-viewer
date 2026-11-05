@@ -2295,3 +2295,11 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 
 ### 다시 보면
 - 인입 메모리 = services/memory-manager.js(503 경로) + server.js `/api/hook` 게이트. 데몬 측은 미변경(끊김 방지).
+
+## 2026-11-05 (저녁) — vision-skips 빈 응답 수수께끼 해결 + 스킵 귀속 버그
+검색어: vision-skips, screen.skipped, hidden-users, scrub, 귀속, showHidden
+- 증상: events 테이블엔 screen.skipped 54건이 있는데 /api/flow/vision-skips 는 people:[].
+- 원인 2중: ① /api/hook 의 hostname→실사용자 매핑이 screen.analyzed 만 타서 스킵 전부가 워커 토큰 주인(사장님)으로 귀속(ec9ab3a 수정) ② /api/flow* 응답은 src/hidden-users.js scrub 미들웨어가 숨김 사용자(사장님 포함) 항목을 배열에서 제거 → 전부 사장님 귀속이라 빈 배열.
+- ★교훈: /api/flow·/api/timetable 등(PREFIXES)의 "데이터가 있는데 API 가 빈 배열"이면 hidden-users scrub 부터 의심. 진단 우회 = ?showHidden=1 또는 X-Orbit-Show-Hidden: 1.
+- 첫 분포(owner PC, 11/5 17시~): pixel_dup 54 · same_window_no_op 3. 직원별 분포는 ec9ab3a 이후 데이터부터 유효.
+- vision-skips?debug=1(관리자): rowCount·keys·sample 반환 — 남겨둠.
