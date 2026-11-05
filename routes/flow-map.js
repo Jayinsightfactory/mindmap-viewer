@@ -683,7 +683,9 @@ function createFlowMapRouter(deps = {}) {
         if (r.app) people[k].topApps[r.app] = (people[k].topApps[r.app] || 0) + Number(r.n);
       }
       for (const v of Object.values(people)) v.topApps = Object.fromEntries(Object.entries(v.topApps).sort((a, b) => b[1] - a[1]).slice(0, 8));
-      res.json({ ok: true, days, people: Object.values(people).sort((a, b) => b.total - a.total) });
+      const out = { ok: true, days, people: Object.values(people).sort((a, b) => b.total - a.total) };
+      if (req.query.debug === '1') out.debug = { rowCount: rows.length, sample: rows[0] || null }; // [2026-11-05] 빈 결과 수수께끼 진단용(관리자 전용 라우트)
+      res.json(out);
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
 

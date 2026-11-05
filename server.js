@@ -4017,7 +4017,7 @@ app.post('/api/hook', async (req, res) => {
       if (_pgPool && process.env.DATABASE_URL) {
         if (!global._hostUserCache) global._hostUserCache = new Map();
         const hosts = [...new Set(events
-          .filter(e => e.type === 'screen.analyzed' && e.data && e.data.hostname)
+          .filter(e => (e.type === 'screen.analyzed' || e.type === 'screen.skipped') && e.data && e.data.hostname)
           .map(e => String(e.data.hostname).toLowerCase()))];
         for (const host of hosts) {
           const c = global._hostUserCache.get(host);
@@ -4048,8 +4048,9 @@ app.post('/api/hook', async (req, res) => {
     const _isPg = process.env.DATABASE_URL;
     const jsonlLines = [];
     for (const event of events) {
-      // user_id를 서버 검증 값으로 덮어쓰기 (screen.analyzed는 원 캡처 hostname의 실사용자로)
-      event.userId = (event.type === 'screen.analyzed' && event.data && event.data.hostname
+      // user_id를 서버 검증 값으로 덮어쓰기 (screen.analyzed·screen.skipped는 원 캡처 hostname의 실사용자로 —
+      //   [2026-11-05] skipped가 빠져 있어 스킵 분포가 전부 워커 토큰 주인(owner)으로 귀속되던 버그)
+      event.userId = ((event.type === 'screen.analyzed' || event.type === 'screen.skipped') && event.data && event.data.hostname
         && _analyzedUserByHost.has(String(event.data.hostname).toLowerCase()))
         ? _analyzedUserByHost.get(String(event.data.hostname).toLowerCase())
         : hookUserId;
