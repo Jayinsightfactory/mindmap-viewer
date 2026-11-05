@@ -32,6 +32,19 @@ const env    = require('./config/environment');
 const memMgr = require('./services/memory-manager');
 
 // ─── 전역 미처리 Promise 거부 안전망 (Node.js v24+ 크래시 방지) ────────────────
+// [임시 측정 2026-11-05b] 동시성 게이트 적용 후 순간 heap 피크 비교용. 측정 후 즉시 제거.
+(() => {
+  const _t0 = Date.now();
+  const _mb = (b) => Math.round(b / 1048576);
+  const _iv = setInterval(() => {
+    try {
+      const m = process.memoryUsage();
+      console.log(`[boot-mem] t=${Math.round((Date.now() - _t0) / 1000)}s rss=${_mb(m.rss)} heapUsed=${_mb(m.heapUsed)} heapTotal=${_mb(m.heapTotal)} external=${_mb(m.external)} arrayBuffers=${_mb(m.arrayBuffers)}`);
+      if (Date.now() - _t0 > 6 * 60 * 1000) clearInterval(_iv);
+    } catch {}
+  }, 2000);
+  if (_iv.unref) _iv.unref();
+})();
 process.on('unhandledRejection', (reason, promise) => {
   logger.warn('미처리 Promise 거부 (무시됨): %s', reason?.message || reason);
 });
