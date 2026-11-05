@@ -24,7 +24,19 @@ const INTERVAL = parseInt(process.env.CLAUDE_REAP_INTERVAL_S || '120', 10) * 100
 
 if (process.platform !== 'win32') { console.error('[claude-reaper] Windows 전용 — 종료'); process.exit(0); }
 
-function pwsh(cmd) {
+// [2026-11-05] 120초마다 powershell.exe 스폰(새 conhost 깜빡임)을 상주 win-shell 1개로 대체.
+//   taskkill(/T 트리종료)도 상주셸 경유. 상주셸 불가 시 기존 execSync 폴백(기능 보존).
+let _ws = null, _wsTried = false;
+function _loadWinShell() {
+  if (_wsTried) return _ws;
+  _wsTried = true;
+  try { _ws = require('../src/win-shell'); } catch { _ws = null; }
+  return _ws;
+}
+
+async function pwsh(cmd) {
+  const ws = _loadWinShell();
+  if (ws && ws.isAvailable()) return (await ws.exec(cmd, 25000)) || '';   // 상주 PS → conhost 0
   return execSync('powershell -NoProfile -NonInteractive -Command "' + cmd.replace(/"/g, '\\"') + '"',
     { timeout: 25000, maxBuffer: 4 * 1024 * 1024 }).toString();
 }
@@ -44,11 +56,11 @@ function originOf(pid, map) {
   return 'unknown';
 }
 
-function sweep() {
+async function sweep() {
   let list;
   try {
     // 전체 프로세스 {pid, 부모pid, 이름, 나이(분)} — 조상 사슬 계산용
-    const json = pwsh(
+    const json = await pwsh(
       "Get-CimInstance Win32_Process | ForEach-Object { [pscustomobject]@{ " +
       "p=$_.ProcessId; pp=$_.ParentProcessId; n=$_.Name; age=[int]((Get-Date)-$_.CreationDate).TotalMinutes } } | ConvertTo-Json -Compress"
     );
@@ -69,13 +81,17 @@ function sweep() {
     if (x.age < REAP_MIN) continue;                 // 정상 분석은 <200s → 15분+는 확실히 스턱
     const origin = originOf(x.p, map);
     if (origin === 'node.exe' || origin === 'orphan') {  // 워커기원·고아만. 세션기원(explorer 등)은 보호
-      try { execSync('taskkill /PID ' + x.p + ' /T /F', { stdio: 'ignore', timeout: 10000 }); reaped++; }
-      catch { /* 이미 종료·권한 — 무시 */ }
+      try {
+        const ws = _loadWinShell();
+        if (ws && ws.isAvailable()) await ws.exec('taskkill /PID ' + x.p + ' /T /F', 10000);  // 상주 PS → conhost 0
+        else execSync('taskkill /PID ' + x.p + ' /T /F', { stdio: 'ignore', timeout: 10000 });
+        reaped++;
+      } catch { /* 이미 종료·권한 — 무시 */ }
     }
   }
   if (reaped) console.log(`[claude-reaper] ${new Date().toISOString()} · 좀비 ${reaped}개 회수 (전체 claude ${claudeN})`);
 }
 
 console.log(`[claude-reaper] 시작 · ${REAP_MIN}분+ · parent=node(워커) 한정 · ${INTERVAL / 1000}s 주기`);
-sweep();
-setInterval(sweep, INTERVAL);
+sweep().catch(() => {});
+setInterval(() => { sweep().catch(() => {}); }, INTERVAL);
