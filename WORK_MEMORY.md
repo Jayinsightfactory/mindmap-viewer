@@ -2323,3 +2323,17 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 - 깜빡임 전환 현황: vision-worker/egress(3차)·ocr-triage/self-healer(4차)·secure-collector(5차) 완료.
   미전환(사유): screen-capture:959(python없는 PC 3순위 폴백·미검증), claude-reaper(owner 전용 120초). dead: keylogger/system-monitor.
 - 배포: 보류 유지(카나리 불가=OrbitCodeSync 10분 origin/main 전PC). 전사 동시반영 사장님 직접 승인 대기.
+
+## 콘솔창 깜빡임 6차 — 전사 셧다운 안전점검 + 잔존 2건 처리 (2026-11-05, e7cb109)
+- 사용자 지시: "md 확인해서 직원 PC 데몬 전부 셧다운될 확률 없는지 체크부터" → 전수 점검.
+  결론: **win-shell 전환이 데몬을 전사 셧다운시킬 코드 경로 없음.** 근거:
+  ① 데몬 uncaughtException/unhandledRejection 핸들러(personal-agent 1335-1341, crash-reporter 213-220) 전부 console.error+리포트만, process.exit 없음.
+  ② 전환 5파일 모든 ws.exec/_psWin 호출이 try/catch(또는 .catch/null반환) 안 → 신규 unhandledRejection 0 → crash-reporter 3회/1h safe-mode도 안 걸림.
+  ③ win-shell은 자신의 자식 PS만 kill(exit/error 핸들러·shutdown 모두), 데몬 프로세스 무관, EPIPE 삼킴, 자동 재스폰.
+  ④ self-healer kill 대상=python만(데몬=node). ⑤ `&` 호출 ps1에 exit 없음.
+  ⑥ win-shell 실패 시 isAvailable()=false/exec reject→caught → execSync 폴백으로 수집 지속(해당 PC만 깜빡임 복귀). graceful degradation.
+  잔여: main merge 시 OrbitCodeSync restart window(= 영구 셧다운 아님, ps1 loop 재기동). 기동정상=jest240+로컬 start() 확인. main 미반영이라 현재 확률 0.
+- 잔존 2건 처리:
+  · **claude-reaper.js 전환(완료)** — owner 전용 독립 스크립트. pwsh(Get-CimInstance 120초)+taskkill(/T) → 상주 win-shell. sweep/pwsh async, setInterval .catch 가드. **데몬 아님=전사 리스크 0.** 실행검증: REAP_MIN 초대형(회수0) sweep win-shell 경유 정상.
+  · **screen-capture:959 미전환(보존 결정)** — win-shell async 전용이라 capture() async화 필수인데 이는 데몬 최다호출 핫패스의 동기계약을 깸(_fallbackTick이 capture 동기반환으로 캡처성공 판정 → jest screen-capture-fallback 회귀 실증). 동기대기=이벤트루프 블록→win-shell 교착이라 동기 경로 불가. python 자동설치 PC엔 미발생하는 3순위 최후수단이라 편익<리스크 → 보존. **다시 반복되면: capture 동기계약 때문에 async화 금지, _fallbackTick/테스트가 동기 반환에 의존함을 먼저 볼 것.**
+- 검증: jest 240 PASS. 배포 보류 유지(전사 동시반영 사장님 직접 승인 대기).
