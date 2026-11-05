@@ -1317,7 +1317,8 @@ function _visionQueuePush(item) {
 // 장면 가치: 업무 도구(전산·엑셀·시트·PDF·드라이브·메일 첨부) 2 / 그 외 1 / 메신저 0, 입력 직후(keyboard_flush) +1 — 입력값이 화면에 남은 상태라 필드값이 읽힌다.
 const _VISION_MSGR_RE = /kakao|카카오|whatsapp|weixin|wechat|위챗|telegram|slack|discord/i;
 const _VISION_WORK_RE = /excel|엑셀|nenova|네노바|erp|ecount|이카운트|sheets|스프레드시트|pdf|drive|드라이브|pivot|견적|발주|입고|출고|분배|invoice|packing/i;
-function _visionScreenKey(it) { return `${String(it.app || '').toLowerCase()}|${String(it.windowTitle || '').slice(0, 40).toLowerCase()}`; }
+// [2026-11-05] normTitle: 창제목 속 시각·알림숫자·진행률 변화로 같은 창이 전부 새 키가 되던 누수 차단
+function _visionScreenKey(it) { return `${String(it.app || '').toLowerCase()}|${require('./src/vision-prefilter').normTitle(it.windowTitle)}`; }
 function _visionItemValue(it) {
   const t = `${it.app || ''} ${it.windowTitle || ''}`;
   let v = _VISION_MSGR_RE.test(t) ? 0 : (_VISION_WORK_RE.test(t) ? 2 : 1);

@@ -450,6 +450,7 @@ function buildGraph(events) {
   // 시스템/노이즈 이벤트 제외 (사용자 활동 이벤트는 모두 표시)
   const NOISE_TYPES = new Set([
     'install.progress', 'install.diag', 'daemon.update', 'daemon.error',
+    'screen.skipped', // [2026-11-05] 해독 스킵 사유(측정용 메타) — 그래프 비표시
   ]);
 
   for (const event of events) {

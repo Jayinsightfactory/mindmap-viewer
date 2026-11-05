@@ -2266,3 +2266,10 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 - 구현: src/vision-prefilter.selectByOperation(key=user|app|title, trigger, item, atMs). OP_WINDOW_MS(기본 10분, 마지막 '해독' 기준). 스킵카운터 무조작컷.
 - 적용: spool(저정보컷→조작선별→E1), server-queue(옛 3분 _triageSeen 시간컷 제거→조작선별). _triageSeen 선언 삭제.
 - 검증: 스모크 통과(무조작 반복 누락·조작/클릭증거 유지·제목변경 유지·창 경과 재해독).
+
+## 2026-11-05 비전 선별 ①스킵사유 이벤트 ②창제목 정규화
+- 요청: 같은화면반복 24~45% 누수 + 강명훈5%/정재훈9%/김원영9% 저해독 원인 규명 → 사유 기록이 없어 집계 불가 판명 → 조정안 승인 실행
+- 검색어: vision-skips, screen.skipped, normTitle, same_window_no_op, _visionScreenKey
+- 수정: src/vision-prefilter.js(normTitle 추가·export), bin/vision-worker.js(5개 스킵 지점 _emitSkipEvent + op키 normTitle), server.js(_visionScreenKey normTitle), src/graph-engine.js(NOISE_TYPES+screen.skipped), routes/flow-map.js(GET /api/flow/vision-skips 관리자 집계)
+- 검증: node --check 5파일 + jest unit 464 통과 + normTitle 샘플(시각/알림숫자/진행률 동일키 확인)
+- 주의: 워커 적용은 owner PC vision-worker 재시작 필요. 분포 데이터는 적용 다음날부터. 다시 보려면 /api/flow/vision-skips?days=3

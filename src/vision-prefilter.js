@@ -73,6 +73,18 @@ function _resetState() { _opSeen.clear(); } // 테스트용
 
 const ENABLED = process.env.VISION_PREFILTER !== 'off';
 
+// [2026-11-05] 중복 열쇠용 창제목 정규화 — 제목 속 시각·알림숫자·진행률이 매번 달라져
+// "같은 창"이 전부 새 키로 통과하는 누수(같은화면반복 45% 실측)를 막는다.
+// 시각(14:03), 백분율(37%), 괄호숫자((3)/[12]), 긴 숫자열은 '#'로 치환 후 40자.
+function normTitle(t) {
+  return String(t || '')
+    .replace(/\d{1,2}:\d{2}(:\d{2})?/g, '#')   // 시각
+    .replace(/\d+(\.\d+)?\s*%/g, '#')           // 진행률
+    .replace(/[([]\s*\d+\s*[)\]]/g, '#')        // 알림 개수 (3), [12]
+    .replace(/\d{3,}/g, '#')                    // 긴 숫자열(카운터·ID)
+    .replace(/\s+/g, ' ').trim().slice(0, 40).toLowerCase();
+}
+
 // 측정용 스킵 사유 누적(오너 소비측). per-batch 로그 + ~/.orbit 스냅샷으로 전/후 비교.
 const stats = { total: 0, skipLowInfo: 0, skipNoOp: 0, passBiz: 0, byReason: {} };
 function _bump(reason) { stats.byReason[reason] = (stats.byReason[reason] || 0) + 1; }
@@ -97,4 +109,4 @@ function logLine() {
     (Object.keys(stats.byReason).length ? ` 사유=${JSON.stringify(stats.byReason)}` : '');
 }
 
-module.exports = { evaluate, selectByOperation, hasOperation, triggerRank, isLowValueTrigger, snapshot, logLine, _resetState, ENABLED };
+module.exports = { evaluate, selectByOperation, hasOperation, triggerRank, isLowValueTrigger, normTitle, snapshot, logLine, _resetState, ENABLED };
