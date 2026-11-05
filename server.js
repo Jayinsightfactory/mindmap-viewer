@@ -4213,7 +4213,18 @@ app.post('/api/hook', async (req, res) => {
             'SELECT title FROM sessions WHERE id=$1 LIMIT 1', [sid]
           );
           if (titleRows[0]?.title) continue;
-          const sesEvents = await Promise.resolve(getEventsBySession(sid));
+          // [메모리] 제목 생성에는 이미지가 불필요 — data_json에서 imageBase64를 DB에서 제거 후 로드.
+          // getEventsBySession은 SELECT * LIMIT 2000이라 screen.capture base64까지 node 힙에 올려
+          // 매 인입 배치마다 RSS 피크(실측 1.44GB)를 유발했다. 행/순서/건수는 동일하게 유지하고 이미지 바이트만 제거.
+          const { rows: _titleRows2 } = await dbModule.getDb().query(
+            `SELECT type, (data_json - 'imageBase64') AS data_json
+             FROM events WHERE session_id=$1 ORDER BY timestamp ASC LIMIT 2000`, [sid]
+          );
+          const sesEvents = _titleRows2.map(r => ({
+            type: r.type,
+            data: (r.data_json && typeof r.data_json === 'object') ? r.data_json
+                 : (() => { try { return JSON.parse(r.data_json || '{}'); } catch { return {}; } })(),
+          }));
           if (sesEvents.length >= 3) {
             // 기존 title이 없는 세션만 자동 생성
             const ses = titleRows[0];
