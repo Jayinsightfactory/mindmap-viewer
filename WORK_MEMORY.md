@@ -2273,3 +2273,25 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 - 수정: src/vision-prefilter.js(normTitle 추가·export), bin/vision-worker.js(5개 스킵 지점 _emitSkipEvent + op키 normTitle), server.js(_visionScreenKey normTitle), src/graph-engine.js(NOISE_TYPES+screen.skipped), routes/flow-map.js(GET /api/flow/vision-skips 관리자 집계)
 - 검증: node --check 5파일 + jest unit 464 통과 + normTitle 샘플(시각/알림숫자/진행률 동일키 확인)
 - 주의: 워커 적용은 owner PC vision-worker 재시작 필요. 분포 데이터는 적용 다음날부터. 다시 보려면 /api/flow/vision-skips?days=3
+
+## 2026-11-05 — 기동 메모리 피크 원인 특정 + 인입 동시성 게이트
+
+### 사용자 핵심 지시
+- 기동 RSS 피크(실측 ~1.44GB) 원인 "특정" 후 완화까지 배포. **직원 업무데이터 품질 저하 금지**, **데몬 끊김/재설치 유발 금지**, 기존 MD 확인.
+
+### 검색/확인한 것
+- DATA_CHECK.md, DAEMON_STRUCTURE.md, services/memory-manager.js, /api/hook 핸들러(server.js:3887), express.json(server.js:469)
+
+### 원인 (실측 로그로 특정, boot-mem 로거 f18c76f)
+- 부팅 루틴 아님. **재배포로 끊긴 전 데몬 PC가 재접속하며 밀린 백로그(screen.capture base64 포함)를 동시에 재전송하는 인입 폭주**.
+- express.json이 동시 배치를 JS 객체/문자열로 파싱 → heapUsed만 ~1.2GB(external 낮음), ~70초 뒤 GC 회수. OOM 없는 정상범위지만 HEAP_LIMIT(580MB) 초과 시 memMgr가 503 거부·큐 비움 경로를 탈 수 있음.
+
+### 실제 수정 파일
+- server.js: (1) 임시 boot-mem 로거 제거(47b965f). (2) `/api/hook` 동시 처리 상한 게이트 추가 — express.json 앞, 큐잉(무손실), 기본 `HOOK_MAX_CONCURRENT=6`(env override). 초과 배치는 거절/폐기 없이 대기 후 순서 처리 → 데이터 완전성·데몬 계약 불변.
+- insertEvent는 id EXISTS/ON CONFLICT로 멱등 → 큐 지연·재시도에도 중복/유실 없음(확인).
+
+### 검증
+- `node --check server.js` OK. 로컬 diff 순수 추가 26줄. 배포 후 실증: 로그에 인입 503/에러 0 + 기동 heap 피크 감소 확인 예정.
+
+### 다시 보면
+- 인입 메모리 = services/memory-manager.js(503 경로) + server.js `/api/hook` 게이트. 데몬 측은 미변경(끊김 방지).
