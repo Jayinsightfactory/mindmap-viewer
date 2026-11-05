@@ -32,19 +32,6 @@ const env    = require('./config/environment');
 const memMgr = require('./services/memory-manager');
 
 // ─── 전역 미처리 Promise 거부 안전망 (Node.js v24+ 크래시 방지) ────────────────
-// [임시 측정 2026-11-05b] 동시성 게이트 적용 후 순간 heap 피크 비교용. 측정 후 즉시 제거.
-(() => {
-  const _t0 = Date.now();
-  const _mb = (b) => Math.round(b / 1048576);
-  const _iv = setInterval(() => {
-    try {
-      const m = process.memoryUsage();
-      console.log(`[boot-mem] t=${Math.round((Date.now() - _t0) / 1000)}s rss=${_mb(m.rss)} heapUsed=${_mb(m.heapUsed)} heapTotal=${_mb(m.heapTotal)} external=${_mb(m.external)} arrayBuffers=${_mb(m.arrayBuffers)}`);
-      if (Date.now() - _t0 > 6 * 60 * 1000) clearInterval(_iv);
-    } catch {}
-  }, 2000);
-  if (_iv.unref) _iv.unref();
-})();
 process.on('unhandledRejection', (reason, promise) => {
   logger.warn('미처리 Promise 거부 (무시됨): %s', reason?.message || reason);
 });
@@ -479,32 +466,6 @@ app.use('/api/', (req, res, next) => {
 
 // Stripe Webhook은 서명 검증을 위해 원본 바디(Buffer)가 필요 — JSON 파싱 전에 처리
 app.use('/api/payment/webhook', express.raw({ type: 'application/json' }));
-// ── [메모리] /api/hook 동시 처리 상한 (큐잉·무손실) ─────────────────────
-// 재배포 직후 전 데몬이 밀린 백로그를 동시에 재전송하면 express.json이 base64 배치를
-// 전부 JS 힙에 올려 기동 RSS 피크(실측 ~1.2GB → HEAP_LIMIT 580MB 초과 시 memMgr가
-// 503 거부·큐 비움)를 유발. 여기서 동시 파싱 수만 제한해 피크 자체를 막는다. 초과분은
-// 버리거나 거절하지 않고 대기(큐잉)시켜 순서대로 처리 → 데이터 완전성·데몬 계약 불변(응답 정상 200).
-// express.json 앞에 두어야 대기 요청의 바디가 파싱되지 않아 힙에 안 올라온다.
-const _HOOK_MAX_CONCURRENT = parseInt(process.env.HOOK_MAX_CONCURRENT || '6', 10);
-let _hookActive = 0;
-const _hookWaiters = [];
-app.use('/api/hook', (req, res, next) => {
-  const release = () => {
-    _hookActive = Math.max(0, _hookActive - 1);
-    const w = _hookWaiters.shift();
-    if (w) w();
-  };
-  const enter = () => {
-    _hookActive++;
-    let done = false;
-    const once = () => { if (!done) { done = true; release(); } };
-    res.once('finish', once);
-    res.once('close', once);
-    next();
-  };
-  if (_hookActive < _HOOK_MAX_CONCURRENT) enter();
-  else _hookWaiters.push(enter);
-});
 app.use(express.json({ limit: '2mb' }));
 app.use(require('./src/hidden-users').middleware); // [2026-10-05] /my-work 목록 숨김(config/hidden-users.json)
 // 프로덕션: 압축된 JS 우선 사용

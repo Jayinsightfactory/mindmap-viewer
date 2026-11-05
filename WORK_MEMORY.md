@@ -2303,3 +2303,17 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 - ★교훈: /api/flow·/api/timetable 등(PREFIXES)의 "데이터가 있는데 API 가 빈 배열"이면 hidden-users scrub 부터 의심. 진단 우회 = ?showHidden=1 또는 X-Orbit-Show-Hidden: 1.
 - 첫 분포(owner PC, 11/5 17시~): pixel_dup 54 · same_window_no_op 3. 직원별 분포는 ec9ab3a 이후 데이터부터 유효.
 - vision-skips?debug=1(관리자): rowCount·keys·sample 반환 — 남겨둠.
+
+## 2026-11-05 (속행) — 동시성 게이트 1회 측정 → 효과 없음, 되돌림
+
+### 측정 결과 (boot-mem 로거 2초, 게이트 ON vs 이전 OFF)
+- 기동 heapUsed 피크 **게이트 ON/OFF 모두 ~1.2GB 동일**(t≈11s 1118 vs 1176, t≈67s 1208 동일). **게이트는 피크를 못 낮춤 → "동시 인입 파싱 원인" 가설 반증.**
+- 새 단서: 2초 로거인데 **t=12→67초(~55초) 로그 공백** = 이벤트 루프 정지. 부팅 중 **~1.2GB를 쥔 채 ~55초 도는 작업 1개**가 범인(인입 아님). 끝나며 GC로 ~89MB 회수. HEAP_LIMIT(580) 초과로 memMgr 힙압력 경고 반복 발동.
+- 무해: OOM 없음, 정상상태 VmRSS ~266MB.
+
+### 조치
+- 게이트(fd79edf) + 측정 로거(9520d6a) **되돌림**. server.js는 47b965f 내용으로 복귀하되 ec9ab3a(screen.skipped 귀속)는 보존(수술식 제거).
+- 데몬 미변경 유지.
+
+### 다음에 할 일 (원인 미해결)
+- 부팅 t≈8~12s에 ~1.2GB 할당하고 ~55s 점유 후 해제하는 **단일 동기/루프 작업** 지목 필요. 후보 재검토: startServer() 내 await 체인(authInitFromPg·마이그레이션·eventBus)·listen 콜백·초기 getStats/워커 start 중 대용량 동기 처리. boot-mem은 removed — 재측정 시 process-level allocation 샘플링(--prof 또는 heap snapshot 1회)이 더 정확.
