@@ -2337,3 +2337,13 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
   · **claude-reaper.js 전환(완료)** — owner 전용 독립 스크립트. pwsh(Get-CimInstance 120초)+taskkill(/T) → 상주 win-shell. sweep/pwsh async, setInterval .catch 가드. **데몬 아님=전사 리스크 0.** 실행검증: REAP_MIN 초대형(회수0) sweep win-shell 경유 정상.
   · **screen-capture:959 미전환(보존 결정)** — win-shell async 전용이라 capture() async화 필수인데 이는 데몬 최다호출 핫패스의 동기계약을 깸(_fallbackTick이 capture 동기반환으로 캡처성공 판정 → jest screen-capture-fallback 회귀 실증). 동기대기=이벤트루프 블록→win-shell 교착이라 동기 경로 불가. python 자동설치 PC엔 미발생하는 3순위 최후수단이라 편익<리스크 → 보존. **다시 반복되면: capture 동기계약 때문에 async화 금지, _fallbackTick/테스트가 동기 반환에 의존함을 먼저 볼 것.**
 - 검증: jest 240 PASS. 배포 보류 유지(전사 동시반영 사장님 직접 승인 대기).
+
+## 2026-11-06 직원 업무데이터 최신화·전주 대비·nenova.exe 유입·에이전트 보고 (읽기 전용 조사, 코드 변경 없음)
+- 요청: 직원 업무데이터 최신화 + 이전/현재 차이·업무량 + nenova.exe 수집 기능 추가 이후 유입 실태 + 데이터 관리 에이전트 작업 보고(텍스트).
+- 검색/근거: DATA_CHECK.md 절차, `/api/admin/daemon-health`·`/api/completeness?days=21`·`/api/learning/capture-funnel`·`/api/vision/spool/stat`·`/api/vision/work-records`(전량 5,697건 커서 순회)·`~/.orbit/*.log`. 조회는 GET 만(서버·PC 무변경).
+- 전주(월~목 10/26~29) vs 이번주(11/02~05), 동일 인원 11명: 캡처 11,828→16,196(+37%) / 해독 1,197→3,209(+168%, 해독률 10→20%) / 키보드 +4% / 마우스 +5% → 직원 활동량은 거의 불변, 해독량만 증가. 전체(신규·이탈 포함) 캡처 13,939→17,381, 해독 1,424→3,442.
+- nenova.exe 해독 1,209건(전체 21%): 직전주 238→이번주 811. 품질: 필드 99%·업무흐름태그 99%·사람확인필요 76%·칸 클릭좌표 15%·클릭기록 10%. 앱 라벨 310가지 파편화(창제목 '화훼 관리 프로그램'으로 보정 집계).
+- 신규 수집기능 실태: work.action(내 사이드카) 0건=미배포 / click.rel(#39, 플래그 기본 off) 0건 / work.step(UIA) nenova.exe 0건. → nenova.exe 는 캡처→Vision 해독 단일 경로.
+- 주의 발견: daemon-health `uptime` 단위는 '초'(personal-agent.js:721). 오늘 main 푸시 4회(10:30·10:56·11:22·11:41)마다 전 PC 순차 재시작. 분석형 에이전트(kakao-intel·ops·shadow·intent)는 쿼터 상한(일 5%p)으로 오늘 대기. 09:00 카톡 보고 '대상 방 불일치'로 발송 실패. 손지윤 10/30 17:50 이후 데이터 0. 송준호 09:15 복구 재시작 후에도 캡처 2건·키보드 0. 강명훈 캡처 760 대비 해독 34(4%).
+- 미검증: 신규 기능 3종이 '왜' 0건인지(플래그/전달경로), 10/27 해독 68건 급감 원인, 운영 nenovaweb 쪽 /api/nenova-exe/events 유입, 조현욱·송준호·강명훈 저하 원인.
+- 반복 시 먼저 볼 곳: DATA_CHECK.md 표준 절차 → /api/completeness → work-records(커서). Git Bash 에서 API 경로 앞 `/`가 변환되니 `MSYS_NO_PATHCONV=1`.
