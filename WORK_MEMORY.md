@@ -2414,3 +2414,11 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 - 테스트: tests/unit/work-action-noise.test.js 7건 신규, 전체 jest 247 통과.
 - 한계: PC 필터는 -38% 뿐(남은 건 실제 클릭·창 이벤트). 서버 저장 행수 자체는 여전히 직원 활발 사용 시 분당 ~70건/PC → 서버 기여분은 그래프 보호로 막음. 행수 추가 절감은 배치를 1행으로 묶는 저장 포맷 변경이 필요(소비자 미구현 시점이 적기) — 결정 대기.
 - 반복 방지(줄바꿈): db-pg.js 는 CRLF/LF 혼재 파일 — Git Bash sed -i·편집 도구가 전체를 통일해 1938줄 diff 발생 → 원본 블롭 바이트를 latin1 로 읽어 문자열 치환 후 저장. 줄바꿈 판정은 `git ls-files --eol`(Git Bash grep -c $'\r$' 는 신뢰 불가).
+
+## 2026-11-06 송준호 PC(DESKTOP-4OM3URA) 데이터 부족 원인 = 토큰 주인 불일치 (읽기 전용 점검, 변경 없음)
+- 사장님 지시 "송준호 PC 점검"(읽기 전용 허락). 증상: 오늘 송준호 신원 캡처 7·키보드 10·마우스 390·하트비트 312, 별도 신원 'Luke'(MNSKAQSQ649D9E5936, 숨김계정) 캡처 184·키보드 151·마우스 0·하트비트 0. 완전성 게이트가 '데몬 다운' 오판 → 09:15 자동 재시작(효과 없음).
+- 확정 근거: ① 서버 운영 로그 `[hook] pc_link override: DESKTOP-4OM3URA token=MNSKAQSQ649D9E5936 → MN1C0DB109B4BDEFE4` 반복 = 이 PC 토큰의 주인은 Luke. ② server.js /api/hook: 신원=토큰 주인, 단 요청에 X-Device-Id 헤더가 있고 orbit_pc_links 에 등록된 PC 면 등록 주인(송준호)으로 덮어씀. ③ keyboard-watcher.js 는 X-Device-Id 를 안 보냄(0건), mouse-watcher·personal-agent(하트비트)는 보냄, screen-capture 는 일부만 → 키보드·캡처=Luke, 마우스·하트비트=송준호로 갈라짐. ④ 원격 읽기 결과: 데몬 윈도우 계정 'Nenova', 설정파일은 C:\Users\kungf 한 곳, 설정 userId=MN1C0DB109B4BDEFE4(송준호). 설치 진단(11/02) 8통과·0실패 = 설치 자체는 정상.
+- 미검증: 원격 명령 A(데몬 프로세스 수)·D(작업 목록)·F(토큰 verify)는 PC 가 가져갔으나 결과 미수신(원인 불명). Luke 가 누구인지(숨김 계정, 의도된 연결인지).
+- 조치안(쓰기 작업이라 사장님 승인 필요): ① claim-token 으로 송준호 이름의 새 토큰 발급 + 원격 `config` 로 PC 설정 반영(재시작 불필요) ② 11/02 이후 Luke 로 쌓인 이 PC 분 이전 여부는 별도 결정 ③ 재발 방지 = /api/hook 이 X-Device-Id 없어도 data.hostname 으로 pc_links 적용(서버 패치).
+- 원격 exec 결과 회수 함정: 결과는 daemon.update(command_executed) 앞 200자 + pg-commands-inspect?includeConsumed=1 의 result_json 으로만 옴. 30분 주기 Guardian watchdog 이 먼저 가져가면 결과 보고 없음(첫 배치 유실). 집계 시 같은 시각에 서버가 보내는 capture-config 가 ack 를 가로챌 수 있음.
+- 부수 발견: 김원영(wonyoung)·박성수(DESKTOP-HGNEA1S) PC 가 오늘 daemon.perf.issue powershell_flood(PowerShell 창 4~6개, 'keyboard-watcher execSync 의심') 보고 → 깜빡임 미완 가능성, 별도 조사 필요.
