@@ -2428,3 +2428,4 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 - 검증: 교체 후 6분 내 이 PC 이벤트 전부 userName=송준호(Luke 0건). 데몬 재시작 불필요(재시작 안 함). daemon.crash 1건은 09:15 이전 기록(교체와 무관).
 - 미해결: 교체 전 Luke 귀속 과거 데이터(11/02~) 이전 미실행(별도 승인 필요), 이전 토큰 값은 모름(롤백 불가 — Luke 토큰은 서버에 그대로 유효), 키보드 이벤트는 사용 대기(미확인), 서버측 pc_links hostname 폴백 패치 미실행.
 - 스크립트: scratchpad/swap-token.js (토큰 미출력).
+- 데이터 이전 실행(사용자 승인): POST /api/admin/reassign-events {from Luke MNSKAQSQ649D9E5936 → 송준호 MN1C0DB109B4BDEFE4, afterTs 2026-11-02T00:00+09:00, hostname DESKTOP-4OM3URA} → updated 648건. 되돌리기: from/to 맞바꿔 같은 호출(단 이후 신규분 포함 주의). events 테이블만 이전, 다른 테이블(분석 캐시 등)은 미확인.
