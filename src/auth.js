@@ -755,32 +755,6 @@ async function _pgBackupUser(user, passwordHash) {
 }
 async function _pgBackupToken(token, userId, expiresAt) {
   if (!_pgPool || !token) return;
-  // [임시 계측 2026-11-06] 무만료 session 토큰 발급 지점 집계(A단계) — /app/data/token-mint.log, 12분 자동중지. 측정 후 제거. 동작 불변(카운팅만).
-  if (!expiresAt) {
-    try {
-      const _g = (global.__mint = global.__mint || { c: new Map(), started: 0, iv: null });
-      const st = (new Error().stack || '').split(String.fromCharCode(10)).slice(2, 5).map(s => s.trim().split(' (')[0]).join(' <- ');
-      _g.c.set(st, (_g.c.get(st) || 0) + 1);
-      if (!_g.iv) {
-        const _fs = require('fs'); const _NL = String.fromCharCode(10);
-        const _dir = _fs.existsSync('/app/data') ? '/app/data' : '/tmp';
-        const _F = _dir + '/token-mint.log';
-        _g.started = Date.now();
-        _g.iv = setInterval(() => {
-          try {
-            const ent = [..._g.c.entries()].sort((a,b)=>b[1]-a[1]).slice(0,15);
-            const total = [..._g.c.values()].reduce((a,b)=>a+b,0);
-            const sec = Math.max(Math.round((Date.now()-_g.started)/1000),1);
-            let out = '=== token-mint t=' + sec + 's total=' + total + ' (' + Math.round(total/sec*60) + '/min) ===' + _NL;
-            for (const [k,v] of ent) out += v + '  ' + k + _NL;
-            _fs.writeFileSync(_F, out);
-          } catch {}
-          if (Date.now()-_g.started > 12*60*1000 && _g.iv) { clearInterval(_g.iv); _g.iv = null; }
-        }, 30000);
-        if (_g.iv.unref) _g.iv.unref();
-      }
-    } catch {}
-  }
   for (let attempt = 1; attempt <= 3; attempt++) {
     try {
       await _pgInit();
