@@ -2398,3 +2398,11 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 
 ### 다음에 할 일 (원인 미해결)
 - 부팅 t≈8~12s에 ~1.2GB 할당하고 ~55s 점유 후 해제하는 **단일 동기/루프 작업** 지목 필요. 후보 재검토: startServer() 내 await 체인(authInitFromPg·마이그레이션·eventBus)·listen 콜백·초기 getStats/워커 start 중 대용량 동기 처리. boot-mem은 removed — 재측정 시 process-level allocation 샘플링(--prof 또는 heap snapshot 1회)이 더 정확.
+
+## 2026-11-06 배포 57f808b (main) 결과 — 사이드카·깜빡임 5종·perf 점검 전사 반영
+- 사장님 직접 승인("배포", 전사 동시 반영임을 안내한 뒤). main 18커밋과 병합(충돌=WORK_MEMORY 1곳), 구문+jest 240 통과 후 12:47 KST 푸시.
+- 13:03 KST 반영 현황: 새 버전 4대(김원영·김도준·사장님·설연주) / 직전 main 1f2c4b9 5대 / 강현우 13cba49 고정(원인 미확인) / dead 2대(아드리아나·정재훈, 마지막 하트비트 12:07~08 = 배포 전 → 배포 원인 아님, 점심 전원 추정·미확인).
+- 사이드카 실가동: 사장님 PC 12:52 컴파일 완료·시작(pid 50376)·perf-selfcheck 시작. 서버 work.action 수신 798건/7분(김도준 PC만). name 29종 전부 버튼/창 라벨, 업무 값 없음(표본 한정).
+- 은행 모드: 13:00 KST 시간기반 체크로 4대 paused(설계 동작). 사장님 PC 새 secure-collector 정상(앱 전환 감지 'chrome'/'claude', 오류 없음) = $wpid 수정 실운영 확인.
+- 위험: work.action 발생량 1대 113건/분(35%가 '편집' SHOW 반복). 같은 이벤트 5초 내 중복제거 시 -45%뿐. 전 직원·하루 환산 수십만 건 추정(미검증) = 기존 전사 하루 이벤트(~1.5만)의 10배 이상 가능. 선택: 중복제거+샘플링 패치 재배포 / 끄기(config workActionRecorder:false).
+- 반복 방지: main 푸시는 문서만이어도 HEAD 변경이라 전 PC 재시작 → 문서 기록은 브랜치에만. 배포 반영은 10~30분 걸림.
