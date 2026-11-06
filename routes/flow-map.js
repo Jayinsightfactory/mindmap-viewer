@@ -658,6 +658,37 @@ function createFlowMapRouter(deps = {}) {
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
 
+  // [2026-11-05] 해독 스킵 사유 분포 — 워커가 남기는 screen.skipped 이벤트를 사람별×사유별로 집계(관리자 전용).
+  // "누가 왜 걸러지는지"를 수치로 본다(강명훈·정재훈·김원영 저해독 원인 진단용). 적용 다음날부터 데이터가 쌓임.
+  router.get('/vision-skips', async (req, res) => {
+    try {
+      const raw = (req.headers.authorization || '').replace(/^Bearer\s+/i, '').trim();
+      if (!raw) return res.status(401).json({ error: 'unauthorized' });
+      const okAdmin = require('../config/environment').isMasterToken(raw) || isAdminToken(raw) || (typeof deps.isAdminReq === 'function' && await deps.isAdminReq(req));
+      if (!okAdmin) return res.status(403).json({ error: 'admin only' });
+      const days = Math.min(30, Math.max(1, parseInt(req.query.days, 10) || 3));
+      const p = pool(); if (!p) return res.status(500).json({ error: 'db not available' });
+      const { rows } = await p.query(`
+        SELECT user_id, u.name, COALESCE(data_json->>'reason','?') AS reason,
+               COALESCE(data_json->>'app','') AS app, COUNT(*) AS n
+          FROM events LEFT JOIN orbit_auth_users u ON u.id = events.user_id
+         WHERE type='screen.skipped' AND timestamp::timestamptz > NOW() - ($1 || ' days')::interval
+         GROUP BY user_id, u.name, reason, app ORDER BY n DESC`, [String(days)]);
+      const people = {};
+      for (const r of rows) {
+        const k = r.user_id || '?';
+        people[k] = people[k] || { userId: k, name: r.name || k, total: 0, byReason: {}, topApps: {} };
+        people[k].total += Number(r.n);
+        people[k].byReason[r.reason] = (people[k].byReason[r.reason] || 0) + Number(r.n);
+        if (r.app) people[k].topApps[r.app] = (people[k].topApps[r.app] || 0) + Number(r.n);
+      }
+      for (const v of Object.values(people)) v.topApps = Object.fromEntries(Object.entries(v.topApps).sort((a, b) => b[1] - a[1]).slice(0, 8));
+      const out = { ok: true, days, people: Object.values(people).sort((a, b) => b.total - a.total) };
+      if (req.query.debug === '1') out.debug = { rowCount: rows.length, isArr: Array.isArray(rows), keys: Object.keys(people).length, sample: rows[0] || null }; // [2026-11-05] 빈 결과 수수께끼 진단용(관리자 전용 라우트)
+      res.json(out);
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
   // [2026-09-17] 직무 프로파일 → 네노바웹 '부서별 업무 매뉴얼' 공급용 정규화본.
   // LLM 원문은 confidence 척도(0~1 / 0~100 혼재)·person(원시ID) 등이 들쭉날쭉 → 여기서 한 번만 정리.
   // 업무 1건 = 매뉴얼 1건. 절차 2단계 미만·conf 0.3 미만은 초안 자격 없음(빈 매뉴얼 배포 방지).

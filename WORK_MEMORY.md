@@ -2347,3 +2347,54 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 - 주의 발견: daemon-health `uptime` 단위는 '초'(personal-agent.js:721). 오늘 main 푸시 4회(10:30·10:56·11:22·11:41)마다 전 PC 순차 재시작. 분석형 에이전트(kakao-intel·ops·shadow·intent)는 쿼터 상한(일 5%p)으로 오늘 대기. 09:00 카톡 보고 '대상 방 불일치'로 발송 실패. 손지윤 10/30 17:50 이후 데이터 0. 송준호 09:15 복구 재시작 후에도 캡처 2건·키보드 0. 강명훈 캡처 760 대비 해독 34(4%).
 - 미검증: 신규 기능 3종이 '왜' 0건인지(플래그/전달경로), 10/27 해독 68건 급감 원인, 운영 nenovaweb 쪽 /api/nenova-exe/events 유입, 조현욱·송준호·강명훈 저하 원인.
 - 반복 시 먼저 볼 곳: DATA_CHECK.md 표준 절차 → /api/completeness → work-records(커서). Git Bash 에서 API 경로 앞 `/`가 변환되니 `MSYS_NO_PATHCONV=1`.
+
+## 2026-11-05 비전 선별 ①스킵사유 이벤트 ②창제목 정규화
+- 요청: 같은화면반복 24~45% 누수 + 강명훈5%/정재훈9%/김원영9% 저해독 원인 규명 → 사유 기록이 없어 집계 불가 판명 → 조정안 승인 실행
+- 검색어: vision-skips, screen.skipped, normTitle, same_window_no_op, _visionScreenKey
+- 수정: src/vision-prefilter.js(normTitle 추가·export), bin/vision-worker.js(5개 스킵 지점 _emitSkipEvent + op키 normTitle), server.js(_visionScreenKey normTitle), src/graph-engine.js(NOISE_TYPES+screen.skipped), routes/flow-map.js(GET /api/flow/vision-skips 관리자 집계)
+- 검증: node --check 5파일 + jest unit 464 통과 + normTitle 샘플(시각/알림숫자/진행률 동일키 확인)
+- 주의: 워커 적용은 owner PC vision-worker 재시작 필요. 분포 데이터는 적용 다음날부터. 다시 보려면 /api/flow/vision-skips?days=3
+
+## 2026-11-05 — 기동 메모리 피크 원인 특정 + 인입 동시성 게이트
+
+### 사용자 핵심 지시
+- 기동 RSS 피크(실측 ~1.44GB) 원인 "특정" 후 완화까지 배포. **직원 업무데이터 품질 저하 금지**, **데몬 끊김/재설치 유발 금지**, 기존 MD 확인.
+
+### 검색/확인한 것
+- DATA_CHECK.md, DAEMON_STRUCTURE.md, services/memory-manager.js, /api/hook 핸들러(server.js:3887), express.json(server.js:469)
+
+### 원인 (실측 로그로 특정, boot-mem 로거 f18c76f)
+- 부팅 루틴 아님. **재배포로 끊긴 전 데몬 PC가 재접속하며 밀린 백로그(screen.capture base64 포함)를 동시에 재전송하는 인입 폭주**.
+- express.json이 동시 배치를 JS 객체/문자열로 파싱 → heapUsed만 ~1.2GB(external 낮음), ~70초 뒤 GC 회수. OOM 없는 정상범위지만 HEAP_LIMIT(580MB) 초과 시 memMgr가 503 거부·큐 비움 경로를 탈 수 있음.
+
+### 실제 수정 파일
+- server.js: (1) 임시 boot-mem 로거 제거(47b965f). (2) `/api/hook` 동시 처리 상한 게이트 추가 — express.json 앞, 큐잉(무손실), 기본 `HOOK_MAX_CONCURRENT=6`(env override). 초과 배치는 거절/폐기 없이 대기 후 순서 처리 → 데이터 완전성·데몬 계약 불변.
+- insertEvent는 id EXISTS/ON CONFLICT로 멱등 → 큐 지연·재시도에도 중복/유실 없음(확인).
+
+### 검증
+- `node --check server.js` OK. 로컬 diff 순수 추가 26줄. 배포 후 실증: 로그에 인입 503/에러 0 + 기동 heap 피크 감소 확인 예정.
+
+### 다시 보면
+- 인입 메모리 = services/memory-manager.js(503 경로) + server.js `/api/hook` 게이트. 데몬 측은 미변경(끊김 방지).
+
+## 2026-11-05 (저녁) — vision-skips 빈 응답 수수께끼 해결 + 스킵 귀속 버그
+검색어: vision-skips, screen.skipped, hidden-users, scrub, 귀속, showHidden
+- 증상: events 테이블엔 screen.skipped 54건이 있는데 /api/flow/vision-skips 는 people:[].
+- 원인 2중: ① /api/hook 의 hostname→실사용자 매핑이 screen.analyzed 만 타서 스킵 전부가 워커 토큰 주인(사장님)으로 귀속(ec9ab3a 수정) ② /api/flow* 응답은 src/hidden-users.js scrub 미들웨어가 숨김 사용자(사장님 포함) 항목을 배열에서 제거 → 전부 사장님 귀속이라 빈 배열.
+- ★교훈: /api/flow·/api/timetable 등(PREFIXES)의 "데이터가 있는데 API 가 빈 배열"이면 hidden-users scrub 부터 의심. 진단 우회 = ?showHidden=1 또는 X-Orbit-Show-Hidden: 1.
+- 첫 분포(owner PC, 11/5 17시~): pixel_dup 54 · same_window_no_op 3. 직원별 분포는 ec9ab3a 이후 데이터부터 유효.
+- vision-skips?debug=1(관리자): rowCount·keys·sample 반환 — 남겨둠.
+
+## 2026-11-05 (속행) — 동시성 게이트 1회 측정 → 효과 없음, 되돌림
+
+### 측정 결과 (boot-mem 로거 2초, 게이트 ON vs 이전 OFF)
+- 기동 heapUsed 피크 **게이트 ON/OFF 모두 ~1.2GB 동일**(t≈11s 1118 vs 1176, t≈67s 1208 동일). **게이트는 피크를 못 낮춤 → "동시 인입 파싱 원인" 가설 반증.**
+- 새 단서: 2초 로거인데 **t=12→67초(~55초) 로그 공백** = 이벤트 루프 정지. 부팅 중 **~1.2GB를 쥔 채 ~55초 도는 작업 1개**가 범인(인입 아님). 끝나며 GC로 ~89MB 회수. HEAP_LIMIT(580) 초과로 memMgr 힙압력 경고 반복 발동.
+- 무해: OOM 없음, 정상상태 VmRSS ~266MB.
+
+### 조치
+- 게이트(fd79edf) + 측정 로거(9520d6a) **되돌림**. server.js는 47b965f 내용으로 복귀하되 ec9ab3a(screen.skipped 귀속)는 보존(수술식 제거).
+- 데몬 미변경 유지.
+
+### 다음에 할 일 (원인 미해결)
+- 부팅 t≈8~12s에 ~1.2GB 할당하고 ~55s 점유 후 해제하는 **단일 동기/루프 작업** 지목 필요. 후보 재검토: startServer() 내 await 체인(authInitFromPg·마이그레이션·eventBus)·listen 콜백·초기 getStats/워커 start 중 대용량 동기 처리. boot-mem은 removed — 재측정 시 process-level allocation 샘플링(--prof 또는 heap snapshot 1회)이 더 정확.

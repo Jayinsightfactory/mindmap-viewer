@@ -1317,7 +1317,8 @@ function _visionQueuePush(item) {
 // 장면 가치: 업무 도구(전산·엑셀·시트·PDF·드라이브·메일 첨부) 2 / 그 외 1 / 메신저 0, 입력 직후(keyboard_flush) +1 — 입력값이 화면에 남은 상태라 필드값이 읽힌다.
 const _VISION_MSGR_RE = /kakao|카카오|whatsapp|weixin|wechat|위챗|telegram|slack|discord/i;
 const _VISION_WORK_RE = /excel|엑셀|nenova|네노바|erp|ecount|이카운트|sheets|스프레드시트|pdf|drive|드라이브|pivot|견적|발주|입고|출고|분배|invoice|packing/i;
-function _visionScreenKey(it) { return `${String(it.app || '').toLowerCase()}|${String(it.windowTitle || '').slice(0, 40).toLowerCase()}`; }
+// [2026-11-05] normTitle: 창제목 속 시각·알림숫자·진행률 변화로 같은 창이 전부 새 키가 되던 누수 차단
+function _visionScreenKey(it) { return `${String(it.app || '').toLowerCase()}|${require('./src/vision-prefilter').normTitle(it.windowTitle)}`; }
 function _visionItemValue(it) {
   const t = `${it.app || ''} ${it.windowTitle || ''}`;
   let v = _VISION_MSGR_RE.test(t) ? 0 : (_VISION_WORK_RE.test(t) ? 2 : 1);
@@ -3990,7 +3991,7 @@ app.post('/api/hook', async (req, res) => {
       if (_pgPool && process.env.DATABASE_URL) {
         if (!global._hostUserCache) global._hostUserCache = new Map();
         const hosts = [...new Set(events
-          .filter(e => e.type === 'screen.analyzed' && e.data && e.data.hostname)
+          .filter(e => (e.type === 'screen.analyzed' || e.type === 'screen.skipped') && e.data && e.data.hostname)
           .map(e => String(e.data.hostname).toLowerCase()))];
         for (const host of hosts) {
           const c = global._hostUserCache.get(host);
@@ -4021,8 +4022,9 @@ app.post('/api/hook', async (req, res) => {
     const _isPg = process.env.DATABASE_URL;
     const jsonlLines = [];
     for (const event of events) {
-      // user_id를 서버 검증 값으로 덮어쓰기 (screen.analyzed는 원 캡처 hostname의 실사용자로)
-      event.userId = (event.type === 'screen.analyzed' && event.data && event.data.hostname
+      // user_id를 서버 검증 값으로 덮어쓰기 (screen.analyzed·screen.skipped는 원 캡처 hostname의 실사용자로 —
+      //   [2026-11-05] skipped가 빠져 있어 스킵 분포가 전부 워커 토큰 주인(owner)으로 귀속되던 버그)
+      event.userId = ((event.type === 'screen.analyzed' || event.type === 'screen.skipped') && event.data && event.data.hostname
         && _analyzedUserByHost.has(String(event.data.hostname).toLowerCase()))
         ? _analyzedUserByHost.get(String(event.data.hostname).toLowerCase())
         : hookUserId;
@@ -4213,7 +4215,18 @@ app.post('/api/hook', async (req, res) => {
             'SELECT title FROM sessions WHERE id=$1 LIMIT 1', [sid]
           );
           if (titleRows[0]?.title) continue;
-          const sesEvents = await Promise.resolve(getEventsBySession(sid));
+          // [메모리] 제목 생성에는 이미지가 불필요 — data_json에서 imageBase64를 DB에서 제거 후 로드.
+          // getEventsBySession은 SELECT * LIMIT 2000이라 screen.capture base64까지 node 힙에 올려
+          // 매 인입 배치마다 RSS 피크(실측 1.44GB)를 유발했다. 행/순서/건수는 동일하게 유지하고 이미지 바이트만 제거.
+          const { rows: _titleRows2 } = await dbModule.getDb().query(
+            `SELECT type, (data_json - 'imageBase64') AS data_json
+             FROM events WHERE session_id=$1 ORDER BY timestamp ASC LIMIT 2000`, [sid]
+          );
+          const sesEvents = _titleRows2.map(r => ({
+            type: r.type,
+            data: (r.data_json && typeof r.data_json === 'object') ? r.data_json
+                 : (() => { try { return JSON.parse(r.data_json || '{}'); } catch { return {}; } })(),
+          }));
           if (sesEvents.length >= 3) {
             // 기존 title이 없는 세션만 자동 생성
             const ses = titleRows[0];
@@ -9652,9 +9665,12 @@ async function startServer() {
         const _pool = dbModule.getDb ? dbModule.getDb() : null;
         if (_pool?.query) {
           for (const adminEmail of env.ADMIN_EMAILS) {
+            // [메모리] admin 토큰은 최근것만 선로드 — LIMIT 없으면 일부 계정(dlaww584: 862만행/987MB)을
+            // 전부 로드해 기동 힙 ~1.2GB(live)·ADMIN_TOKENS O(n²)로 61초 블로킹. 나머지는 per-request PG 검증으로 인증됨.
             const { rows } = await _pool.query(
               `SELECT t.token FROM orbit_auth_tokens t JOIN orbit_auth_users u ON t.user_id = u.id
-               WHERE u.email = $1 AND (t.expires_at IS NULL OR t.expires_at > NOW())`,
+               WHERE u.email = $1 AND (t.expires_at IS NULL OR t.expires_at > NOW())
+               ORDER BY t.created_at DESC NULLS LAST LIMIT 1000`,
               [adminEmail]
             );
             rows.forEach(({ token }) => {

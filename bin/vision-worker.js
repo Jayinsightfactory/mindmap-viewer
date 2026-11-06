@@ -544,6 +544,28 @@ async function visionApi(base64, ctx, model) {
   });
 }
 
+// [2026-11-05] 스킵 사유 이벤트 — 왜 안 읽었는지가 콘솔에만 남아 사람별 분포 집계가 불가했던 문제.
+// 이미지 없이 메타만 보내는 초경량 이벤트(screen.skipped). 그래프 NOISE_TYPES 라 화면 오염 없음.
+function _emitSkipEvent(reason, it) {
+  try {
+    it = it || {};
+    const payload = JSON.stringify({ events: [{
+      id: `vskip-${Date.now()}-${Math.floor(Math.random() * 1e6)}`,
+      type: 'screen.skipped', source: 'vision-worker',
+      sessionId: `daemon-${it.hostname || ''}`,
+      userId: it.userId || undefined,
+      timestamp: it.ts || new Date().toISOString(),
+      data: { hostname: it.hostname || '', app: it.app || '', windowTitle: String(it.windowTitle || '').slice(0, 60), trigger: it.trigger || '', reason: String(reason || '') },
+    }] });
+    const u = new URL('/api/hook', ORBIT_SERVER);
+    const mod = u.protocol === 'https:' ? https : http;
+    const h = { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) };
+    if (ORBIT_TOKEN) h['Authorization'] = 'Bearer ' + ORBIT_TOKEN;
+    const r = mod.request({ hostname: u.hostname, port: u.port || 443, path: u.pathname, method: 'POST', headers: h, timeout: 10000 }, res => res.resume());
+    r.on('error', () => {}); r.write(payload); r.end();
+  } catch {}
+}
+
 // ── 결과 유효성 검사 ─────────────────────────────────────────────────────────
 function _isValidResult(result) {
   if (!result) return false;
@@ -842,13 +864,14 @@ async function processServerQueue() {
     work = work.filter(item => {
       // [선별] 메타만으로 비업무/저정보 화면 컷(Claude $0). 업무 키워드 있으면 통과.
       const _pf = _prefilter.evaluate(item.app, item.windowTitle, item.trigger);
-      if (_pf.skip) { if (item.__pf) { try { fs.unlinkSync(item.__pf); } catch {} } return false; }
+      if (_pf.skip) { _emitSkipEvent(_pf.reason, item); if (item.__pf) { try { fs.unlinkSync(item.__pf); } catch {} } return false; }
       // [조작 기반 선별] 같은 창 반복은 그 사이 조작(클릭·타이핑·스크롤)이 있어야 유지, 무조작이면 누락.
       // 제목이 바뀌면 새 키 → 1장 해독. (기존 3분 시간컷을 조작 기준으로 통일)
-      const key = `${item.userId || item.hostname}|${item.app || ''}|${(item.windowTitle || '').slice(0, 40)}`;
+      // [2026-11-05] 제목 정규화(normTitle): 시각·알림숫자만 달라진 제목이 새 키로 전부 통과하던 누수 차단
+      const key = `${item.userId || item.hostname}|${item.app || ''}|${_prefilter.normTitle(item.windowTitle)}`;
       const itemMs = new Date(item.ts || Date.now()).getTime();
       const _op = _prefilter.selectByOperation(key, item.trigger, item, itemMs);
-      if (_op.skip) { if (item.__pf) { try { fs.unlinkSync(item.__pf); } catch {} } return false; }
+      if (_op.skip) { _emitSkipEvent(_op.reason, item); if (item.__pf) { try { fs.unlinkSync(item.__pf); } catch {} } return false; }
       return true;
     });
     const cut = before - work.length;
@@ -1047,15 +1070,17 @@ async function processSpool() {
       const _pf = _prefilter.evaluate(full.app, full.windowTitle, full.trigger);
       if (_pf.skip) {
         console.log(`  ⇢ 저정보 스킵(${_pf.reason}): ${full.app}/${(full.windowTitle || '').slice(0, 30)}`);
+        _emitSkipEvent(_pf.reason, { ...full, userId: full.userId || it.userId });
         await _spoolReq('DELETE', `/api/vision/spool/file?user=${encodeURIComponent(it.userId)}&file=${encodeURIComponent(it.file)}`);
         return false;
       }
       // [조작 기반 선별] 같은 창이 반복돼도 그 사이 조작(클릭·타이핑·스크롤)이 있었으면 유지, 무조작이면 누락.
       // 제목이 바뀌면 키가 새로 생겨 1장은 해독. recentClicks/lastClick 로 조작 증거 보강.
-      const _opKey = `${full.userId || it.userId || full.hostname}|${full.app || ''}|${(full.windowTitle || '').slice(0, 40)}`;
+      const _opKey = `${full.userId || it.userId || full.hostname}|${full.app || ''}|${_prefilter.normTitle(full.windowTitle)}`;
       const _op = _prefilter.selectByOperation(_opKey, full.trigger, full, new Date(full.ts || Date.now()).getTime());
       if (_op.skip) {
         console.log(`  ⇢ 같은창·무조작 스킵: ${full.app}/${(full.windowTitle || '').slice(0, 30)}`);
+        _emitSkipEvent(_op.reason, { ...full, userId: full.userId || it.userId });
         await _spoolReq('DELETE', `/api/vision/spool/file?user=${encodeURIComponent(it.userId)}&file=${encodeURIComponent(it.file)}`);
         return false;
       }
@@ -1063,6 +1088,7 @@ async function processSpool() {
       // [E1] 직전과 시각적으로 같은 화면이면 분석 스킵 + 스풀에서 삭제(드레인)
       if (await _isDupFrame(full.imageBase64, _dedupKey(it.userId, full.app, full.windowTitle), new Date(full.ts || Date.now()).getTime())) {
         console.log(`  ⇢ 중복화면 스킵(E1): ${it.file}`);
+        _emitSkipEvent('pixel_dup', { ...full, userId: full.userId || it.userId });
         await _spoolReq('DELETE', `/api/vision/spool/file?user=${encodeURIComponent(it.userId)}&file=${encodeURIComponent(it.file)}`);
         return false;
       }
