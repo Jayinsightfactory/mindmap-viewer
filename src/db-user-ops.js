@@ -20,7 +20,7 @@ function createSqliteOps(getDb, deserializeEvent) {
 
   function getEventsByUser(userId) {
     return getDb().prepare(
-      'SELECT * FROM events WHERE user_id = ? ORDER BY timestamp ASC'
+      "SELECT * FROM events WHERE user_id = ? AND type <> 'work.action' ORDER BY timestamp ASC"
     ).all(userId).map(deserializeEvent);
   }
 
@@ -139,7 +139,7 @@ function createPgOps(getPool, deserializeEvent) {
       `SELECT id, type, source, session_id, user_id, channel_id, parent_event_id, timestamp,
               (data_json - 'imageBase64') AS data_json, metadata_json
          FROM events
-        WHERE user_id = $1 OR data_json->>'userId' = $1
+        WHERE (user_id = $1 OR data_json->>'userId' = $1) AND type <> 'work.action'
         ORDER BY timestamp DESC LIMIT $2`, [userId, Math.min(limit, 5000)]
     );
     return rows.map(deserializeEvent).reverse();

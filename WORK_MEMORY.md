@@ -2406,3 +2406,11 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 - 은행 모드: 13:00 KST 시간기반 체크로 4대 paused(설계 동작). 사장님 PC 새 secure-collector 정상(앱 전환 감지 'chrome'/'claude', 오류 없음) = $wpid 수정 실운영 확인.
 - 위험: work.action 발생량 1대 113건/분(35%가 '편집' SHOW 반복). 같은 이벤트 5초 내 중복제거 시 -45%뿐. 전 직원·하루 환산 수십만 건 추정(미검증) = 기존 전사 하루 이벤트(~1.5만)의 10배 이상 가능. 선택: 중복제거+샘플링 패치 재배포 / 끄기(config workActionRecorder:false).
 - 반복 방지: main 푸시는 문서만이어도 HEAD 변경이라 전 PC 재시작 → 문서 기록은 브랜치에만. 배포 반영은 10~30분 걸림.
+
+## 2026-11-06 work.action 발생량 패치 — PC 필터 + 서버 그래프 보호 (사장님 "패치 진행")
+- 배경: 배포(57f808b) 직후 김도준 PC 1대 분당 113건(35%가 메뉴 '편집' SHOW 반복). 코드 확인 결과 개인 그래프(getEventsByUser, 최근 3000건)·전사 그래프(getAllEvents, 최근 ≤1000건)가 work.action 을 제외하지 않아, 분당 100건이면 약 27분에 3000건이 전부 work.action → 그 직원 마우스·키보드·캡처 노드가 화면에서 밀려남(코드 기준 확정, 운영 화면은 권한 403 으로 직접 못 봄=미검증).
+- 수정(5파일 +47/-6): ① src/work-action-recorder.js — 같은 (ev|role|name) 3초 중복제거, 메뉴성 SHOW|r숫자 30초, 폭주 안전판 MAX_PER_MIN=300(이벤트 시각 기준). ② 서버 — db-user-ops.js(PG·SQLite getEventsByUser)·db-pg.js·db.js(getAllEvents) 조회에서 work.action 제외, graph-engine NOISE_TYPES 에 work.action 추가.
+- 실측 검증(김도준 PC 7분 798건에 실제 필터): 113→70건/분(-38%), 성공메시지 19→19·창전환 41→41·선택 9→9 보존, 폭주컷 0. 안전판 90 은 실사용 21건+성공메시지 1건을 잘라 300 으로 상향(피크 111/분의 2.7배).
+- 테스트: tests/unit/work-action-noise.test.js 7건 신규, 전체 jest 247 통과.
+- 한계: PC 필터는 -38% 뿐(남은 건 실제 클릭·창 이벤트). 서버 저장 행수 자체는 여전히 직원 활발 사용 시 분당 ~70건/PC → 서버 기여분은 그래프 보호로 막음. 행수 추가 절감은 배치를 1행으로 묶는 저장 포맷 변경이 필요(소비자 미구현 시점이 적기) — 결정 대기.
+- 반복 방지(줄바꿈): db-pg.js 는 CRLF/LF 혼재 파일 — Git Bash sed -i·편집 도구가 전체를 통일해 1938줄 diff 발생 → 원본 블롭 바이트를 latin1 로 읽어 문자열 치환 후 저장. 줄바꿈 판정은 `git ls-files --eol`(Git Bash grep -c $'\r$' 는 신뢰 불가).

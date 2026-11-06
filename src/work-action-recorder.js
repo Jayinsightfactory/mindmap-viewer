@@ -41,6 +41,44 @@ const WORK_DIR = path.join(ORBIT_DIR, 'work-actions');
 const FLUSH_MS = 5000;
 const MAX_BATCH = 60;
 
+// [2026-11-06] 발생량 억제. 실측(김도준 PC 7분): 분당 113건, 그중 35% 가 메뉴 '편집' SHOW 반복(280건→10초 중복제거 시 4건).
+//  · 같은 (ev|role|name) 은 DEDUP_MS 안에 다시 오면 버린다(버튼·창·성공메시지는 서로 다른 이름이라 순서 보존).
+//  · 이름 없는 일반 role(r숫자)의 SHOW = 메뉴/툴팁 깜빡임 → DEDUP_MENU_MS 로 길게.
+//  · MAX_PER_MIN = 비정상 폭주 안전판. 실측 피크(중복제거 후) 111/분 의 약 2.7배 — 실사용은 절대 자르지 않고 진짜 폭주만 막는다
+//    (90 으로 시험했더니 실사용 21건·성공메시지 1건이 잘려 300 으로 상향). 시각은 이벤트 시각 기준.
+const DEDUP_MS = 3000;
+const DEDUP_MENU_MS = 30000;
+const MAX_PER_MIN = 300;
+
+function _makeFilter(o) {
+  const dedupMs = (o && o.dedupMs) || DEDUP_MS;
+  const menuMs = (o && o.menuMs) || DEDUP_MENU_MS;
+  const maxPerMin = (o && o.maxPerMin) || MAX_PER_MIN;
+  const last = new Map();
+  let bucket = -1, count = 0;
+  const st = { deduped: 0, capped: 0 };
+  return {
+    st,
+    accept(obj) {
+      const t = Date.parse(obj.t);
+      const tm = Number.isFinite(t) ? t : Date.now();
+      const menu = obj.ev === 'SHOW' && /^r\d+$/.test(String(obj.role || ''));
+      const win = menu ? menuMs : dedupMs;
+      const key = obj.ev + '|' + obj.role + '|' + obj.name;
+      const prev = last.get(key);
+      if (prev !== undefined && tm - prev >= 0 && tm - prev < win) { st.deduped++; return false; }
+      last.set(key, tm);
+      if (last.size > 800) last.delete(last.keys().next().value);
+      const b = Math.floor(tm / 60000);
+      if (b !== bucket) { bucket = b; count = 0; }
+      if (count >= maxPerMin) { st.capped++; return false; }
+      count++;
+      return true;
+    },
+  };
+}
+let _filter = _makeFilter();
+
 function _log(msg) { try { console.log('[work-action] ' + msg); } catch {} }
 
 function _findCsc() {
@@ -175,6 +213,7 @@ function _drainJsonl() {
         if (obj.kind === '__end') continue;
         if (!obj.ev) continue;
         _events++;
+        if (!_filter.accept(obj)) continue;   // 반복 잡음/폭주 제거(위 DEDUP_*)
         _emitted++;
         _lastEventAt = obj.t || new Date().toISOString();
         _buf.push({
@@ -202,7 +241,8 @@ function setPaused(paused) {
 }
 
 function getStatus() {
-  const base = { state: _state, events: _events, emitted: _emitted, sent: _sent, lastEventAt: _lastEventAt };
+  const base = { state: _state, events: _events, emitted: _emitted, sent: _sent, lastEventAt: _lastEventAt,
+    deduped: _filter.st.deduped, capped: _filter.st.capped };
   if (_state === 'disabled' || _state === 'init') return base;
   base.pid = _child ? _child.pid : null;
   base.sidecar = _sidecarPerf ? {
@@ -242,4 +282,4 @@ function stop() {
   _child = null;
 }
 
-module.exports = { start, stop, getStatus, setPaused };
+module.exports = { start, stop, getStatus, setPaused, _test: { makeFilter: _makeFilter } };

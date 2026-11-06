@@ -451,6 +451,7 @@ function buildGraph(events) {
   const NOISE_TYPES = new Set([
     'install.progress', 'install.diag', 'daemon.update', 'daemon.error',
     'screen.skipped', // [2026-11-05] 해독 스킵 사유(측정용 메타) — 그래프 비표시
+    'work.action',    // [2026-11-06] nenova 버튼/창 단위 행동순서(분당 수십~백 건) — 그래프 노드로 쓰지 않음(절차 재구성 전용)
   ]);
 
   for (const event of events) {

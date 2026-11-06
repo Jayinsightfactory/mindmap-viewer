@@ -490,7 +490,7 @@ async function getAllEvents(limit = 300) {
   try {
     const { rows } = await pool.query(
       `SELECT * FROM events
-       WHERE type NOT IN ('screen.capture','screen.analyzed')
+       WHERE type NOT IN ('screen.capture','screen.analyzed','work.action')
        ORDER BY timestamp DESC LIMIT $1`,
       [Math.min(limit, 1000)]
     );
