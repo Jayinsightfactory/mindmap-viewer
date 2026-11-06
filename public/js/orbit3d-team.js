@@ -1,9 +1,9 @@
 // ══════════════════════════════════════════════════════════════════════════════
 // Orbit AI — Team/Company simulation, market effects, demo data
 // ══════════════════════════════════════════════════════════════════════════════
-// TODO: Remove "me" from personal view team members — the follower spheres
-//       shown in personal view are handled in a separate file (likely orbit3d.js
-//       or mywork-renderer.js via loadFollowingData). Needs separate fix there.
+// NOTE: 개인 뷰에는 팀원/팔로잉 구체를 그리지 않는다(기획). orbit3d-data-load.js 의
+//       loadData() 가 loadTeamWorldData/loadFollowingData 를 호출하지 않고,
+//       loadTeamWorldData() 는 호출되더라도 본인(userId)을 목록에서 제외한다.
 // ─── 팀 시뮬레이션 모드 ───────────────────────────────────────────────────────
 // 핵심 레이아웃 원칙:
 //   🌟 중심 (0,0,0)   = 팀 목표 (가장 크게)
