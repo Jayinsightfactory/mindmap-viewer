@@ -32,6 +32,30 @@ const env    = require('./config/environment');
 const memMgr = require('./services/memory-manager');
 
 // ─── 전역 미처리 Promise 거부 안전망 (Node.js v24+ 크래시 방지) ────────────────
+// [임시 프로파일러 2026-11-06] 기동 힙 피크 성격 규명(garbage vs live) — 볼륨 파일 기록(로그 레이트리밋 회피). 측정 후 제거.
+(() => {
+  const _fs = require('fs'); const _path = require('path'); const _NL = String.fromCharCode(10);
+  const _dir = (process.env.DATA_DIR && _fs.existsSync(process.env.DATA_DIR)) ? process.env.DATA_DIR : (_fs.existsSync('/app/data') ? '/app/data' : '/tmp');
+  const _F = _path.join(_dir, 'boot-prof.log');
+  const _t0 = Date.now(); const _mb = b => Math.round(b/1048576); let _gcDone = false;
+  const _log = s => { try { _fs.appendFileSync(_F, s + _NL); } catch {} };
+  try { _fs.writeFileSync(_F, '=== boot-prof ' + new Date().toISOString() + ' gc=' + (typeof global.gc==='function') + ' ===' + _NL); } catch {}
+  const _iv = setInterval(() => {
+    try {
+      const m = process.memoryUsage();
+      const t = Math.round((Date.now()-_t0)/1000);
+      let line = 't='+t+'s stage='+(global._bootStage||'?')+' heapUsed='+_mb(m.heapUsed)+' rss='+_mb(m.rss)+' ext='+_mb(m.external)+' ab='+_mb(m.arrayBuffers);
+      if (!_gcDone && m.heapUsed > 1000*1048576 && typeof global.gc === 'function') {
+        _gcDone = true; const before = _mb(m.heapUsed); global.gc();
+        const after = _mb(process.memoryUsage().heapUsed);
+        line += ' | FORCED_GC before=' + before + ' after=' + after + ' reclaimed=' + (before-after);
+      }
+      _log(line);
+      if (Date.now()-_t0 > 4*60*1000) { _log('=== done ==='); clearInterval(_iv); }
+    } catch {}
+  }, 2000);
+  if (_iv.unref) _iv.unref();
+})();
 process.on('unhandledRejection', (reason, promise) => {
   logger.warn('미처리 Promise 거부 (무시됨): %s', reason?.message || reason);
 });
@@ -9474,6 +9498,7 @@ console.log('[API] /api/v1/* → /api/* alias registered');
 
 // ─── 서버 시작 (PG auth 복원 후 listen) ────────────────────────────────────
 async function startServer() {
+  global._bootStage='startServer';
   // Railway 환경에서는 heavy 백그라운드 엔진 기본 비활성화 (OOM → Bad Gateway 방지)
   // 개별 엔진을 살리려면 Railway 환경변수에서 해당 값을 '0'으로 설정하면 됩니다.
   // 데이터/토큰에는 영향 없음 — 스케줄러/크롤러만 해당.
@@ -9544,6 +9569,7 @@ async function startServer() {
   if (global._analyticsInitPromise) await global._analyticsInitPromise;
   // Railway 재배포 후 SQLite가 비어있으면 PG에서 사용자/토큰 복원
   if (process.env.DATABASE_URL) {
+  global._bootStage='authInitFromPg';
     await authInitFromPg().catch(e => console.warn('[startup] auth PG 복원 실패:', e.message));
     // 미소비 데몬 명령 PG → 메모리 복원 (재배포 후 PC 명령 유지)
     try {
@@ -9801,6 +9827,7 @@ async function startServer() {
   // ─────────────────────────────────────────────────────────────────────────────
 
   server.listen(PORT, async () => {
+  global._bootStage='listen';
   const stats = await Promise.resolve(getStats());
   logger.info(`Orbit AI v2.0.0 — http://localhost:${PORT}`, {
     events: stats?.eventCount ?? '?',
