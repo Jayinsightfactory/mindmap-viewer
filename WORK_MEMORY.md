@@ -2422,3 +2422,9 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 - 조치안(쓰기 작업이라 사장님 승인 필요): ① claim-token 으로 송준호 이름의 새 토큰 발급 + 원격 `config` 로 PC 설정 반영(재시작 불필요) ② 11/02 이후 Luke 로 쌓인 이 PC 분 이전 여부는 별도 결정 ③ 재발 방지 = /api/hook 이 X-Device-Id 없어도 data.hostname 으로 pc_links 적용(서버 패치).
 - 원격 exec 결과 회수 함정: 결과는 daemon.update(command_executed) 앞 200자 + pg-commands-inspect?includeConsumed=1 의 result_json 으로만 옴. 30분 주기 Guardian watchdog 이 먼저 가져가면 결과 보고 없음(첫 배치 유실). 집계 시 같은 시각에 서버가 보내는 capture-config 가 ack 를 가로챌 수 있음.
 - 부수 발견: 김원영(wonyoung)·박성수(DESKTOP-HGNEA1S) PC 가 오늘 daemon.perf.issue powershell_flood(PowerShell 창 4~6개, 'keyboard-watcher execSync 의심') 보고 → 깜빡임 미완 가능성, 별도 조사 필요.
+
+## 2026-11-06 송준호 PC(DESKTOP-4OM3URA) 토큰 교체 실행
+- 사용자 승인("열쇠 교체") 후: 새 토큰(orbit_+48hex) → POST /api/daemon/claim-token(userId MN1C0DB109B4BDEFE4) 200 → /api/auth/verify로 송준호 확인 → 원격 command action=config {token} → 15초 내 `command_executed: config: token`.
+- 검증: 교체 후 6분 내 이 PC 이벤트 전부 userName=송준호(Luke 0건). 데몬 재시작 불필요(재시작 안 함). daemon.crash 1건은 09:15 이전 기록(교체와 무관).
+- 미해결: 교체 전 Luke 귀속 과거 데이터(11/02~) 이전 미실행(별도 승인 필요), 이전 토큰 값은 모름(롤백 불가 — Luke 토큰은 서버에 그대로 유효), 키보드 이벤트는 사용 대기(미확인), 서버측 pc_links hostname 폴백 패치 미실행.
+- 스크립트: scratchpad/swap-token.js (토큰 미출력).
