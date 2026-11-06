@@ -132,10 +132,15 @@ function createPgOps(getPool, deserializeEvent) {
   async function getEventsByUser(userId, limit = 3000) {
     // LIMIT 필수 — 무제한 스캔 시 OOM 크래시 (Bad Gateway 근본 원인)
     // 최근 N건만 역순으로 가져온 뒤 시간순 정렬
+    // [메모리] imageBase64(스크린샷 base64)는 그래프·분석에 불필요 — DB에서 제거 후 로드.
+    // getAllEvents가 screen.capture/analyzed를 제외하는 것과 같은 OOM 가드. 최근 3000건에 base64가
+    // 섞이면 pg가 한 틱에 ~1GB를 동기 파싱해 기동 힙 피크(실측 ~1.2GB)를 유발. 행·순서·건수는 그대로, 이미지 바이트만 제거.
     const { rows } = await getPool().query(
-      `SELECT * FROM events
-       WHERE user_id = $1 OR data_json->>'userId' = $1
-       ORDER BY timestamp DESC LIMIT $2`, [userId, Math.min(limit, 5000)]
+      `SELECT id, type, source, session_id, user_id, channel_id, parent_event_id, timestamp,
+              (data_json - 'imageBase64') AS data_json, metadata_json
+         FROM events
+        WHERE user_id = $1 OR data_json->>'userId' = $1
+        ORDER BY timestamp DESC LIMIT $2`, [userId, Math.min(limit, 5000)]
     );
     return rows.map(deserializeEvent).reverse();
   }
