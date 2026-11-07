@@ -2414,3 +2414,10 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 - 테스트: tests/unit/work-action-noise.test.js 7건 신규, 전체 jest 247 통과.
 - 한계: PC 필터는 -38% 뿐(남은 건 실제 클릭·창 이벤트). 서버 저장 행수 자체는 여전히 직원 활발 사용 시 분당 ~70건/PC → 서버 기여분은 그래프 보호로 막음. 행수 추가 절감은 배치를 1행으로 묶는 저장 포맷 변경이 필요(소비자 미구현 시점이 적기) — 결정 대기.
 - 반복 방지(줄바꿈): db-pg.js 는 CRLF/LF 혼재 파일 — Git Bash sed -i·편집 도구가 전체를 통일해 1938줄 diff 발생 → 원본 블롭 바이트를 latin1 로 읽어 문자열 치환 후 저장. 줄바꿈 판정은 `git ls-files --eol`(Git Bash grep -c $'\r$' 는 신뢰 불가).
+
+## 2026-11-07 강명훈 PC 빈 화면 감지 구멍 수리
+검색어: 강명훈 L0C2IOT 빈화면 파이썬 INSTALL_FAILED capture-blank
+- 데몬은 정상, 캡처 대부분 3179b 빈 화면(10/22경부터 다수). 파이썬 없음·자동설치 결과보고 0회.
+- capture-health: 6시간 넘은 설치중 → INSTALL_FAILED (ff26f51, 라이브 확인).
+- 감시 nenova-watchdog capture-blank 항목 추가(파워셸 캡처 절반 이상 10KB 미만). 첫 판정에서 L0C2IOT 7/8 검출.
+- 원격 exec(점검+설치 로그 py-install.log) 대기열 등록, PC 켜지면 실행. 결과 미확인.
