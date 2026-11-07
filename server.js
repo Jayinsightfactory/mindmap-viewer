@@ -1523,6 +1523,7 @@ app.get('/api/admin/capture-health', async (req, res) => {
         if (sz) h.sizeB = parseInt(sz[1]);
         if (/python 없음 감지/.test(detail)) h.pending = true;
       }
+      if (/python 없음 감지/.test(detail)) h.firstPendingAt = r.timestamp; // 최신순이라 마지막 대입=가장 오래된 감지
       // 최근 창 내 어디서든 pil 캡처 성공이 있었으면 Python OK
       if (/via pil/.test(detail)) h.pilOk = true;
     }
@@ -1530,6 +1531,8 @@ app.get('/api/admin/capture-health', async (req, res) => {
       let verdict, note;
       if (h.pilOk) { verdict = 'OK'; note = 'Python+PIL 정상'; }
       else if (h.method === 'powershell' && (h.sizeB || 0) >= 30000) { verdict = 'OK_PS'; note = 'Python 없이 PowerShell 폴백(실화면)'; }
+      // 11/07: 설치 결과 보고가 끝내 안 오면 '진행중'이 영원히 남아 실패가 정상처럼 보였음 → 6시간 넘으면 실패로 표시
+      else if (h.pending && Date.now() - Date.parse(h.firstPendingAt || h.lastAt) > 6 * 3600e3) { verdict = 'INSTALL_FAILED'; note = 'Python 자동설치 6시간 넘게 미완료 → 설치 실패(원격 점검 필요)'; }
       else if (h.pending) { verdict = 'INSTALLING'; note = 'Python 없음 → 자동설치 진행중'; }
       else if (h.method === 'powershell' && (h.sizeB || 0) < 10000) { verdict = 'BLACK'; note = '검은화면 위험(작은 PS캡처, Python 필요)'; }
       else { verdict = 'UNKNOWN'; note = '판정 불가'; }
@@ -1539,6 +1542,7 @@ app.get('/api/admin/capture-health', async (req, res) => {
       ok: pcs.filter(p => p.verdict === 'OK').length,
       okPs: pcs.filter(p => p.verdict === 'OK_PS').length,
       installing: pcs.filter(p => p.verdict === 'INSTALLING').length,
+      installFailed: pcs.filter(p => p.verdict === 'INSTALL_FAILED').length,
       black: pcs.filter(p => p.verdict === 'BLACK').length };
     res.json({ hours, summary, pcs });
   } catch (e) {
