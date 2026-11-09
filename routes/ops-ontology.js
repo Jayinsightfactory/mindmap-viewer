@@ -9,6 +9,7 @@
 
 const express = require('express');
 const { enrichHandoff } = require('../src/flow-handoff'); // 핸드오프 엔진 (Action 관계 보강)
+const waDigest = require('../src/work-action-digest'); // nenova.exe 행동순서 → 화면·단계·결과 요약
 const { syncKakaoToOntology } = require('../src/kakao-ontology-sync'); // 카톡 구글시트 → 온톨로지 연결
 const _fetchKakaoSheetData = require('./process-mining')._fetchKakaoSheetData; // 시트 리더 재사용(재구현 금지)
 
@@ -63,6 +64,7 @@ const SRC_OF = {
   'mouse.chunk': 'mouse', 'clipboard.change': 'clip', 'file.change': 'file',
   'excel.activity': 'excel', 'purchase.order.detected': 'order', 'order.detected': 'order',
   'phone.call.detected': 'call',
+  'work.action': 'uia', // [2026-11-09] nenova.exe 버튼/칸 단위 행동순서(win-action-spy) — 같은 시간창 Action 에 단계·결과로 합침
 };
 const PROMOTE_TYPES = Object.keys(SRC_OF);
 // 거래처명이 실릴 만한 짧은 문맥만 추출(원문 전체·키보드 입력값은 싣지 않음).
@@ -110,6 +112,11 @@ async function promote(pool, hours, opts = {}) {
   const evs = rows.map(r => {
     let d = {};
     try { d = typeof r.data_json === 'string' ? JSON.parse(r.data_json) : (r.data_json || {}); } catch {}
+    if (r.type === 'work.action') {
+      // 행동순서 원본엔 app/창제목이 없다(전부 nenova.exe 안의 컨트롤). 앱은 nenova 로 고정해 같은 창의 캡처·키보드와 붙인다.
+      return { eid: r.id, u: r.user_id, t: new Date(r.timestamp).getTime(), src: 'uia', app: 'nenova(앱)', win: '', inp: '', clk: 0, va: '', vs: '', auto: false, ctx: '',
+        wa: { t: d.t, ev: d.ev || '', role: d.role || '', name: d.name || '' } };
+    }
     return {
       eid: r.id, u: r.user_id, t: new Date(r.timestamp).getTime(), src: SRC_OF[r.type] || 'etc',
       // 구버전 데몬은 top-level app 없이 appContext.currentApp에만 앱명을 실음 — 폴백 없으면 전부 '기타입력'으로 뭉개짐
@@ -125,11 +132,18 @@ async function promote(pool, hours, opts = {}) {
   const GAP = 120000;
   const actions = [];
   for (const u of Object.keys(byU)) {
-    let cur = null;
+    let cur = null, tab = '';
     for (const e of byU[u]) {
+      // nenova 안에서 화면(탭/폼)이 바뀌면 다른 업무 단위 — 주문 등록과 견적서 관리가 한 Action 으로 뭉개지지 않게
+      const sc = e.wa && e.wa.role === 'r60' ? waDigest.screenOf(e.wa) : ''; // 탭 전환만 경계(팝업 폼은 같은 업무)
+      if (sc && cur && tab && sc !== tab && cur.evs.some(x => x.wa)) { actions.push(cur); cur = null; }
+      if (sc) tab = sc;
       // vision(screen.analyzed)의 app은 Claude가 화면에서 추론한 표기라 데몬 앱명과 항상 어긋남 —
       // 같은 사람·같은 시간창이면 앱명 불일치여도 같은 동작의 증거로 흡수(아니면 activity가 영원히 별도 액션으로 유실됨)
-      const attach = cur && (e.t - cur.end) <= GAP && (cur.app === e.app || e.src === 'vision');
+      // nenova 행동순서는 앱 무관 흡수: 직원은 엑셀 물량표를 보며 nenova 에 입력하므로(강현우 실측) 둘을 한 업무로 본다.
+      // nenova 로 시작한 동작 뒤 30초 안의 다른 앱(카톡 제외) 증거도 같은 업무로 붙인다.
+      const nenovaCross = cur && cur.app === 'nenova(앱)' && e.app !== '카카오톡' && e.app !== '카카오워크' && (e.t - cur.end) <= 30000;
+      const attach = cur && (e.t - cur.end) <= GAP && (cur.app === e.app || e.src === 'vision' || (e.src === 'uia' && cur.app !== '카카오톡' && cur.app !== '카카오워크') || nenovaCross);
       if (attach) { cur.end = e.t; cur.evs.push(e); }
       else { if (cur) actions.push(cur); cur = { u, app: e.app, start: e.t, end: e.t, evs: [e] }; }
     }
@@ -147,9 +161,11 @@ async function promote(pool, hours, opts = {}) {
     const typed = a.evs.reduce((s, e) => s + (e.inp ? e.inp.length : 0), 0);
     const clicks = a.evs.reduce((s, e) => s + (e.clk || 0), 0);
     const auto = a.evs.some(e => e.auto);
+    const was = a.evs.filter(e => e.wa).map(e => e.wa);
+    const wd = was.length ? waDigest.digest(was) : null;
     const isKakao = a.app === '카카오톡' || a.app === '카카오워크';
     const room = isKakao && win ? win.slice(0, 60) : '';
-    const evIds = a.evs.map(e => e.eid).slice(0, 40);
+    const evIds = [...a.evs.filter(e => !e.wa), ...a.evs.filter(e => e.wa)].map(e => e.eid).slice(0, 40);
     const startSec = Math.floor(a.start / 1000);
     const actId = `act:${a.u}:${startSec}`;
     const tsIso = new Date(a.start).toISOString();
@@ -157,15 +173,20 @@ async function promote(pool, hours, opts = {}) {
     // 실측(2026-07-08): clipboard.change/order.detected만으로 구성된 액션은 애초에 app/windowTitle
     // 필드가 없어 windowTitle 폴백도 못 살림 — 그런데 order 소스가 있으면 "주문서 붙여넣기 처리"라는
     // 뚜렷한 업무 신호라 '기타입력'보다 훨씬 유용하게 명명 가능.
-    const appLabel = (a.app === '기타입력' && srcs.includes('order')) ? '주문처리(클립보드)' : a.app;
+    // nenova 에서 단계(버튼)가 있었으면 이 업무의 결과물은 nenova 전산 — 대표 앱을 nenova 로, 함께 쓴 앱은 apps 에
+    const apps = [...new Set(a.evs.filter(e => !e.wa).map(e => e.app).concat(wd ? ['nenova(앱)'] : []))].slice(0, 5);
+    const appLabel = (wd && (wd.steps.length || wd.saved)) ? 'nenova(앱)' : (a.app === '기타입력' && srcs.includes('order')) ? '주문처리(클립보드)' : a.app;
     // 거래처 매칭용 문맥(창제목·화면 칸값·엔티티·워크북) — flow-handoff 거래처키 커버리지용
     const ctx = [...new Set(a.evs.map(e => e.ctx).filter(Boolean))].join(' | ').slice(0, 400);
     const data = {
-      app: appLabel, room, activity: va.slice(0, 200), screen: vs.slice(0, 120), ctx,
+      app: appLabel, apps, room, activity: (va || (wd ? waDigest.sentence(wd) : '')).slice(0, 200), screen: (vs || (wd ? wd.screen : '')).slice(0, 120), ctx,
+      // nenova.exe 행동순서 요약(있을 때만): 단계·결과는 화면해독보다 정확한 1차 근거
+      ...(wd ? { uia: { screen: wd.screen, screens: wd.screens, steps: wd.steps, saved: wd.saved, confirmed: wd.confirmed, errors: wd.errors, fields: wd.fields, picks: wd.picks, n: wd.n } } : {}),
       sources: srcs, verified: c >= 0.67, confidence: c, typedChars: typed, clicks,
       durationSec: Math.round((a.end - a.start) / 1000), n: a.evs.length, auto,
       evidence: { events: evIds },
     };
+    if (opts.dryRun) { (opts.sample = opts.sample || []).push({ id: actId, user: a.u, ts: tsIso, ...data }); nAct++; prevAct = { u: a.u, isKakao, actId, endMs: a.end }; continue; }
     // Action 객체 upsert (unified_events, 멱등)
     await pool.query(
       `INSERT INTO unified_events (id, type, source, timestamp, user_id, workspace_id, data, metadata)
@@ -180,6 +201,8 @@ async function promote(pool, hours, opts = {}) {
     rels.push(['action_in_app', 'Action', actId, 'App', appLabel, c]);
     if (room) rels.push(['action_in_room', 'Action', actId, 'Room', room, c]);
     if (vs) rels.push(['screen_observed_action', 'Action', actId, 'VisionEvidence', vs.slice(0, 60), c]);
+    if (wd && wd.screen) rels.push(['action_on_screen', 'Action', actId, 'Screen', wd.screen.slice(0, 60), c]); // 화면별 업무량·절차 집계 키
+    if (wd && wd.saved) rels.push(['action_saved_record', 'Action', actId, 'Screen', wd.screen.slice(0, 60) || appLabel, c]); // ERP 저장 성공 = 전산 기록과 대조할 지점
     if (auto) rels.push(['automation_candidate_for_process', 'Action', actId, 'Process', (va || appLabel).slice(0, 40), c]);
     // talk_triggered_action: 같은 사용자에서 직전이 카톡 동작이고 현재가 업무앱(카톡 아님)이며 10분 이내면 대화→작업
     if (prevAct && prevAct.u === a.u && prevAct.isKakao && !isKakao && (a.start - prevAct.endMs) < 30 * 60 * 1000) {
@@ -197,7 +220,7 @@ async function promote(pool, hours, opts = {}) {
     }
     prevAct = { u: a.u, isKakao, actId, endMs: a.end };
   }
-  return { actions: nAct, relations: nRel, sourceEvents: rows.length, windowHours: hours || 24, since, until };
+  return { actions: nAct, relations: nRel, sourceEvents: rows.length, windowHours: hours || 24, since, until, ...(opts.dryRun ? { sample: opts.sample || [] } : {}) };
 }
 
 // ── 자동 cron: 주기적으로 최근 구간을 멱등 승격 (온톨로지 상시 최신) ──────────────
