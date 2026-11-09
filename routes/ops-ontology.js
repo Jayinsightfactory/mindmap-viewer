@@ -85,6 +85,26 @@ function custContext(d) {
   return out.join(' | ').slice(0, 300);
 }
 
+// 화면해독·nenova 단계 문장이 없을 때의 기본 문장(규칙). 창제목·엑셀 파일·카톡 방·붙여넣기 문맥만 쓴다(입력값 원문 X).
+// activitySource='rule' 로 표시해 AI 해독 문장과 구분한다.
+function ruleSentence(app, ctx, room, typed, clicks) {
+  const first = String(ctx || '').split(' | ').map(x => x.split('\n')[0].replace(/\s*[-–]\s*(Microsoft Excel|Excel|Google Chrome|Chrome|카카오톡|화훼 관리 프로그램[^|]*)$/i, '').trim()).find(x => x && x.length >= 2 && !/^(카카오톡|Excel|nenova|화훼 관리 프로그램)$/i.test(x)) || '';
+  const t = first.slice(0, 50);
+  const act = typed > 20 ? '입력' : clicks > 3 ? '조작' : '확인';
+  if (room) {
+    if (/개인|^\[/.test(room)) return '카톡 개인 대화';              // 개인 방은 이름을 싣지 않는다
+    if (/ - Chrome$|드라이브|톡클라우드/.test(room)) return '카톡 톡클라우드 파일 확인';
+    return `카톡 '${room.slice(0, 30)}' 방 대화 ${typed > 20 ? '입력' : '확인'}`;
+  }
+  if (app === '주문처리(클립보드)') return `주문 내용 붙여넣기${t ? ': ' + t.slice(0, 30) : ''}`;
+  if (!t) return '';
+  if (app === 'Excel' || /\.(xlsx?|csv)\b/i.test(t)) return `엑셀 '${t.replace(/\.(xlsx?|csv)\b/i, '').trim()}' ${act}`;
+  if (app === '카카오톡') return `카톡 '${t}' ${act}`;
+  if (app === '웹브라우저') return `웹 '${t}' ${act}`;
+  if (app === 'nenova(앱)') return `전산 '${t}' ${act}`;
+  return `${app === '기타입력' ? '' : app + ' '}'${t}' ${act}`.trim();
+}
+
 const conf = (n) => (n >= 3 ? 1.0 : n === 2 ? 0.67 : 0.34);
 // 실제 workspaces.id (T0b — 예전엔 온톨로지 테이블만 별도로 'nenova' 문자열을 썼으나,
 // 진짜 로그인/팀 시스템(workspace_members)의 tenant id는 이것. 2번째 회사가 들어오면
@@ -180,7 +200,8 @@ async function promote(pool, hours, opts = {}) {
     // 거래처 매칭용 문맥(창제목·화면 칸값·엔티티·워크북) — flow-handoff 거래처키 커버리지용
     const ctx = [...new Set(a.evs.map(e => e.ctx).filter(Boolean))].join(' | ').slice(0, 400);
     const data = {
-      app: appLabel, apps, room, activity: (va || (wd ? waDigest.sentence(wd) : '')).slice(0, 200), screen: (vs || (wd ? wd.screen : '')).slice(0, 120), ctx,
+      app: appLabel, apps, room, activity: (va || (wd ? waDigest.sentence(wd) : '') || ruleSentence(appLabel, ctx, room, typed, clicks)).slice(0, 200),
+      activitySource: va ? 'vision' : (wd && waDigest.sentence(wd)) ? 'uia' : ruleSentence(appLabel, ctx, room, typed, clicks) ? 'rule' : '', screen: (vs || (wd ? wd.screen : '')).slice(0, 120), ctx,
       // nenova.exe 행동순서 요약(있을 때만): 단계·결과는 화면해독보다 정확한 1차 근거
       ...(wd ? { uia: { screen: wd.screen, screens: wd.screens, steps: wd.steps, saved: wd.saved, confirmed: wd.confirmed, errors: wd.errors, fields: wd.fields, picks: wd.picks, n: wd.n } } : {}),
       sources: srcs, verified: c >= 0.67, confidence: c, typedChars: typed, clicks,
