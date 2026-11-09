@@ -303,7 +303,8 @@ async function findCaptures() {
 
 // [2026-09-28 업무 흐름 태깅] 사람별 업무 흐름 카탈로그(orbit_ops_report kind=workflow-catalog, 1시간 캐시).
 // 캡처마다 "그 사람의 어느 업무·몇 번째 단계"인지 고르게 해서, 행동 묘사가 아닌 업무 단위 근거를 쌓는다.
-let _wfCatalog = { at: 0, byUid: {} };
+let _wfCatalog = { at: 0, byUid: {}, byName: {} };
+let _uidName = { at: 0, map: {} }; // 한 사람이 여러 ID로 등록된 경우(중복가입) ID→이름 — 카탈로그를 이름으로도 찾게
 async function _refreshWfCatalog() {
   if (Date.now() - _wfCatalog.at < 60 * 60 * 1000) return;
   _wfCatalog.at = Date.now();
@@ -311,10 +312,23 @@ async function _refreshWfCatalog() {
     const r = await fetch(new URL('/api/flow/ops-report?kind=workflow-catalog', ORBIT_SERVER), { headers: { Authorization: 'Bearer ' + ORBIT_TOKEN } });
     const j = await r.json();
     if (j?.latest?.report?.byUid) _wfCatalog.byUid = j.latest.report.byUid;
+    if (j?.latest?.report?.byName) _wfCatalog.byName = j.latest.report.byName;
+  } catch {}
+}
+// ID→이름 지도(1시간 캐시). 활성 ID가 카탈로그에 없을 때 이름으로 같은 업무목록을 쓰기 위함(중복가입 ID 대응).
+async function _refreshUidName() {
+  if (Date.now() - _uidName.at < 60 * 60 * 1000) return;
+  _uidName.at = Date.now();
+  try {
+    const r = await fetch(new URL('/api/flow/people', ORBIT_SERVER), { headers: { Authorization: 'Bearer ' + ORBIT_TOKEN } });
+    const j = await r.json();
+    if (Array.isArray(j?.people)) { const m = {}; for (const p of j.people) if (p.userId && p.label) m[p.userId] = p.label; _uidName.map = m; }
   } catch {}
 }
 function _workflowBlock(userId) {
-  const c = userId && _wfCatalog.byUid[userId];
+  // 1순위 ID 직접, 2순위 이름(중복가입으로 ID가 달라도 같은 사람 업무목록을 쓴다)
+  let c = userId && _wfCatalog.byUid[userId];
+  if ((!c || !(c.workflows || []).length) && userId) { const nm = _uidName.map[userId]; if (nm && _wfCatalog.byName[nm]) c = _wfCatalog.byName[nm]; }
   if (!c || !(c.workflows || []).length) return '';
   const list = c.workflows.map((w, i) => `${i + 1}. ${w.name} (계기: ${w.trigger}) 단계: ${w.steps.map((s, k) => `${k + 1})${s}`).join(' ')}`).join('\n');
   return `\n[이 사용자의 알려진 업무 흐름] ${c.name}(${c.dept || ''})이 하는 업무 목록이다. 이 화면이 어느 업무의 몇 번째 단계인지 workflow 항목에 골라라. 회사 업무인데 어디에도 안 맞으면 name을 새 업무 이름으로 짓고 known=false. 개인 용무(쇼핑·검색·사적 대화 등)나 업무와 무관한 화면이면 workflow 는 null.\n${list}\n`;
@@ -600,7 +614,7 @@ function _emitOcrEvent(ctx, ocrText) {
 
 // ── 통합 분석 함수 (1회 재시도 포함) ─────────────────────────────────────────
 async function visionAnalyze(base64, ctx) {
-  await _refreshWfCatalog();
+  await _refreshWfCatalog(); await _refreshUidName();
   const analyze = USE_CLI ? visionCli : ANTHROPIC_KEY ? visionApi : null;
   if (!analyze) throw new Error('Claude CLI 또는 ANTHROPIC_API_KEY 필요');
 
