@@ -10,6 +10,7 @@
 const express = require('express');
 const { enrichHandoff } = require('../src/flow-handoff'); // 핸드오프 엔진 (Action 관계 보강)
 const waDigest = require('../src/work-action-digest'); // nenova.exe 행동순서 → 화면·단계·결과 요약
+const { linkErpChanges } = require('../src/erp-change-link'); // 저장 동작 ↔ 실제 전산 변경 대조
 const { syncKakaoToOntology } = require('../src/kakao-ontology-sync'); // 카톡 구글시트 → 온톨로지 연결
 const _fetchKakaoSheetData = require('./process-mining')._fetchKakaoSheetData; // 시트 리더 재사용(재구현 금지)
 
@@ -234,6 +235,8 @@ function startPromoteCron(getPool, intervalMin = 30, hours = 2) {
       const r = await promote(p, hours);
       const e = await enrichHandoff(p, hours);
       const k = await syncKakaoToOntology(p, _fetchKakaoSheetData).catch(err => ({ error: err.message, synced: 0 }));
+      const x = await linkErpChanges(p, hours).catch(err => ({ error: err.message, matched: 0, targets: 0 }));
+      console.log(`[ops-ontology] erp 대조: ${x.matched}/${x.targets} 저장 동작이 전산 변경과 일치${x.error ? ' (오류 ' + x.error + ')' : ''}`);
       console.log(`[ops-ontology] promote cron: ${r.actions} actions / ${r.relations} rels (${r.sourceEvents} ev, ${hours}h) + ${e.mentions} mentions / ${e.handoffs} handoffs / ${e.erp} erp + kakao ${k.synced || 0} events/${k.mentions || 0} mentions`);
     } catch (e) { console.warn('[ops-ontology] promote cron 실패:', e.message); }
   };
