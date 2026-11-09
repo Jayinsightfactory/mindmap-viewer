@@ -762,6 +762,11 @@ function _resolvePython() {
     for (const b of bases) {
       try { for (const d of fs.readdirSync(b)) if (/^Python3\d*$/i.test(d)) cands.push(path.join(b, d, 'python.exe')); } catch {}
     }
+    // python.org 새 설치관리자(3.14+)는 %LOCALAPPDATA%\Python\pythoncore-3.xx-64 에 깐다 — 2026-11-09 강명훈 PC
+    if (process.env.LOCALAPPDATA) {
+      const pm = path.join(process.env.LOCALAPPDATA, 'Python');
+      try { for (const d of fs.readdirSync(pm).sort().reverse()) if (/^pythoncore-3/i.test(d)) cands.push(path.join(pm, d, 'python.exe')); } catch {}
+    }
   } catch {}
   for (const c of cands) {
     try {
