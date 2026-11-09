@@ -15,6 +15,27 @@
  */
 
 const erp = require('./intelligence/adapters/erp-client');
+const { smartQwertyToHangul } = require('./hangul');
+
+// 키보드 입력(영문 자판 그대로 기록됨)을 한글로 바꿔, 같은 시각 전산 변경의 거래처·품목 이름이 실제로 쳐졌는지 본다.
+// 입력 원문은 저장하지 않는다 — 전산에 있는 이름 중 쳐진 것만 남긴다.
+const squash = (v) => String(v || '').toLowerCase().replace(/\s+/g, '');
+function nameTokens(name) {
+  // 괄호 속 메모(중매 번호·박스 표기)와 법인 표기는 빼고, 한글 2자↑·영문 4자↑ 단어만
+  const base = String(name || '').replace(/\(.*?\)|\[.*?\]/g, ' ').replace(/주식회사|㈜/g, ' ');
+  const ko = (base.match(/[가-힣]{2,}/g) || []).filter(t => t.length >= 2);
+  const en = (base.match(/[a-zA-Z]{4,}/g) || []).map(t => t.toLowerCase());
+  return [...new Set([...ko, ...en])];
+}
+// typed: 한글변환한 입력 문자열(공백 유지). 이름 전체가 쳐졌거나, 2자↑ 입력 단어가 이름 앞부분(검색어)이면 쳐진 것으로 본다.
+function typedHits(rows, typed) {
+  if (!typed) return { customers: [], items: [] };
+  const flat = squash(typed);
+  const words = [...new Set(String(typed).toLowerCase().split(/[\s\t]+/).filter(w => w.length >= 2 && !/^[\d#.,-]+$/.test(w)))];
+  const hit = (n) => nameTokens(n).some(t => { const k = squash(t); return flat.includes(k) || words.some(w => k.startsWith(w)); });
+  const uniq = (k) => [...new Set(rows.map(r => r[k]).filter(Boolean))];
+  return { customers: uniq('cust').filter(hit).slice(0, 5), items: uniq('prod').filter(hit).slice(0, 5) };
+}
 
 // nenova 계정 공식 명단(사장님 제공 11/09). Orbit 표시명 기준 — Orbit '아드리아나'=김지니(nenovaIC3), '사장님(owner)'=임재용.
 // 계정 대소문자가 DB 마다 달라(nenovaSS4/nenovass4) 비교는 소문자로.
@@ -108,19 +129,39 @@ async function linkErpChanges(pool, hours = 2, opts = {}) {
   const cands = targets.map(x => ({ user: x.user, rows: windowRows(x) }));
   const userMap = learnUserMap(cands, prior);
 
+  // 대상자들의 키보드 입력(시각별) — 한 번에 읽어 메모리에서 창별로 자른다
+  const kb = {};
+  try {
+    const { rows: ks } = await pool.query(
+      `SELECT user_id, timestamp, data_json->>'inputText' txt FROM events
+        WHERE type='keyboard.chunk' AND user_id = ANY($1) AND timestamp >= $2 AND timestamp <= $3 AND coalesce(data_json->>'inputText','') <> ''`,
+      [[...new Set(targets.map(x => x.user))], new Date(since - BEFORE_MS).toISOString(), new Date(until + AFTER_MS).toISOString()]);
+    for (const k of ks) (kb[k.user_id] = kb[k.user_id] || []).push({ t: Date.parse(k.timestamp), txt: k.txt });
+  } catch (e) { /* 키보드 없으면 시각·계정 대조만 */ }
+  const typedOf = (x) => {
+    const parts = (kb[x.user] || []).filter(k => k.t >= x.start - BEFORE_MS && k.t <= x.end + AFTER_MS).map(k => k.txt);
+    if (!parts.length) return '';
+    const raw = parts.join(' ');
+    let ko = ''; try { ko = smartQwertyToHangul(raw); } catch {}
+    return raw + ' ' + ko;
+  };
   const takenIds = new Set(Object.values(userMap));
   let matched = 0; const sample = [];
   for (const x of targets) {
     let rows = windowRows(x);
     const mapped = userMap[x.user];
     if (mapped) rows = rows.filter(r => r.changeId === mapped);
-    else {
-      // 계정 미확정: 창 안 변경이 한 계정뿐이고 그 계정이 다른 사람 것으로 확정되지 않았을 때만
-      const ids = new Set(rows.map(r => r.changeId));
-      if (ids.size !== 1 || takenIds.has([...ids][0])) rows = [];
+    const typed = typedOf(x);
+    if (!mapped) {
+      // 계정 미확정: 쳐 넣은 거래처·품목과 맞는 계정이 하나면 그 계정, 아니면 창 안 변경이 한 계정뿐일 때만
+      const ids = [...new Set(rows.map(r => r.changeId))].filter(id => !takenIds.has(id));
+      const byTyped = ids.filter(id => { const h = typedHits(rows.filter(r => r.changeId === id), typed); return h.customers.length || h.items.length; });
+      const pick = byTyped.length === 1 ? byTyped[0] : (ids.length === 1 && new Set(rows.map(r => r.changeId)).size === 1 ? ids[0] : null);
+      rows = pick ? rows.filter(r => r.changeId === pick) : [];
     }
+    const th = typedHits(rows, typed);
     const erpData = rows.length
-      ? { matched: true, changeId: rows[0].changeId, ...summarize(rows) }
+      ? { matched: true, changeId: rows[0].changeId, ...summarize(rows), typed: { checked: !!typed, customers: th.customers, items: th.items, confirmed: !!(th.customers.length || th.items.length) } }
       : { matched: false, reason: changes.some(r => r.kind === 'shipment') || /주문/.test(x.d.uia.screen || '') ? 'no_change' : 'not_covered' };
     if (rows.length) matched++;
     if (opts.dryRun) { sample.push({ id: x.a.id, user: x.user, screen: x.d.uia.screen, steps: x.d.uia.steps.slice(0, 8), saved: x.d.uia.saved, erp: erpData }); continue; }
@@ -148,4 +189,4 @@ async function linkErpChanges(pool, hours = 2, opts = {}) {
   return { targets: targets.length, matched, changes: changes.length, users: userMap, ...(opts.dryRun ? { sample } : {}) };
 }
 
-module.exports = { linkErpChanges, learnUserMap, summarize, fetchChanges, OFFICIAL_ERP_USER };
+module.exports = { linkErpChanges, learnUserMap, summarize, fetchChanges, OFFICIAL_ERP_USER, typedHits, nameTokens };
