@@ -17,7 +17,9 @@ const path = require('path');
 const os = require('os');
 const crypto = require('crypto');
 
-const EXT_OK = /\.(xlsx|xlsm|xls|csv|pdf|docx|doc|hwp|pptx|zip|html|htm)$/i;
+// xlsb·hwpx 추가: file-change-watcher._DOC_EXT 는 이미 둘을 감시하는데 여기서 'ext'로 버려 불일치였다(엑셀 바이너리·한글 신버전 누락).
+// txt 추가: 단, 비승인 파일은 아래 no-signal 게이트에서 업무 신호(WORK_RE/CYCLE_RE)가 있어야만 통과하므로 메모성 txt는 걸러진다.
+const EXT_OK = /\.(xlsx|xlsm|xlsb|xls|csv|pdf|docx|doc|hwp|hwpx|pptx|zip|html|htm|txt)$/i;
 // 승인된 업무 도구 파일명은 파일명 업무 신호가 없어도 허용한다.
 const APPROVED_BUSINESS_TOOLS = new Set([
   'generador_pedidos.zip',
@@ -26,8 +28,10 @@ const APPROVED_BUSINESS_TOOLS = new Set([
   'import_team_checklist_diario_2.html',
 ]);
 const MIN_BYTES = 1024, MAX_BYTES = 25 * 1024 * 1024;
-const CYCLE_RE = /(?:^|[^\d])\d{2}\s*[-_]\s*0?\d(?!\d)|(?:^|[^\dA-Za-z])\d{2}0?\d(?=차|_|\s|\.)|(?:^|[^\d])\d{2}\s*차(?!수)/; // 영문 뒤 숫자(무작위 ID 'G547')는 차수 아님
-const WORK_RE = /발주|입고|출고|분배|원가|운임|견적|명세|결의|송금|외화|정산|매출|재고|물량|취합|인보이스|invoice|proforma|packing|order|pedido|awb|phyto|불량|quality|claim|클레임|holex|farm|농장|수국|장미|카네이션|알스트로|출고내역|거래명세|세금계산|면장|통관|도착원가|freight|arrival/i;
+// 차수 표기: 기존 '38-2'/'3802'/'38차' 에 더해 '38주차'/'38W'/'제38차'/'2026-38-2'(연-주차-서브) 를 인정.
+const CYCLE_RE = /(?:^|[^\d])\d{2}\s*[-_]\s*0?\d(?!\d)|(?:^|[^\dA-Za-z])\d{2}0?\d(?=차|_|\s|\.)|(?:^|[^\d])\d{2}\s*차(?!수)|(?:^|[^\d])\d{1,2}\s*주\s*차|(?:^|[^\dA-Za-z])\d{2}\s*[Ww](?![A-Za-z])|제\s*\d{1,3}\s*차|(?:^|[^\d])20\d{2}\s*[-_]\s*\d{1,2}\s*[-_]\s*\d/; // 영문 뒤 숫자(무작위 ID 'G547')는 차수 아님
+// 업무 신호(한/영/스페인어). 스페인어 거래처(가브리엘 등) 파일명 대응: factura/cotización/remesa/remision/guia/pedido/envio…
+const WORK_RE = /발주|입고|출고|분배|원가|운임|견적|명세|결의|송금|외화|정산|매출|재고|물량|취합|인보이스|invoice|proforma|packing|list|order|pedido|awb|phyto|불량|quality|claim|클레임|holex|farm|농장|수국|장미|카네이션|알스트로|출고내역|거래명세|세금계산|면장|통관|도착원가|freight|arrival|shipment|factura|cotizaci[oó]n|cotizacion|remesa|remisi[oó]n|remision|gu[ií]a|envio|env[ií]o|hub\b/i;
 const PERSONAL_RE = /계약|contrato|contract|이력서|resume|cv\b|급여|연봉|월급|개인|사진|photo|가족|병원|진단|처방|보험|여권|passport|주민|신분증|통장|카드명세|카드내역|대출|연말정산|세금신고|KakaoTalk_\d|screenshot|스크린샷|캡처|capture|메모\b|note\b|일기|편지/i;
 const JUNK_RE = /^[a-z]{6,}(\.\w+)?$|^[A-Za-z0-9]{12,}\.\w+$|^new\s|^제목 없음|^무제|^untitled/i; // aaaaaa… / 무작위 ID(FL68KFM75D8G547) / 새 파일
 
@@ -35,7 +39,21 @@ let _cfg = null, _cfgAt = 0, _serverUrl = null, _token = null;
 const _seenSha = new Map();   // sha → at (7일 보관)
 const _lastAt = new Map();    // fullPath → 마지막 업로드 시도 시각(디바운스)
 let _timers = new Map();      // fullPath → setTimeout (저장 연타 흡수)
-let _stats = { considered: 0, uploaded: 0, skippedPersonal: 0, skippedNoSignal: 0, skippedDup: 0, failed: 0, lastError: '', lastBackfill: null }; // heartbeat로 서버에 보고(PC별 원격 진단)
+// heartbeat로 서버에 보고(PC별 원격 진단). 기존 필드명 유지 + 사유별 세분화 추가.
+// 이전엔 considered 만 세고 ext/temp/junk/크기초과는 어떤 버킷에도 안 들어가 "considered 큰데 uploaded 0"의 원인을 서버에서 볼 수 없었다.
+let _stats = {
+  considered: 0, uploaded: 0, skippedPersonal: 0, skippedNoSignal: 0, skippedDup: 0, failed: 0, lastError: '', lastBackfill: null,
+  skippedExt: 0, skippedTemp: 0, skippedJunk: 0, skippedTooSmall: 0, skippedTooBig: 0, server507: 0, serverRetry: 0,
+};
+// 사유별 최근 파일명 표본(각 20개). 개인(personal)은 파일명 대신 건수만 — 프라이버시.
+const SAMPLE_MAX = 20;
+const _samples = {}; // reason → [name,...]
+function _sample(reason, name) {
+  if (reason === 'personal' || !name) return; // 개인 파일명은 서버로 보내지 않는다
+  const a = _samples[reason] || (_samples[reason] = []);
+  if (a[a.length - 1] === name) return;
+  a.push(name); if (a.length > SAMPLE_MAX) a.shift();
+}
 const _retry = new Map();     // fullPath → { tries, evt } — 잠긴 파일·네트워크 실패는 5분 뒤 최대 3회 재시도
 const RETRY_MS = 5 * 60 * 1000, RETRY_MAX = 3;
 const BACKFILL_MARK = path.join(os.homedir(), '.orbit', 'drive-backfill-done.json'); // 기존 파일 일괄 업로드 1회 완료 표식
@@ -69,11 +87,16 @@ function decide(evt) {
   const isApprovedTool = APPROVED_BUSINESS_TOOLS.has(name.toLowerCase());
   if (!isApprovedTool && !EXT_OK.test(name)) return 'ext';
   if (name.startsWith('~$') || name.startsWith('.') || /\.tmp$/i.test(name)) return 'temp';
-  if (!isApprovedTool && JUNK_RE.test(name)) return 'junk';
   if (PERSONAL_RE.test(name)) return 'personal';
   if (isApprovedTool) return 'ok';
-  if (!CYCLE_RE.test(name) && !WORK_RE.test(name)) return 'no-signal';
-  return 'ok';
+  // 업무 신호는 파일명뿐 아니라 '상위 폴더 경로'에서도 인정한다(예: ...\45차 발주\sheet1.xlsx — 파일명엔 신호 없지만 폴더엔 있음).
+  // 개인 폴더 오탐 방지: 폴더 경로에 개인 신호가 있으면 폴더 신호를 쓰지 않는다.
+  const dirPath = String(evt.fullPath || '').slice(0, -name.length);
+  const dirSignal = dirPath && !PERSONAL_RE.test(dirPath) && (CYCLE_RE.test(dirPath) || WORK_RE.test(dirPath));
+  if (CYCLE_RE.test(name) || WORK_RE.test(name) || dirSignal) return 'ok'; // 업무 신호가 있으면 junk 판정보다 우선
+  // 신호가 없을 때만 junk(무작위 ID·무제·aaaaaa) 를 가려낸다. 과거엔 junk 를 먼저 봐서 remesa/factura/invoice 같은 소문자 단어 업무 파일이 junk 로 버려졌다.
+  if (!isApprovedTool && JUNK_RE.test(name)) return 'junk';
+  return 'no-signal';
 }
 
 function onFileChange(evt) {
@@ -82,20 +105,28 @@ function onFileChange(evt) {
     if (evt.eventType !== 'change' && evt.eventType !== 'rename') return;
     _stats.considered++;
     const why = decide(evt);
-    if (why === 'personal') { _stats.skippedPersonal++; return; }
-    if (why !== 'ok') { if (why === 'no-signal') _stats.skippedNoSignal++; return; }
+    if (why !== 'ok') {
+      if (why === 'personal') _stats.skippedPersonal++;
+      else if (why === 'no-signal') { _stats.skippedNoSignal++; _sample('no-signal', evt.filename); }
+      else if (why === 'ext') { _stats.skippedExt++; _sample('ext', evt.filename); }
+      else if (why === 'temp') { _stats.skippedTemp++; }
+      else if (why === 'junk') { _stats.skippedJunk++; _sample('junk', evt.filename); }
+      return;
+    }
     // 저장 연타(엑셀 자동저장·복사 중) 흡수: 마지막 변경 후 8초 조용하면 올린다. 이후 같은 파일은 90초 디바운스.
     const prev = _timers.get(evt.fullPath); if (prev) clearTimeout(prev);
     _timers.set(evt.fullPath, setTimeout(() => { _timers.delete(evt.fullPath); _upload(evt).catch(() => {}); }, 8000));
   } catch {}
 }
 
-const _queueRetry = (evt, tries, why) => { if (tries >= RETRY_MAX) { _stats.failed++; console.warn(`[work-file-uploader] 포기(${why}) ${evt.filename}`); return; } _retry.set(evt.fullPath, { tries: tries + 1, evt }); };
+const _queueRetry = (evt, tries, why) => { if (tries >= RETRY_MAX) { _stats.failed++; _stats.lastError = '포기: ' + why; _sample('failed', evt.filename); console.warn(`[work-file-uploader] 포기(${why}) ${evt.filename}`); return; } _retry.set(evt.fullPath, { tries: tries + 1, evt }); };
 async function _upload(evt, tries = 0) {
   const cfg = await _config(); if (!cfg || !cfg.enabled) return;
   const last = _lastAt.get(evt.fullPath) || 0; if (tries === 0 && Date.now() - last < 90 * 1000) return;
   let st; try { st = fs.statSync(evt.fullPath); } catch { return; } // 삭제/이동됨
-  if (!st.isFile() || st.size < MIN_BYTES || st.size > MAX_BYTES) return;
+  if (!st.isFile()) return;
+  if (st.size < MIN_BYTES) { if (tries === 0) { _stats.skippedTooSmall++; _sample('too-small', evt.filename); } return; }
+  if (st.size > MAX_BYTES) { if (tries === 0) { _stats.skippedTooBig++; _sample('too-big', evt.filename); } return; } // 서버 FILE_MAX 25MB 동일 — 유지
   let buf; try { buf = fs.readFileSync(evt.fullPath); } catch { return _queueRetry(evt, tries, 'locked'); } // 엑셀이 잠근 중 → 5분 뒤 재시도
   const sha = crypto.createHash('sha256').update(buf).digest('hex');
   if (_seenSha.has(sha)) { _stats.skippedDup++; return; }
@@ -113,17 +144,17 @@ async function _upload(evt, tries = 0) {
     const r = await fetch(`${cfg.url}/api/work/drive-ingest`, { method: 'POST', headers: { Authorization: 'Bearer ' + cfg.token }, body: form, signal: AbortSignal.timeout(60000) });
     const j = await r.json().catch(() => ({}));
     if (r.ok && j.success) {
-      _seenSha.set(sha, Date.now()); _stats.uploaded++;
+      _seenSha.set(sha, Date.now()); _stats.uploaded++; _sample('uploaded', evt.filename);
       const c = j.classification || {};
       console.log(`[work-file-uploader] ${j.duplicate ? '중복' : '업로드'} ${evt.filename} → ${c.cycle || '-'} / ${c.stage || '-'}${c.sensitive ? ' 🔒' : ''}`);
-    } else if (r.status >= 500 || r.status === 429) { _queueRetry(evt, tries, 'server ' + r.status); }
-    else { _stats.failed++; _stats.lastError = `${r.status} ${j.error || ''}`.trim(); console.warn(`[work-file-uploader] 실패 ${r.status} ${evt.filename}: ${j.error || ''}`); } // 4xx는 재시도해도 같음
+    } else if (r.status >= 500 || r.status === 429) { if (r.status === 507) { _stats.server507++; _stats.lastError = '507 업무드라이브 저장공간 부족(서버)'; _sample('server-507', evt.filename); } _stats.serverRetry++; _queueRetry(evt, tries, 'server ' + r.status); }
+    else { _stats.failed++; _stats.lastError = `${r.status} ${j.error || ''}`.trim(); _sample('failed', evt.filename); console.warn(`[work-file-uploader] 실패 ${r.status} ${evt.filename}: ${j.error || ''}`); } // 4xx는 재시도해도 같음
   } catch (e) { _stats.lastError = 'network: ' + e.message; _queueRetry(evt, tries, 'network'); }
   // sha 캐시 7일 정리
   const cut = Date.now() - 7 * 86400e3; for (const [k, at] of _seenSha) if (at < cut) _seenSha.delete(k);
 }
 
-function getStats() { return { ..._stats, enabled: !!(_cfg && _cfg.enabled), cfgUser: _cfg ? (_cfg.userName || '') : '', cfgReason: _cfg ? (_cfg.reason || '') : 'not-fetched', retryQueue: _retry.size }; }
+function getStats() { return { ..._stats, enabled: !!(_cfg && _cfg.enabled), cfgUser: _cfg ? (_cfg.userName || '') : '', cfgReason: _cfg ? (_cfg.reason || '') : 'not-fetched', retryQueue: _retry.size, samples: _samples }; } // samples: 사유별 최근 파일명(개인 제외) — 서버에서 바로 누락 원인 확인
 
 // 기존 파일 일괄 업로드(backfill) — 서버 명령 'drive-backfill' 로 1회 실행. 감시 폴더 3곳을 하위 depth 단계까지 훑어
 // 같은 게이트(decide)를 통과하는 파일만, 최근 maxAgeDays 내 수정본만, 초당 1건 간격으로 올린다(서버·PC 부하 방지).
