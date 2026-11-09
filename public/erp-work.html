@@ -40,7 +40,7 @@ async function load(days) {
   const rec = (j.recent || []).filter((x) => !who || x.name === who);
   m.innerHTML = `
   <h1>전산 실제 처리</h1>
-  <p class="lede">직원이 전산(nenova)에서 저장·확정한 동작을, 같은 시각 실제 전산 주문·출고 변경 기록과 맞춘 결과입니다. 최근 ${j.days}일 · ${esc(String(j.generatedAt).slice(0, 16).replace('T', ' '))} 기준(UTC).</p>
+  <p class="lede">직원이 전산(nenova)에서 저장·확정한 동작을, 같은 시각 실제 전산 주문·출고·입고 기록과 맞춘 결과입니다. 최근 ${j.days}일 · ${esc(String(j.generatedAt).slice(0, 16).replace('T', ' '))} 기준(UTC).</p>
   <div class="tools"><label>기간 <select id="d">${[1, 3, 7, 14].map((d) => `<option value="${d}" ${d === j.days ? 'selected' : ''}>${d}일</option>`).join('')}</select></label>
   <label>직원 <select id="w"><option value="">전체</option>${P.map((p) => `<option ${p.name === who ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}</select></label></div>
   <div class="cards">
@@ -61,11 +61,11 @@ async function load(days) {
   <div class="wrap"><table><thead><tr><th>시각(KST)</th><th>직원</th><th>화면 · 단계</th><th>전산 결과</th><th>거래처 · 품목</th><th>직접 입력</th></tr></thead><tbody>
   ${rec.slice(0, 120).map((x) => `<tr><td class="sub">${esc(x.at)}</td><td>${esc(x.name)}</td>
    <td><b>${esc(x.screen || '-')}</b><div class="sub">${esc(x.steps.join(' → '))}${x.sec ? ' · ' + mmss(x.sec) : ''}${x.apps.length > 1 ? ' · ' + esc(x.apps.join('+')) : ''}</div></td>
-   <td>${x.matched ? `<span class="ok">일치</span> <span class="sub">${esc(x.kinds.map((k) => (k === 'order' ? '주문' : '출고')).join('·'))} ${x.rows}건 ${esc(x.weeks.join(','))}</span>` : x.reason === 'no_change' ? '<span class="warn">변경 없음</span>' : '<span class="sub">대조 대상 아님</span>'}</td>
+   <td>${x.matched ? `<span class="ok">일치</span> <span class="sub">${esc(x.kinds.map((k) => ({ order: '주문', shipment: '출고', warehouse: '입고' }[k] || k)).join('·'))} ${x.rows}건 ${esc(x.weeks.join(','))}</span>` : x.reason === 'no_change' ? '<span class="warn">변경 없음</span>' : '<span class="sub">대조 대상 아님</span>'}</td>
    <td>${x.customers.map((c) => `<span class="chip">${esc(c)}</span>`).join('')}<div class="sub">${esc(x.items.join(' / '))}</div></td>
    <td>${x.typed && x.typed.confirmed ? '<span class="ok">확인</span>' : x.typed ? '<span class="sub">입력은 있음</span>' : '<span class="sub">-</span>'}</td></tr>`).join('') || '<tr><td colspan="6" class="sub">내역 없음</td></tr>'}
   </tbody></table></div>
-  <p class="sub">대조 방식: 저장 동작 앞 30초~뒤 60초 안의 전산 변경 중 그 직원 계정(nenova 로그인 ID)이 바꾼 것. 직접 입력 확인은 같은 시각 키보드 입력(한글 변환)에 그 거래처·품목 이름이 있는지로 판단하며, 입력 원문은 저장하지 않습니다. 입고·견적 화면 저장은 아직 대조 대상이 아닙니다.</p>`;
+  <p class="sub">대조 방식: 저장 동작 앞 30초~뒤 60초 안의 전산 변경 중 그 직원 계정(nenova 로그인 ID)이 바꾼 것. 직접 입력 확인은 같은 시각 키보드 입력(한글 변환)에 그 거래처·품목 이름이 있는지로 판단하며, 입력 원문은 저장하지 않습니다. 견적 화면 저장은 아직 대조 대상이 아닙니다(견적 기록에 작성자가 남지 않음). 입고는 업로드(등록) 건만 대조합니다.</p>`;
   document.getElementById('d').onchange = (e) => load(+e.target.value);
   document.getElementById('w').onchange = (e) => { who = e.target.value; load(j.days); };
 }
