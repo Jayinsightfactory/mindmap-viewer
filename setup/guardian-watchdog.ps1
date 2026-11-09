@@ -68,7 +68,12 @@ function Guardian-EnsureStartDaemon {
   try { $loggedOn = [bool](Get-CimInstance Win32_ComputerSystem -EA Stop).UserName } catch {}
   if ($loggedOn) {
     schtasks /run /tn OrbitDaemon 2>$null | Out-Null
-    if ($LASTEXITCODE -eq 0) { Log-Wd 'start-daemon via OrbitDaemon task (user session)'; return $true }
+    if ($LASTEXITCODE -eq 0) {
+      Start-Sleep 20  # 작업이 실제로 start-daemon 을 띄웠는지 확인, 안 떴으면 아래 기존 방식으로
+      $up = Get-WmiObject Win32_Process -Filter "Name='powershell.exe'" -ErrorAction SilentlyContinue | Where-Object { $_.ProcessId -ne $me -and $_.CommandLine -like '*start-daemon.ps1*' }
+      if ($up) { Log-Wd 'start-daemon via OrbitDaemon task (user session)'; return $true }
+      Log-Wd 'OrbitDaemon task did not start daemon — fallback'
+    }
   }
   Start-Process powershell.exe -ArgumentList @(
     '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass',
