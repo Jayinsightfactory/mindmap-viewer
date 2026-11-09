@@ -16,6 +16,15 @@
 
 const erp = require('./intelligence/adapters/erp-client');
 
+// nenova 계정 공식 명단(사장님 제공 11/09). Orbit 표시명 기준 — Orbit '아드리아나'=김지니(nenovaIC3), '사장님(owner)'=임재용.
+// 계정 대소문자가 DB 마다 달라(nenovaSS4/nenovass4) 비교는 소문자로.
+const OFFICIAL_ERP_USER = {
+  '김원영': 'nenova1', '강현우': 'nenovass1', '김도준': 'nenovass4', '설연주': 'nenovass2', '임재용': 'nenovass3', '사장님(owner)': 'nenovass3',
+  '강명훈': 'nenovams2', '김선희': 'nenovams1', '김원빈': 'nenovaic4', '김지니': 'nenovaic3', '아드리아나': 'nenovaic3', '손하윤': 'nenovaic1',
+  '박성수': 'nenovasd7', '송준호': 'nenovasd2', '정재훈': 'nenovasd1', '조현욱': 'nenovasd3',
+};
+const lc = (v) => String(v || '').toLowerCase();
+
 const SAVE_STEP = /^(저장|확정|확정취소|신규|수정|삭제|적용|등록|업로드|분배)$/;
 const BEFORE_MS = 30 * 1000, AFTER_MS = 60 * 1000;
 const kstMs = (s) => Date.parse(String(s).replace(' ', 'T') + '+09:00');
@@ -58,6 +67,7 @@ function learnUserMap(cands, prior = {}) {
   const map = { ...prior }, owner = {};
   for (const [u, id] of Object.entries(prior)) owner[id] = u;
   for (const [u, id, n] of best.sort((a, b) => b[2] - a[2])) {
+    if (prior[u]) continue; // 공식 명단·기존 확정은 학습으로 덮지 않음
     if (owner[id] && owner[id] !== u) continue; // 이미 다른 사람 계정
     if (map[u] && map[u] !== id) delete owner[map[u]];
     map[u] = id; owner[id] = u;
@@ -87,11 +97,14 @@ async function linkErpChanges(pool, hours = 2, opts = {}) {
   }).filter(x => x.saveLike);
   if (!targets.length) return { targets: 0, matched: 0, users: {} };
 
-  const changes = opts.changes || await fetchChanges(since - BEFORE_MS, until + AFTER_MS);
+  const changes = (opts.changes || await fetchChanges(since - BEFORE_MS, until + AFTER_MS)).map(r => ({ ...r, changeId: lc(r.changeId) }));
   const windowRows = (x) => changes.filter(r => r.t >= x.start - BEFORE_MS && r.t <= x.end + AFTER_MS);
 
   const { rows: priorRows } = await pool.query(`SELECT from_ref, to_ref FROM ops_relation WHERE rel_type='person_is_erp_user'`).catch(() => ({ rows: [] }));
-  const prior = Object.fromEntries(priorRows.map(r => [r.from_ref, r.to_ref]));
+  const prior = Object.fromEntries(priorRows.map(r => [r.from_ref, lc(r.to_ref)]));
+  // 공식 명단이 학습값보다 우선
+  const { rows: people } = await pool.query(`SELECT id, name FROM orbit_auth_users WHERE id = ANY($1)`, [[...new Set(targets.map(x => x.user))]]).catch(() => ({ rows: [] }));
+  for (const p of people) if (OFFICIAL_ERP_USER[p.name]) prior[p.id] = OFFICIAL_ERP_USER[p.name];
   const cands = targets.map(x => ({ user: x.user, rows: windowRows(x) }));
   const userMap = learnUserMap(cands, prior);
 
@@ -135,4 +148,4 @@ async function linkErpChanges(pool, hours = 2, opts = {}) {
   return { targets: targets.length, matched, changes: changes.length, users: userMap, ...(opts.dryRun ? { sample } : {}) };
 }
 
-module.exports = { linkErpChanges, learnUserMap, summarize, fetchChanges };
+module.exports = { linkErpChanges, learnUserMap, summarize, fetchChanges, OFFICIAL_ERP_USER };
