@@ -619,6 +619,46 @@ function createFlowMapRouter(deps = {}) {
   // [2026-09-18] 해독 품질 계기판 — "의미 있는 데이터가 계속 나오는가"를 사람별로 수치로 본다(관리자 전용).
   // 해독률(캡처 대비)·세부 채움률(품목/거래처/금액, 필드값, 표, 단계, 목적, 완료 동작)·메신저 비중·같은 화면 연속 비율.
   // 큐 가치 선별(server.js _visionItemValue)·프롬프트를 조정한 뒤 효과를 이 숫자로 확인한다. 썸네일은 SQL에서 안 끌어온다.
+  // [2026-11-09] 전산 실제 처리 — nenova.exe 저장 동작(data.uia)과 실제 전산 변경(data.erp) 대조 결과를 직원별로(관리자 전용).
+  // 사장님 /my-work '전산 실제 처리' 탭(public/erp-work.html)이 읽는다. 입력 원문은 없고, 전산에 있는 이름만.
+  router.get('/erp-work', async (req, res) => {
+    try {
+      const raw = (req.headers.authorization || '').replace(/^Bearer\s+/i, '').trim();
+      if (!raw) return res.status(401).json({ error: 'unauthorized' });
+      const okAdmin = require('../config/environment').isMasterToken(raw) || isAdminToken(raw) || (typeof deps.isAdminReq === 'function' && await deps.isAdminReq(req));
+      if (!okAdmin) return res.status(403).json({ error: 'admin only' });
+      const days = Math.min(14, Math.max(1, parseInt(req.query.days, 10) || 7));
+      const p = pool(); if (!p) return res.status(500).json({ error: 'db not available' });
+      const { rows } = await p.query(
+        `SELECT e.user_id, u.name, e.timestamp, e.data
+           FROM unified_events e LEFT JOIN orbit_auth_users u ON u.id = e.user_id
+          WHERE e.type='work.action' AND e.data ? 'erp' AND e.timestamp::timestamptz > NOW() - ($1 || ' days')::interval
+          ORDER BY e.timestamp DESC`, [String(days)]);
+      const kst = (t) => new Date(new Date(t).getTime() + 9 * 3600e3).toISOString();
+      const people = {}, recent = [];
+      for (const r of rows) {
+        const d = typeof r.data === 'string' ? JSON.parse(r.data) : r.data;
+        const nm = r.name || r.user_id, day = kst(r.timestamp).slice(0, 10);
+        const P = people[nm] = people[nm] || { name: nm, saves: 0, matched: 0, noChange: 0, typed: 0, typedChecked: 0, sec: 0, customers: {}, screens: {}, days: {} };
+        const D = P.days[day] = P.days[day] || { saves: 0, matched: 0 };
+        P.saves++; D.saves++;
+        const e = d.erp || {};
+        if (d.uia && d.uia.screen) P.screens[d.uia.screen] = (P.screens[d.uia.screen] || 0) + 1;
+        if (e.matched) {
+          P.matched++; D.matched++; P.sec += d.durationSec || 0;
+          for (const c of e.customers || []) P.customers[c] = (P.customers[c] || 0) + 1;
+          if (e.typed && e.typed.checked) P.typedChecked++;
+          if (e.typed && e.typed.confirmed) P.typed++;
+        } else if (e.reason === 'no_change') P.noChange++;
+        if (recent.length < 200) recent.push({ name: nm, at: kst(r.timestamp).slice(0, 16).replace('T', ' '), screen: d.uia?.screen || '', steps: (d.uia?.steps || []).slice(0, 6), sec: d.durationSec || 0, apps: d.apps || [], matched: !!e.matched, reason: e.reason || '', rows: e.rows || 0, kinds: e.kinds || [], weeks: e.weeks || [], customers: e.customers || [], items: (e.items || []).slice(0, 3), typed: e.typed ? { confirmed: !!e.typed.confirmed, customers: e.typed.customers || [], items: (e.typed.items || []).slice(0, 2) } : null });
+      }
+      const top = (o, k) => Object.entries(o).sort((a, b) => b[1] - a[1]).slice(0, k).map(([n, c]) => ({ n, c }));
+      const list = Object.values(people).map(P => ({ ...P, avgSec: P.matched ? Math.round(P.sec / P.matched) : 0, customers: top(P.customers, 6), screens: top(P.screens, 4) }))
+        .sort((a, b) => b.matched - a.matched);
+      res.json({ ok: true, days, generatedAt: new Date().toISOString(), people: list, recent });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
   router.get('/vision-quality', async (req, res) => {
     try {
       const raw = (req.headers.authorization || '').replace(/^Bearer\s+/i, '').trim();
