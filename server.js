@@ -7763,6 +7763,29 @@ async function _runDailyMaintenance(trigger = 'auto') {
       summary.steps.diagnostics_purge = { ok: true, deleted: rowCount };
     } catch (e) { summary.steps.diagnostics_purge = { ok: false, error: e.message }; }
 
+    // Step: orbit_auth_tokens 누수 정리 — 오래된 미사용 session 토큰 배치 삭제(2026-11-10, docs/TOKEN_BLOAT_CLEANUP_DESIGN.md).
+    //   삭제 조건: type='session' AND last_used_at IS NULL AND created_at < 30일 전.
+    //   안전성 실측(2026-11-10): 활성 데몬 11명의 live 토큰은 전부 0~1일 전 발급 → 30일 조건에 안 걸려 삭제 제외.
+    //   api 토큰·사용흔적 토큰·최근 30일 토큰 보존. 전체 full-scan 정렬(기존 keep CTE)을 없애 인덱스(created_at)만 사용 → 새벽 DB 부하 최소.
+    try {
+      let totalDeleted = 0;
+      const MAX_BATCHES = parseInt(process.env.TOKEN_CLEANUP_MAX_BATCHES || '10', 10); // 하루 최대 10*50k=500k(약 2주면 707만 소진)
+      for (let b = 0; b < MAX_BATCHES; b++) {
+        const { rowCount } = await pool.query(`
+          DELETE FROM orbit_auth_tokens
+          WHERE ctid IN (
+            SELECT ctid FROM orbit_auth_tokens
+            WHERE type = 'session' AND last_used_at IS NULL
+              AND created_at < NOW() - INTERVAL '30 days'
+            LIMIT 50000
+          )`);
+        totalDeleted += rowCount;
+        if (rowCount < 50000) break; // 더 지울 게 없음
+      }
+      summary.steps.auth_token_cleanup = { ok: true, deleted: totalDeleted };
+    } catch (e) { summary.steps.auth_token_cleanup = { ok: false, error: e.message }; }
+
+
     summary.endedAt = new Date().toISOString();
     summary.databaseAfter = await _getPgUsage(pool);
 
