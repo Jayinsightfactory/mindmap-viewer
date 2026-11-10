@@ -1048,7 +1048,8 @@ function _whereCtx(src) {
 }
 // 데몬이 /api/vision/spool에 올린 파일을 list→file→분석→screen.analyzed→delete 로 한 건씩 비운다.
 // 스풀은 app/windowTitle 메타를 실어오므로 라우터(핵심=Sonnet)가 정상 작동한다(로컬 모드와 차이).
-const SPOOL_BATCH_N = parseInt(process.env.VISION_SPOOL_BATCH) || 30;
+const _nightNow = () => { const h = new Date().getHours(); return h >= 19 || h < 8; };
+const SPOOL_BATCH_N = parseInt(process.env.VISION_SPOOL_BATCH) || (_nightNow() ? 80 : 30); // 밤엔 틱당 더 많이 비운다
 let _spoolBusy = false;
 function _spoolReq(method, pathQ, timeout) {
   return new Promise(resolve => {
