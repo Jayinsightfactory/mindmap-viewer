@@ -31,7 +31,7 @@ const WORK_RE = /발주|입고|출고|분배|원가|운임|견적|명세|결의|
 const PERSONAL_RE = /계약|contrato|contract|이력서|resume|cv\b|급여|연봉|월급|개인|사진|photo|가족|병원|진단|처방|보험|여권|passport|주민|신분증|통장|카드명세|카드내역|대출|연말정산|세금신고|KakaoTalk_\d|screenshot|스크린샷|캡처|capture|메모\b|note\b|일기|편지/i;
 const JUNK_RE = /^[a-z]{6,}(\.\w+)?$|^[A-Za-z0-9]{12,}\.\w+$|^new\s|^제목 없음|^무제|^untitled/i; // aaaaaa… / 무작위 ID(FL68KFM75D8G547) / 새 파일
 
-let _cfg = null, _cfgAt = 0, _serverUrl = null, _token = null;
+let _cfg = null, _cfgAt = 0, _cfgTtl = 10 * 60 * 1000, _serverUrl = null, _token = null;
 const _seenSha = new Map();   // sha → at (7일 보관)
 const _lastAt = new Map();    // fullPath → 마지막 업로드 시도 시각(디바운스)
 let _timers = new Map();      // fullPath → setTimeout (저장 연타 흡수)
@@ -42,6 +42,9 @@ const BACKFILL_MARK = path.join(os.homedir(), '.orbit', 'drive-backfill-done.jso
 
 function init({ serverUrl, token }) {
   _serverUrl = serverUrl; _token = token;
+  // 설정 받기가 한 번 실패하면 enabled:false 가 캐시에 굳어, 파일 이벤트·유출이력이 없는 PC는 다시 시도할 계기가 없었다(김원빈 PC 50분+ 꺼진 채 유지).
+  // 꺼진 상태면 1분마다 재조회(_config 가 TTL 로 스스로 간격 조절 — 실패 시 1분, 성공 시 10분).
+  setInterval(() => { if (!_cfg || !_cfg.enabled) _config().catch(() => {}); }, 60 * 1000).unref?.();
   setInterval(() => { for (const [fp, r] of _retry) { _retry.delete(fp); _upload(r.evt, r.tries).catch(() => {}); } }, RETRY_MS).unref?.();
   // 기존 파일 일괄 업로드는 PC당 1회 자동(서버에서 기능이 켜져 있을 때만). 완료 표식이 있으면 건너뛴다. 재실행은 서버 명령 drive-backfill.
   setTimeout(async () => {
@@ -53,12 +56,18 @@ function init({ serverUrl, token }) {
 
 async function _config() {
   if (!_serverUrl || !_token) return null;
-  if (_cfg && Date.now() - _cfgAt < 10 * 60 * 1000) return _cfg;
+  if (_cfg && Date.now() - _cfgAt < _cfgTtl) return _cfg;
   try {
     const r = await fetch(`${_serverUrl}/api/daemon/nenova-ingest-config`, { headers: { Authorization: 'Bearer ' + _token, 'X-Device-Id': os.hostname() }, signal: AbortSignal.timeout(8000) });
     const j = await r.json().catch(() => ({}));
     _cfg = j && j.enabled ? j : { enabled: false, reason: (j && j.reason) || ('http ' + r.status) };
-  } catch { _cfg = _cfg || { enabled: false }; }
+    _cfgTtl = 10 * 60 * 1000;
+  } catch (e) {
+    // 실패 원인을 heartbeat(cfgReason)로 보고 — 예전엔 빈 문자열이라 PC별 원인 구분이 불가능했다. 이전에 받은 정상 설정은 유지.
+    const why = 'fetch: ' + ((e && e.cause && (e.cause.code || e.cause.message)) || (e && e.name) || '') + ' ' + ((e && e.message) || '');
+    _cfg = (_cfg && _cfg.enabled) ? _cfg : { enabled: false, reason: why.trim().slice(0, 120) };
+    _cfgTtl = 60 * 1000; // 실패는 1분 뒤 재시도(성공 시 10분 캐시)
+  }
   _cfgAt = Date.now();
   return _cfg;
 }
