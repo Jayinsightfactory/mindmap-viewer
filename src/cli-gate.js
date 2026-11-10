@@ -31,7 +31,7 @@ const BOOST_LOG = path.join(ORBIT_DIR, 'decode-boost.log');
 
 const NEAR_EXPIRY_MS = Number(process.env.ORBIT_CLI_NEAR_EXPIRY_MS) || 15 * 60 * 1000; // 만료 15분 이내 = 안전구간
 const REFRESH_LOCK_STALE_MS = 60 * 1000; // 리프레시락 점유 60s 초과 = 죽은 프로세스로 보고 회수
-const MAX_PARALLEL = 3;
+const MAX_PARALLEL = 8; // 2026-11-10 밤 전용 해독 허용(사장님 PC 미사용 시간)
 
 function _log(msg) {
   try { fs.mkdirSync(ORBIT_DIR, { recursive: true }); fs.appendFileSync(BOOST_LOG, `${new Date().toISOString()} [cli-gate] ${msg}\n`); } catch {}
@@ -57,9 +57,13 @@ function detectAuthFailure(text) {
 }
 
 // 현재 허용 동시도. 미설정=1(직렬, 기존 동작과 동일). 강등 시 항상 1.
+// 밤(19~08시)엔 ORBIT_CLI_PARALLEL_NIGHT, 낮엔 ORBIT_CLI_PARALLEL. 둘 다 없으면 1(직렬).
+// 사장님 PC는 밤에 안 쓰므로 밤에 세게, 낮엔 사장님 Claude 작업과 안 부딪히게 약하게.
+function _isNightHour() { const h = new Date().getHours(); return h >= 19 || h < 8; }
 function parallelLimit() {
-  if (isDemoted()) return 1;
-  let n = parseInt(process.env.ORBIT_CLI_PARALLEL, 10);
+  if (isDemoted()) return 1; // 토큰 만료 임박 등 자격증명 이상이면 직렬
+  const env = _isNightHour() ? (process.env.ORBIT_CLI_PARALLEL_NIGHT || process.env.ORBIT_CLI_PARALLEL) : process.env.ORBIT_CLI_PARALLEL;
+  let n = parseInt(env, 10);
   if (!Number.isFinite(n) || n < 1) n = 1;
   if (n > MAX_PARALLEL) n = MAX_PARALLEL;
   return n;
