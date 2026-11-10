@@ -230,7 +230,13 @@ function generateAutoHotkey(template) {
         lines.push('Sleep, 2000');
         break;
       case 'ui_click':
-        lines.push('Click, 960, 540  ; TODO: 좌표 조정');
+        {
+          // Python 생성기와 동일: 화면 4분면 중심을 해상도 비율로 계산
+          const region = step.action.match(/:([LR][TB])$/)?.[1] || '';
+          const frac = { LT: [0.25, 0.25], RT: [0.75, 0.25], LB: [0.25, 0.75], RB: [0.75, 0.75] };
+          const [fx, fy] = frac[region] || [0.5, 0.5];
+          lines.push(`Click, % Round(A_ScreenWidth * ${fx}), Round(A_ScreenHeight * ${fy})  ; ${region || '중앙'} 영역 중심 — 더 정확한 위치가 필요하면 비율만 조정`);
+        }
         break;
       case 'keyboard_input':
         {
