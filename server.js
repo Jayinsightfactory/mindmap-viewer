@@ -3736,7 +3736,14 @@ app.post('/api/daemon/register', async (req, res) => {
     // 3) 매칭된 userId가 있으면 토큰 자동 발급
     if (matchedUserId) {
       try {
-        matchedToken = await issueApiTokenAsync(matchedUserId);
+        // [2026-11-10] 토큰 누수 차단: 재등록(401>10)마다 새 토큰을 찍어 PC당 22만 행 누적 → 최신 유효 토큰 재사용, 없을 때만 발급.
+        if (_pool?.query) {
+          try {
+            const r = await _pool.query(`SELECT token FROM orbit_auth_tokens WHERE user_id=$1 AND (expires_at IS NULL OR expires_at > NOW()) ORDER BY created_at DESC NULLS LAST LIMIT 1`, [matchedUserId]);
+            matchedToken = r.rows[0]?.token || null;
+          } catch {}
+        }
+        if (!matchedToken) matchedToken = await issueApiTokenAsync(matchedUserId);
         console.log(`[daemon/register] ${hostname} → auto-matched userId=${matchedUserId} token=${matchedToken?.slice(0,12)}...`);
       } catch (e) {
         console.warn(`[daemon/register] token issue failed for ${matchedUserId}:`, e.message);
