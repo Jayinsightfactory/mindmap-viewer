@@ -49,7 +49,8 @@ const lc = (v) => String(v || '').toLowerCase();
 const SAVE_STEP = /^(저장|확정|확정취소|신규|수정|삭제|적용|등록|업로드|분배)$/;
 // 전산 대조 원천(주문·출고·입고 이력)에 흔적이 남지 않는 화면: 품목 기준정보(Product 에 작성자·시각 컬럼 없음)·엑셀 내보내기(파일 저장).
 // 저장처럼 보여도 대조 불가 → 'no_change'(헛수고 오인)가 아니라 'not_covered' 로 분류한다.
-const NO_LOG_SCREEN = /^(엑셀 저장|품목관리|신규 제품 등록)$/;
+// 불량/검역 등록: exe 가 Estimate 음수행만 INSERT — Estimate 에는 작성자 컬럼이 없고 EstimateDtm 은 업무일자라 대조 불가(웹 원장 이력 WebSalesDefectDeductionHistory 는 웹 경유분만).
+const NO_LOG_SCREEN = /^(엑셀 저장|품목관리|신규 제품 등록|불량\/검역 등록)$/;
 const isNoLogScreen = (screen) => NO_LOG_SCREEN.test(String(screen || '').trim());
 // '신규'는 빈 입력창을 여는 버튼일 뿐 저장이 아니다 — 저장 확인 단계(저장·확정·수정·삭제·적용·등록·업로드·분배)나 saved>0 이 있어야 '저장했다'로 본다.
 const REAL_SAVE_STEP = /^(저장|확정|확정취소|수정|삭제|적용|등록|업로드|분배)$/;
