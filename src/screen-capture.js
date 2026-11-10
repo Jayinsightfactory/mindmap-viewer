@@ -574,7 +574,7 @@ async function uploadPendingToServer(limit = 20) {
   let count = 0;
   for (const f of files.slice(0, limit)) {
     const filepath = path.join(CAPTURE_DIR, f);
-    const parts = f.replace(/\.png$/i, '').split('-');
+    const parts = _parseCaptureName(f);
     const trigger = parts[2] || 'boot_recovery';
     const activityLevel = parts[3] || 'unknown';
     const ok = await _uploadCaptureToServer(filepath, trigger, {
@@ -602,6 +602,13 @@ async function uploadPendingToServer(limit = 20) {
 // 트리거·상태 기반 사전 선별(분석 전, 파일명만으로 공짜) — "필요없는 것부터 안 올린다".
 // 유휴/쿨다운 화면은 새 정보가 거의 없어 제외. 의도적 작업 트리거(클릭·타이핑·인쇄 등)는 유지.
 // 향후 학습 루프(앱×트리거×상태별 유용도)로 이 규칙을 데이터 기반으로 정교화(v2).
+// 캡처 파일명 screen-<ms>-<trigger>-<state>.png 파싱. 하이픈 든 트리거(fallback-appchange/-timer)가
+// split('-')에서 'fallback'+'appchange'로 쪼개져 스풀 선별에서 전량 누락되던 버그 방지(강명훈 PC 해독 11%).
+function _parseCaptureName(f) {
+  const base = f.replace(/\.png$/i, '');
+  const m = base.match(/^screen-(\d+)-(fallback-appchange|fallback-timer|[^-]+)-?(.*)$/);
+  return m ? ['screen', m[1], m[2], m[3]] : base.split('-');
+}
 const _SPOOL_KEEP_TRIGGERS = new Set(['mouse_click', 'click', 'ui_click', 'click_burst', 'keyboard_flush', 'keyboard_done', 'keyboard_input', 'key_burst', 'excel_formula', 'print', 'ctrl_print', 'file_write', 'tool_end', 'fallback-appchange']);
 function _spoolWorthUploading(trigger, stateLabel) {
   if (trigger === 'low_quality_click_burst') return false;              // 명시적 저품질
@@ -652,7 +659,7 @@ async function uploadPendingToSpool(limit = 30) { // [2026-09-14] 15→30: 3분�
   let count = 0, skipped = 0;
   for (const f of files.slice(0, limit)) {
     try {
-      const parts0 = f.replace(/\.png$/i, '').split('-');
+      const parts0 = _parseCaptureName(f);
       // 트리거·상태 사전 선별 — 필요없는 화면은 올리지 않고 처리완료로 표시(재스캔 방지)
       if (!_spoolWorthUploading(parts0[2] || '', parts0[3] || '')) { sentSet.add(f); skipped++; continue; }
       const filepath = path.join(CAPTURE_DIR, f);

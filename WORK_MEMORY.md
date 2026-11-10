@@ -2421,3 +2421,9 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 - capture-health: 6시간 넘은 설치중 → INSTALL_FAILED (ff26f51, 라이브 확인).
 - 감시 nenova-watchdog capture-blank 항목 추가(파워셸 캡처 절반 이상 10KB 미만). 첫 판정에서 L0C2IOT 7/8 검출.
 - 원격 exec(점검+설치 로그 py-install.log) 대기열 등록, PC 켜지면 실행. 결과 미확인.
+
+## 2026-11-10 [kmh-data-secure] 강명훈 PC 해독률 11% 원인 = 스풀 업로드 파일명 파싱 버그
+- 검색어: fallback-appchange, _spoolWorthUploading, uploadPendingToSpool, 해독률 11%
+- 원인: 캡처 파일명 `screen-<ms>-fallback-appchange-focused.png` 를 split('-') → 트리거 'fallback', 상태 'appchange' 로 오인 → `_spoolWorthUploading` false → 스풀 미업로드(처리완료 표시). 강명훈 11/09 캡처 325 중 fallback 144(44%) 해독 0. 전직원 fallback 비중은 1~6%라 그 PC만 두드러짐.
+- 수정: src/screen-capture.js `_parseCaptureName` 도입(2곳). 검증: 합성 파일명 5종 true/false 확인.
+- 반영 조건: 직원 PC는 코드 자동배포(code-sync)로 반영. 이후 fallback 캡처 비율만큼 해독 대상 증가 → 야간 워커 부하 소폭 증가.
