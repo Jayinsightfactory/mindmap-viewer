@@ -18,6 +18,15 @@ const os = require('os');
 
 const SCRIPTS_DIR = path.join(os.homedir(), '.orbit', 'automations');
 
+/**
+ * 단계에 저장된 입력 텍스트(step.text)를 꺼낸다.
+ * 학습 템플릿은 개인정보 보호를 위해 보통 입력 내용을 저장하지 않는다(signature 의 'app:type' 만 있음).
+ * 그래서 text 가 있을 때만 쓰고, 없으면 null → 생성기는 자리표시자 + 안내 주석을 넣는다.
+ */
+function getStepText(step) {
+  return typeof step.text === 'string' && step.text.length > 0 ? step.text.replace(/[\r\n]+/g, ' ') : null;
+}
+
 function ensureDir() {
   fs.mkdirSync(SCRIPTS_DIR, { recursive: true });
 }
@@ -63,8 +72,15 @@ function generatePython(template) {
         break;
 
       case 'keyboard_input':
-        lines.push(`    # TODO: 실제 입력 내용은 학습 데이터에서 추출`);
-        lines.push(`    pyautogui.typewrite('input_text', interval=0.05)`);
+        {
+          const txt = getStepText(step);
+          if (txt) {
+            lines.push(`    pyautogui.write(${JSON.stringify(txt)}, interval=0.05)  # 한글은 pyperclip + ctrl+v 권장`);
+          } else {
+            lines.push(`    # 입력 내용은 개인정보 보호로 학습 데이터에 저장되지 않음 — 아래 값을 직접 채울 것`);
+            lines.push(`    pyautogui.typewrite('input_text', interval=0.05)`);
+          }
+        }
         break;
 
       case 'clipboard':
@@ -195,7 +211,10 @@ function generateAutoHotkey(template) {
         lines.push('Click, 960, 540  ; TODO: 좌표 조정');
         break;
       case 'keyboard_input':
-        lines.push('SendInput, {Text}input  ; TODO: 실제 입력');
+        {
+          const txt = getStepText(step);
+          lines.push(txt ? `SendInput, {Text}${txt}` : 'SendInput, {Text}input  ; 입력 내용은 저장되지 않음 — 직접 채울 것');
+        }
         break;
       case 'clipboard':
         lines.push(step.action === 'copy' ? 'Send, ^c' : 'Send, ^v');
@@ -238,7 +257,7 @@ function generatePowerAutomate(template) {
         lines.push(`MouseAndKeyboard.SendMouseClick.Click ClickType: MouseAndKeyboard.MouseClickType.LeftClick X: 960 Y: 540`);
         break;
       case 'keyboard_input':
-        lines.push(`MouseAndKeyboard.SendKeys.FocusAndSendKeys TextToSend: $'''input''' DelayBetweenKeystrokes: 50`);
+        lines.push(`MouseAndKeyboard.SendKeys.FocusAndSendKeys TextToSend: $'''${getStepText(step) || 'input'}''' DelayBetweenKeystrokes: 50`);
         break;
       case 'clipboard':
         if (step.action === 'copy') {
