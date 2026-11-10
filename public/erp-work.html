@@ -18,7 +18,7 @@ td.n{text-align:right;font-variant-numeric:tabular-nums}tr:last-child td{border-
 .ok{color:var(--ok)}.warn{color:var(--warn)}.bad{color:var(--bad)}.sub{color:var(--sub);font-size:12px}
 .bar{height:6px;background:var(--chip);border-radius:3px;overflow:hidden;min-width:60px}.bar i{display:block;height:100%;background:var(--ok)}
 .tools{display:flex;gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap}select,button{font:inherit;padding:5px 10px;border:1px solid var(--line);border-radius:8px;background:var(--panel);color:var(--ink)}
-.wrap{overflow-x:auto}
+.wrap{overflow-x:auto}.wrap table{min-width:880px}th{white-space:nowrap}
 </style>
 </head>
 <body>
@@ -40,7 +40,7 @@ async function load(days) {
   const rec = (j.recent || []).filter((x) => !who || x.name === who);
   m.innerHTML = `
   <h1>전산 실제 처리</h1>
-  <p class="lede">직원이 전산(nenova)에서 저장·확정한 동작을, 같은 시각 실제 전산 주문·출고·입고 기록과 맞춘 결과입니다. 최근 ${j.days}일 · ${esc(String(j.generatedAt).slice(0, 16).replace('T', ' '))} 기준(UTC).</p>
+  <p class="lede">직원이 전산(nenova)에서 저장·확정한 동작을, 같은 시각 실제 전산 주문·출고·입고 기록과 맞춘 결과입니다. 최근 ${j.days}일 · ${esc(new Date(new Date(j.generatedAt).getTime() + 9 * 3600e3).toISOString().slice(0, 16).replace('T', ' '))} 기준.</p>
   <div class="tools"><label>기간 <select id="d">${[1, 3, 7, 14].map((d) => `<option value="${d}" ${d === j.days ? 'selected' : ''}>${d}일</option>`).join('')}</select></label>
   <label>직원 <select id="w"><option value="">전체</option>${P.map((p) => `<option ${p.name === who ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}</select></label></div>
   <div class="cards">
