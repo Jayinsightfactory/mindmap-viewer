@@ -36,3 +36,13 @@ describe('erp-change-link typedHits', () => {
     expect(typedHits([{ cust: 'A', prod: 'B' }], '')).toEqual({ customers: [], items: [] });
   });
 });
+
+describe('erp-change-link isNoLogScreen', () => {
+  const { isNoLogScreen } = require('../../src/erp-change-link');
+  test('품목 기준정보·엑셀 내보내기는 대조 원천 밖', () => {
+    for (const s of ['엑셀 저장', '품목관리', '신규 제품 등록']) expect(isNoLogScreen(s)).toBe(true);
+  });
+  test('주문·출고·입고 화면은 대조 대상 유지', () => {
+    for (const s of ['발주 관리', '입고 목록 업로드', '출고 관리', '', undefined]) expect(isNoLogScreen(s)).toBe(false);
+  });
+});
