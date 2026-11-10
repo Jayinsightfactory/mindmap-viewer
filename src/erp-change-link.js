@@ -47,6 +47,10 @@ const OFFICIAL_ERP_USER = {
 const lc = (v) => String(v || '').toLowerCase();
 
 const SAVE_STEP = /^(저장|확정|확정취소|신규|수정|삭제|적용|등록|업로드|분배)$/;
+// 전산 대조 원천(주문·출고·입고 이력)에 흔적이 남지 않는 화면: 품목 기준정보(Product 에 작성자·시각 컬럼 없음)·엑셀 내보내기(파일 저장).
+// 저장처럼 보여도 대조 불가 → 'no_change'(헛수고 오인)가 아니라 'not_covered' 로 분류한다.
+const NO_LOG_SCREEN = /^(엑셀 저장|품목관리|신규 제품 등록)$/;
+const isNoLogScreen = (screen) => NO_LOG_SCREEN.test(String(screen || '').trim());
 const BEFORE_MS = 30 * 1000, AFTER_MS = 60 * 1000;
 const kstMs = (s) => Date.parse(String(s).replace(' ', 'T') + '+09:00');
 const kstStr = (ms) => new Date(ms + 9 * 3600e3).toISOString().slice(0, 19).replace('T', ' ');
@@ -149,6 +153,7 @@ async function linkErpChanges(pool, hours = 2, opts = {}) {
   let matched = 0; const sample = [];
   for (const x of targets) {
     let rows = windowRows(x);
+    if (isNoLogScreen(x.d.uia.screen)) rows = []; // 이 화면의 저장은 대조 원천에 없으므로 우연한 시각 일치(타 화면 변경) 오매칭도 막는다
     const mapped = userMap[x.user];
     if (mapped) rows = rows.filter(r => r.changeId === mapped);
     const typed = typedOf(x);
@@ -162,7 +167,7 @@ async function linkErpChanges(pool, hours = 2, opts = {}) {
     const th = typedHits(rows, typed);
     const erpData = rows.length
       ? { matched: true, changeId: rows[0].changeId, ...summarize(rows), typed: { checked: !!typed, customers: th.customers, items: th.items, confirmed: !!(th.customers.length || th.items.length) } }
-      : { matched: false, reason: changes.some(r => r.kind === 'shipment') || /주문/.test(x.d.uia.screen || '') ? 'no_change' : 'not_covered' };
+      : { matched: false, reason: isNoLogScreen(x.d.uia.screen) ? 'not_covered' : changes.some(r => r.kind === 'shipment') || /주문/.test(x.d.uia.screen || '') ? 'no_change' : 'not_covered' };
     if (rows.length) matched++;
     if (opts.dryRun) { sample.push({ id: x.a.id, user: x.user, screen: x.d.uia.screen, steps: x.d.uia.steps.slice(0, 8), saved: x.d.uia.saved, erp: erpData }); continue; }
     await pool.query(`UPDATE unified_events SET data = jsonb_set(data::jsonb, '{erp}', $2::jsonb) WHERE id=$1`, [x.a.id, JSON.stringify(erpData)]);
@@ -189,4 +194,4 @@ async function linkErpChanges(pool, hours = 2, opts = {}) {
   return { targets: targets.length, matched, changes: changes.length, users: userMap, ...(opts.dryRun ? { sample } : {}) };
 }
 
-module.exports = { linkErpChanges, learnUserMap, summarize, fetchChanges, OFFICIAL_ERP_USER, typedHits, nameTokens };
+module.exports = { isNoLogScreen, linkErpChanges, learnUserMap, summarize, fetchChanges, OFFICIAL_ERP_USER, typedHits, nameTokens };
