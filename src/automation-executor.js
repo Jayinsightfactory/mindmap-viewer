@@ -66,9 +66,12 @@ function generatePython(template) {
 
       case 'ui_click':
         const region = step.action.match(/:([LR][TB])$/)?.[1] || '';
-        const coords = { LT: '400, 300', RT: '1200, 300', LB: '400, 700', RB: '1200, 700' };
-        lines.push(`    # TODO: 정확한 좌표는 스크린샷 분석 후 조정`);
-        lines.push(`    pyautogui.click(${coords[region] || '960, 540'})  # ${region || '중앙'}`);
+        // 화면 4분면 중심을 해상도 비율로 계산 — 해상도가 달라도 같은 영역을 누름
+        const frac = { LT: '0.25, 0.25', RT: '0.75, 0.25', LB: '0.25, 0.75', RB: '0.75, 0.75' };
+        const [fx, fy] = (frac[region] || '0.5, 0.5').split(', ');
+        lines.push(`    # 영역 중심 클릭(${region || '중앙'}) — 더 정확한 위치가 필요하면 아래 비율만 조정`);
+        lines.push(`    sw, sh = pyautogui.size()`);
+        lines.push(`    pyautogui.click(int(sw * ${fx}), int(sh * ${fy}))`);
         break;
 
       case 'keyboard_input':
