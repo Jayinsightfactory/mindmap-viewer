@@ -133,7 +133,15 @@ function generatePowerShell(template) {
     lines.push('# Excel COM 자동화');
     lines.push('$excel = New-Object -ComObject Excel.Application');
     lines.push('$excel.Visible = $true');
-    lines.push('$wb = $excel.Workbooks.Open("C:\\path\\to\\file.xlsx")  # TODO: 실제 파일 경로');
+    // 파일 경로: 템플릿에 있으면 그대로, 없으면 실행 인자(.\script.ps1 "파일.xlsx")로 받는다
+    const xlsxPath = template.filePath || template.xlsxPath;
+    if (xlsxPath) {
+      lines.push(`$xlsxPath = '${String(xlsxPath).replace(/'/g, "''")}'`);
+    } else {
+      lines.push('$xlsxPath = $args[0]  # 실행 시 엑셀 파일 경로를 첫 인자로 전달');
+      lines.push('if (-not $xlsxPath) { Write-Error "엑셀 파일 경로 인자가 필요합니다"; exit 1 }');
+    }
+    lines.push('$wb = $excel.Workbooks.Open($xlsxPath)');
     lines.push('$ws = $wb.Sheets(1)');
     lines.push('');
   }
