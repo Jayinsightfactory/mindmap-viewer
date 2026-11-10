@@ -173,16 +173,27 @@ function generatePowerShell(template) {
         break;
 
       case 'keyboard_input':
-        if (hasExcel) {
-          lines.push('# $ws.Range("A1").Value = "데이터"  # TODO: 실제 셀/데이터');
+        {
+          // 다른 생성기(Python/AHK)와 동일: 저장된 입력 텍스트가 있으면 실제 값으로, 없으면 안내 주석
+          const txt = getStepText(step);
+          if (hasExcel) {
+            if (txt) lines.push(`$ws.Range("A1").Value2 = '${txt.replace(/'/g, "''")}'  # 입력할 셀 주소(A1)는 필요 시 수정`);
+            else lines.push('# $ws.Range("A1").Value2 = "값"  # 입력 내용은 개인정보 보호로 저장되지 않음 — 셀 주소와 값을 직접 채울 것');
+          }
+          lines.push('Add-Type -AssemblyName System.Windows.Forms');
+          if (txt) {
+            // SendKeys 특수문자 이스케이프
+            const esc = txt.replace(/[{}+^%~()[\]]/g, c => `{${c}}`).replace(/'/g, "''");
+            lines.push(`[System.Windows.Forms.SendKeys]::SendWait('${esc}')`);
+          } else {
+            lines.push('# [System.Windows.Forms.SendKeys]::SendWait("text")  # 입력 내용은 저장되지 않음 — 직접 채울 것');
+          }
         }
-        lines.push('# Add-Type -AssemblyName System.Windows.Forms');
-        lines.push('# [System.Windows.Forms.SendKeys]::SendWait("text")');
         break;
 
       case 'ui_click':
         lines.push('# [System.Windows.Forms.Cursor]::Position = New-Object System.Drawing.Point(960, 540)');
-        lines.push('# TODO: 정확한 좌표는 학습 데이터에서');
+        lines.push('# 정확한 좌표는 학습 데이터/스크린샷에서 확인해 위 줄을 수정할 것');
         break;
 
       default:
