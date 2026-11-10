@@ -8,7 +8,7 @@
  *
  * 결과(Action.data.erp):
  *   matched=true  → changeId, rows, kinds, weeks, customers, items, changeTypes, columns
- *   matched=false → reason ('no_change': 저장했는데 전산 변경 없음 / 'not_covered': 대조 대상 아닌 화면)
+ *   matched=false → reason ('no_change': 저장했는데 전산 변경 없음 / 'no_save': 신규·조회만 하고 저장은 안 함 / 'not_covered': 대조 대상 아닌 화면)
  * 관계: action_updated_erp (Action → ErpOutcome 'erp:<kind>:<차수>:<거래처>'), person_is_erp_user (Person → ErpUser)
  *
  * 원천: nenovaweb /api/ops/erp-change-log (주문+출고, 시각 범위). 없으면 /api/orders/history(주문만) 페이지 폴백.
@@ -51,6 +51,9 @@ const SAVE_STEP = /^(저장|확정|확정취소|신규|수정|삭제|적용|등�
 // 저장처럼 보여도 대조 불가 → 'no_change'(헛수고 오인)가 아니라 'not_covered' 로 분류한다.
 const NO_LOG_SCREEN = /^(엑셀 저장|품목관리|신규 제품 등록)$/;
 const isNoLogScreen = (screen) => NO_LOG_SCREEN.test(String(screen || '').trim());
+// '신규'는 빈 입력창을 여는 버튼일 뿐 저장이 아니다 — 저장 확인 단계(저장·확정·수정·삭제·적용·등록·업로드·분배)나 saved>0 이 있어야 '저장했다'로 본다.
+const REAL_SAVE_STEP = /^(저장|확정|확정취소|수정|삭제|적용|등록|업로드|분배)$/;
+const hasRealSave = (uia) => ((uia && uia.saved) || 0) > 0 || ((uia && uia.steps) || []).some(s => REAL_SAVE_STEP.test(s));
 const BEFORE_MS = 30 * 1000, AFTER_MS = 60 * 1000;
 const kstMs = (s) => Date.parse(String(s).replace(' ', 'T') + '+09:00');
 const kstStr = (ms) => new Date(ms + 9 * 3600e3).toISOString().slice(0, 19).replace('T', ' ');
@@ -167,7 +170,7 @@ async function linkErpChanges(pool, hours = 2, opts = {}) {
     const th = typedHits(rows, typed);
     const erpData = rows.length
       ? { matched: true, changeId: rows[0].changeId, ...summarize(rows), typed: { checked: !!typed, customers: th.customers, items: th.items, confirmed: !!(th.customers.length || th.items.length) } }
-      : { matched: false, reason: isNoLogScreen(x.d.uia.screen) ? 'not_covered' : changes.some(r => r.kind === 'shipment') || /주문/.test(x.d.uia.screen || '') ? 'no_change' : 'not_covered' };
+      : { matched: false, reason: isNoLogScreen(x.d.uia.screen) ? 'not_covered' : !hasRealSave(x.d.uia) ? 'no_save' : changes.some(r => r.kind === 'shipment') || /주문/.test(x.d.uia.screen || '') ? 'no_change' : 'not_covered' };
     if (rows.length) matched++;
     if (opts.dryRun) { sample.push({ id: x.a.id, user: x.user, screen: x.d.uia.screen, steps: x.d.uia.steps.slice(0, 8), saved: x.d.uia.saved, erp: erpData }); continue; }
     await pool.query(`UPDATE unified_events SET data = jsonb_set(data::jsonb, '{erp}', $2::jsonb) WHERE id=$1`, [x.a.id, JSON.stringify(erpData)]);
@@ -194,4 +197,4 @@ async function linkErpChanges(pool, hours = 2, opts = {}) {
   return { targets: targets.length, matched, changes: changes.length, users: userMap, ...(opts.dryRun ? { sample } : {}) };
 }
 
-module.exports = { isNoLogScreen, linkErpChanges, learnUserMap, summarize, fetchChanges, OFFICIAL_ERP_USER, typedHits, nameTokens };
+module.exports = { isNoLogScreen, hasRealSave, linkErpChanges, learnUserMap, summarize, fetchChanges, OFFICIAL_ERP_USER, typedHits, nameTokens };
