@@ -8471,10 +8471,11 @@ app.use('/api/tracker', createTrackerOAuthRouter({
 // Tracker Files (파일 변경 감지)
 const syncScheduler = getSyncScheduler({
   getValidGoogleToken: () => {
-    // 구현 예시: DB에서 사용자의 Google Drive 토큰 조회
-    // const token = db.prepare('SELECT googleDriveToken FROM users_google_tokens WHERE userId = ?').get(userId);
-    // return token?.googleDriveToken;
-    return null;  // TODO: 실제 토큰 조회 로직 구현
+    // 의도적 비활성(null): 이 스케줄러는 사용자 없이(시스템 단위) 도는데, 파일·메시지 활동을
+    // 특정 사용자 Google Drive로 올리게 되므로 개인정보 게이트 결정 없이 켜지 않는다.
+    // 켜려면: ① 대상 사용자·동의 정책 확정 ② auth.getValidGoogleToken(userId)는 async 이므로
+    // sync-scheduler.js 쪽도 await 처리 필요. (현재는 로컬 저장만 수행)
+    return null;
   },
   getUserId: () => 'tracker-system',
   getDb: () => db,
@@ -8494,10 +8495,9 @@ app.use('/api/tracker', createTrackerFilesRouter({
 app.use('/api/tracker', createTrackerMessagesRouter({
   verifyToken,
   getValidGoogleTokenForService: (service) => {
-    // 구현 예시: DB에서 각 서비스별 토큰 조회
-    // const tokens = db.prepare('SELECT * FROM message_service_tokens WHERE userId = ?').get(userId);
-    // return tokens?.[service];
-    return null;  // TODO: 실제 토큰 조회 로직 구현
+    // 의도적 비활성(null): 서비스별 토큰 저장 테이블(message_service_tokens)이 아직 없고,
+    // routes/tracker-messages.js 도 이 콜백을 호출하지 않는다(미사용 주입). 연동 시 테이블부터 설계.
+    return null;
   },
 }));
 
