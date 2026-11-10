@@ -46,3 +46,15 @@ describe('erp-change-link isNoLogScreen', () => {
     for (const s of ['발주 관리', '입고 목록 업로드', '출고 관리', '', undefined]) expect(isNoLogScreen(s)).toBe(false);
   });
 });
+
+describe('erp-change-link hasRealSave', () => {
+  const { hasRealSave } = require('../../src/erp-change-link');
+  test('신규→조회만은 저장 아님(헛수고 오인 방지)', () => {
+    expect(hasRealSave({ saved: 0, steps: ['신규', '조회'] })).toBe(false);
+    expect(hasRealSave({ saved: 0, steps: ['신규', '조회', '신규', '조회'] })).toBe(false);
+  });
+  test('저장 단계나 saved>0 은 저장', () => {
+    expect(hasRealSave({ saved: 0, steps: ['신규', '저장'] })).toBe(true);
+    expect(hasRealSave({ saved: 1, steps: [] })).toBe(true);
+  });
+});
