@@ -585,7 +585,8 @@ function _touchToken(raw) {
         await _pgPool.query(`ALTER TABLE orbit_auth_tokens ADD COLUMN IF NOT EXISTS last_used_at TIMESTAMPTZ`);
         _touchColReady = true;
       }
-      await _pgPool.query(`UPDATE orbit_auth_tokens SET last_used_at = NOW() WHERE token = $1`, [raw]);
+      // 사용된 토큰은 만료를 90일 뒤로 연장 — 활성 토큰은 절대 만료되지 않게(누수 정리와 양립)
+      await _pgPool.query(`UPDATE orbit_auth_tokens SET last_used_at = NOW(), expires_at = NOW() + INTERVAL '90 days' WHERE token = $1`, [raw]);
     } catch {}
   })();
 }
@@ -760,7 +761,8 @@ async function _pgBackupToken(token, userId, expiresAt) {
       await _pgInit();
       await _pgPool.query(
         `INSERT INTO orbit_auth_tokens (token, user_id, expires_at) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`,
-        [token, userId, expiresAt || null]
+        // 2026-11-10 토큰 누수 수정: 만료 없는 무한 적체 방지 — 기본 90일(사용 시 연장됨). api 등 무만료 필요 시 호출부에서 명시.
+        [token, userId, expiresAt || new Date(Date.now() + 90 * 24 * 3600 * 1000).toISOString()]
       );
       return; // 성공
     } catch (e) {
