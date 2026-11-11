@@ -129,11 +129,16 @@ import time, os
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 
+TARGET = '${file.split('/').pop()}'
+
+def process_change(path):
+    """변경 감지 시 실행할 처리. 필요한 로직으로 교체하세요 (기본: 수정 시각 출력)."""
+    print(f"[{time.strftime('%H:%M:%S')}] Changed: {path} ({os.path.getsize(path)} bytes)")
+
 class Handler(FileSystemEventHandler):
     def on_modified(self, event):
-        if event.src_path.endswith('${file.split('/').pop()}'):
-            print(f"Changed: {event.src_path}")
-            # TODO: Add your processing logic here
+        if not event.is_directory and event.src_path.endswith(TARGET):
+            process_change(event.src_path)
 
 if __name__ == '__main__':
     observer = Observer()
