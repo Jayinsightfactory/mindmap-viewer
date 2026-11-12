@@ -84,3 +84,12 @@ describe('erp-change-link isWarehouseEditScreen', () => {
     expect(isWarehouseEditScreen(undefined)).toBe(false);
   });
 });
+
+describe('erp-change-link isEstimateEditScreen', () => {
+  const { isEstimateEditScreen } = require('../../src/erp-change-link');
+  test('견적서 관리 저장은 Estimate 에 작성자 컬럼이 없어 미대조 처리, 견적서 출력은 아님', () => {
+    expect(isEstimateEditScreen('견적서 관리')).toBe(true);
+    expect(isEstimateEditScreen('견적서 출력')).toBe(false);
+    expect(isEstimateEditScreen(undefined)).toBe(false);
+  });
+});
