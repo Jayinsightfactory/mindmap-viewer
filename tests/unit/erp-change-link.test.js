@@ -75,3 +75,12 @@ describe('erp-change-link hasRealSave', () => {
     expect(hasRealSave({ saved: 1, steps: [] })).toBe(true);
   });
 });
+
+describe('erp-change-link isWarehouseEditScreen', () => {
+  const { isWarehouseEditScreen } = require('../../src/erp-change-link');
+  test('입고 관리 화면은 수정 이력이 원천에 없어 미대조 처리, 업로드 화면은 아님', () => {
+    expect(isWarehouseEditScreen('입고 관리')).toBe(true);
+    expect(isWarehouseEditScreen('입고 목록 업로드')).toBe(false);
+    expect(isWarehouseEditScreen(undefined)).toBe(false);
+  });
+});
