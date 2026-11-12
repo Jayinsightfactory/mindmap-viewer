@@ -53,6 +53,8 @@ const SAVE_STEP = /^(저장|확정|확정취소|신규|수정|삭제|적용|등�
 const NO_LOG_SCREEN = /^(엑셀 저장|품목관리|신규 제품 등록|불량\/검역 등록)$/;
 const isNoLogScreen = (screen) => NO_LOG_SCREEN.test(String(screen || '').trim());
 // 인쇄·견적서 출력 화면: 출력은 데이터를 바꾸지 않는다(앞 단계 저장이 원천에 잡히면 그대로 matched). 못 찾았을 때만 헛수고(no_change)가 아니라 not_covered 로 분류.
+// 입고 원장삭제: 전산 대조 원천(WarehouseMaster 생성 시각만 기록)에 삭제 흔적이 없다 → 'no_change'(헛수고 오인)가 아니라 'not_covered'.
+const isLedgerDelete = (uia) => ((uia && uia.steps) || []).includes('원장삭제');
 const isPrintScreen = (screen) => /^(인쇄|견적서 출력)$/.test(String(screen || '').trim());
 // '신규'는 빈 입력창을 여는 버튼일 뿐 저장이 아니다 — 저장 확인 단계(저장·확정·수정·삭제·적용·등록·업로드·분배)나 saved>0 이 있어야 '저장했다'로 본다.
 const REAL_SAVE_STEP = /^(저장|확정|확정취소|수정|삭제|적용|등록|업로드|분배)$/;
@@ -173,7 +175,7 @@ async function linkErpChanges(pool, hours = 2, opts = {}) {
     const th = typedHits(rows, typed);
     const erpData = rows.length
       ? { matched: true, changeId: rows[0].changeId, ...summarize(rows), typed: { checked: !!typed, customers: th.customers, items: th.items, confirmed: !!(th.customers.length || th.items.length) } }
-      : { matched: false, reason: (isNoLogScreen(x.d.uia.screen) || isPrintScreen(x.d.uia.screen)) ? 'not_covered' : !hasRealSave(x.d.uia) ? 'no_save' : changes.some(r => r.kind === 'shipment') || /주문/.test(x.d.uia.screen || '') ? 'no_change' : 'not_covered' };
+      : { matched: false, reason: (isNoLogScreen(x.d.uia.screen) || isPrintScreen(x.d.uia.screen) || isLedgerDelete(x.d.uia)) ? 'not_covered' : !hasRealSave(x.d.uia) ? 'no_save' : changes.some(r => r.kind === 'shipment') || /주문/.test(x.d.uia.screen || '') ? 'no_change' : 'not_covered' };
     if (rows.length) matched++;
     if (opts.dryRun) { sample.push({ id: x.a.id, user: x.user, screen: x.d.uia.screen, steps: x.d.uia.steps.slice(0, 8), saved: x.d.uia.saved, erp: erpData }); continue; }
     await pool.query(`UPDATE unified_events SET data = jsonb_set(data::jsonb, '{erp}', $2::jsonb) WHERE id=$1`, [x.a.id, JSON.stringify(erpData)]);
@@ -200,4 +202,4 @@ async function linkErpChanges(pool, hours = 2, opts = {}) {
   return { targets: targets.length, matched, changes: changes.length, users: userMap, ...(opts.dryRun ? { sample } : {}) };
 }
 
-module.exports = { isNoLogScreen, isPrintScreen, hasRealSave, linkErpChanges, learnUserMap, summarize, fetchChanges, OFFICIAL_ERP_USER, typedHits, nameTokens };
+module.exports = { isNoLogScreen, isPrintScreen, isLedgerDelete, hasRealSave, linkErpChanges, learnUserMap, summarize, fetchChanges, OFFICIAL_ERP_USER, typedHits, nameTokens };
