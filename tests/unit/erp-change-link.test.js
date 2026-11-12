@@ -47,6 +47,14 @@ describe('erp-change-link isNoLogScreen', () => {
   });
 });
 
+describe('erp-change-link isPrintScreen', () => {
+  const { isPrintScreen } = require('../../src/erp-change-link');
+  test('인쇄·견적서 출력만 해당', () => {
+    for (const s of ['인쇄', '견적서 출력']) expect(isPrintScreen(s)).toBe(true);
+    for (const s of ['출고 관리', '', undefined]) expect(isPrintScreen(s)).toBe(false);
+  });
+});
+
 describe('erp-change-link hasRealSave', () => {
   const { hasRealSave } = require('../../src/erp-change-link');
   test('신규→조회만은 저장 아님(헛수고 오인 방지)', () => {
