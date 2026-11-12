@@ -55,6 +55,15 @@ describe('erp-change-link isPrintScreen', () => {
   });
 });
 
+describe('erp-change-link isLedgerDelete', () => {
+  const { isLedgerDelete } = require('../../src/erp-change-link');
+  test('원장삭제 단계가 있으면 해당', () => {
+    expect(isLedgerDelete({ steps: ['수정', '원장삭제', 'Cancel', '원장삭제'] })).toBe(true);
+    expect(isLedgerDelete({ steps: ['저장'] })).toBe(false);
+    expect(isLedgerDelete(undefined)).toBe(false);
+  });
+});
+
 describe('erp-change-link hasRealSave', () => {
   const { hasRealSave } = require('../../src/erp-change-link');
   test('신규→조회만은 저장 아님(헛수고 오인 방지)', () => {
