@@ -2435,3 +2435,7 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 ## 2026-11-13 업무드라이브 하위 폴더 저장
 - 직원 PC 4대 파일 27022개 중 색인 없는 22117개, 그중 19058개가 기존 일괄 탐색 깊이 밖. 기본 세 폴더에서 하위 변경을 Windows 파일 이벤트로 업로더에 연결. 개인·임시·개발 폴더 필터 유지. 기존 파일 일괄 전송 없음.
 검색어: recursive watch nested save 업무드라이브 하위폴더
+
+## 2026-11-13 업무파일 재시도 폭주 방지
+- 한 직원 PC 2604건 대기, 타임아웃 발생. 재시도는 PC별 한번에 1건만 처리하고 1.2초 간격. 중복 drain 및 같은 라운드 즉시 재시도 차단. 전체 업로드 미검증.
+검색어: drive retry drain backfill timeout
