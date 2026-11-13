@@ -1,5 +1,5 @@
 {
-  "version": "2026-11-13.1",
+  "version": "2026-11-13.2",
   "_comment": "개인정보 송신 전 차단 정책(사장님 결정 2026-09-29). 데몬이 GET /api/daemon/privacy-policy 로 1시간마다 받아 ~/.orbit/privacy-policy.json 에 캐시. 패턴은 대소문자 무시 정규식 문자열.",
   "messengerApps": [
     "^kakaotalk$",
@@ -115,25 +115,43 @@
   "_workRoomsNote": "2026-09-29 사장님 지시: 직원 카톡 창 제목 실데이터 기반 업무방(사내 그룹·거래처·공급처·창고·통관). ★v5부터 완전일치(정규화 후): 부분 키워드 금지 — 실제 창 제목 전체를 적을 것. 정규화=NFKC·소문자·공백·양끝 ●★*·꼬리(날짜·님의 메시지·말줄임·인원수) 제거. 개인방·직원 간 1:1 제외(1:1은 로컬 추출 경로).",
   "workMessengerUsers": {
     "MNMRVD11EDCCF6E7CE": [
-      "whatsapp"
+      "whatsapp",
+      "wechat",
+      "weixin",
+      "微信"
     ],
     "MNC78F666A0ADDE30E": [
-      "whatsapp"
+      "whatsapp",
+      "wechat",
+      "weixin",
+      "微信"
     ],
     "papi-chulo-pc": [
-      "whatsapp"
+      "whatsapp",
+      "wechat",
+      "weixin",
+      "微信"
     ],
     "MN1D726A373D679F9A": [
-      "whatsapp"
+      "whatsapp",
+      "wechat",
+      "weixin",
+      "微信"
     ],
     "MN8232D542A97C0862": [
-      "whatsapp"
+      "whatsapp",
+      "wechat",
+      "weixin",
+      "微信"
     ],
     "desktop-05vlrn1": [
-      "whatsapp"
+      "whatsapp",
+      "wechat",
+      "weixin",
+      "微信"
     ]
   },
-  "_workMessengerUsersNote": "{ \"<userId 또는 hostname>\": [\"wechat\"] } — 지정 PC에서 그 메신저 전체를 업무로 간주. 사장님 확정(2026-09-29): 비움 — 위챗은 localExtraction(B안)으로 처리. [2026-11-13 사장님 결정] 수입부 두 자리(계정 ID 와 PC 이름 둘 다 등록)는 WhatsApp 을 업무 메신저로 지정 — 거래처(농장·포워더·대행사) 대화의 화면·방 이름·문장을 받음. 위챗은 그대로 localExtraction.",
+  "_workMessengerUsersNote": "{ \"<userId 또는 hostname>\": [\"wechat\"] } — 지정 PC에서 그 메신저 전체를 업무로 간주. 사장님 확정(2026-09-29): 비움 — 위챗은 localExtraction(B안)으로 처리. [2026-11-13 사장님 결정] 수입부 두 자리(계정 ID 와 PC 이름 둘 다 등록)는 WhatsApp 을 업무 메신저로 지정 — 거래처(농장·포워더·대행사) 대화의 화면·방 이름·문장을 받음. 같은 날 추가 결정: 수입부 두 자리는 위챗(중국 거래처)도 업무 메신저로 지정. 그 밖의 자리 위챗은 그대로 localExtraction.",
   "localExtraction": {
     "enabled": true,
     "consentedUsers": [
