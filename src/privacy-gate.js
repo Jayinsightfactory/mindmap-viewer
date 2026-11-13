@@ -21,7 +21,7 @@ const PAUSE_FILE = path.join(ORBIT_DIR, 'personal-pause-until');
 
 const DEFAULT_POLICY = {
   version: 'builtin',
-  messengerApps: ['^kakaotalk$', '카카오톡', '^wechat$', '^weixin$', '微信', '^line$', '^telegram$', '^whatsapp$', '^discord$', '^nateon$', '네이트온', '^slack$'],
+  messengerApps: ['^kakaotalk$', '카카오톡', '^wechat$', '^weixin$', '微信', '^line$', '^telegram$', '^whatsapp(\\.root)?$', '^discord$', '^nateon$', '네이트온', '^slack$'],
   messengerTitlePatterns: ['^카카오톡$', '^kakaotalk$', '^wechat$', '^weixin$', '^微信$', '^line$', '^telegram$', '^whatsapp$'],
   workRooms: ['수입방', '현장방', '영업방', '현장 추가취소방', '수입불량방', '빌번호방', '네노바&선율방', '견적방', '스케줄방'],
   workMessengerUsers: {},

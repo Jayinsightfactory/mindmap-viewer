@@ -1,5 +1,5 @@
 {
-  "version": "2026-09-29.5",
+  "version": "2026-11-13.1",
   "_comment": "개인정보 송신 전 차단 정책(사장님 결정 2026-09-29). 데몬이 GET /api/daemon/privacy-policy 로 1시간마다 받아 ~/.orbit/privacy-policy.json 에 캐시. 패턴은 대소문자 무시 정규식 문자열.",
   "messengerApps": [
     "^kakaotalk$",
@@ -9,13 +9,13 @@
     "微信",
     "^line$",
     "^telegram$",
-    "^whatsapp$",
+    "^whatsapp(\\.root)?$",
     "^discord$",
     "^nateon$",
     "네이트온",
     "^slack$"
   ],
-  "_messengerAppsNote": "slack 을 회사 업무용으로만 쓰면 위 목록에서 \"^slack$\" 를 빼면 전체 수집(업무)으로 취급됨. kakaowork(카카오워크)는 회사 업무 메신저로 보고 목록에서 제외.",
+  "_messengerAppsNote": "slack 을 회사 업무용으로만 쓰면 위 목록에서 \"^slack$\" 를 빼면 전체 수집(업무)으로 취급됨. kakaowork(카카오워크)는 회사 업무 메신저로 보고 목록에서 제외. [2026-11-13] WhatsApp 데스크톱 앱은 프로그램 이름이 whatsapp.root 로 기록돼 ^whatsapp$ 에 안 걸렸음 → ^whatsapp(\\.root)?$ 로 고침.",
   "messengerTitlePatterns": [
     "^카카오톡$",
     "^kakaotalk$",
@@ -113,8 +113,27 @@
     "주님방"
   ],
   "_workRoomsNote": "2026-09-29 사장님 지시: 직원 카톡 창 제목 실데이터 기반 업무방(사내 그룹·거래처·공급처·창고·통관). ★v5부터 완전일치(정규화 후): 부분 키워드 금지 — 실제 창 제목 전체를 적을 것. 정규화=NFKC·소문자·공백·양끝 ●★*·꼬리(날짜·님의 메시지·말줄임·인원수) 제거. 개인방·직원 간 1:1 제외(1:1은 로컬 추출 경로).",
-  "workMessengerUsers": {},
-  "_workMessengerUsersNote": "{ \"<userId 또는 hostname>\": [\"wechat\"] } — 지정 PC에서 그 메신저 전체를 업무로 간주. 사장님 확정(2026-09-29): 비움 — 위챗은 localExtraction(B안)으로 처리.",
+  "workMessengerUsers": {
+    "MNMRVD11EDCCF6E7CE": [
+      "whatsapp"
+    ],
+    "MNC78F666A0ADDE30E": [
+      "whatsapp"
+    ],
+    "papi-chulo-pc": [
+      "whatsapp"
+    ],
+    "MN1D726A373D679F9A": [
+      "whatsapp"
+    ],
+    "MN8232D542A97C0862": [
+      "whatsapp"
+    ],
+    "desktop-05vlrn1": [
+      "whatsapp"
+    ]
+  },
+  "_workMessengerUsersNote": "{ \"<userId 또는 hostname>\": [\"wechat\"] } — 지정 PC에서 그 메신저 전체를 업무로 간주. 사장님 확정(2026-09-29): 비움 — 위챗은 localExtraction(B안)으로 처리. [2026-11-13 사장님 결정] 수입부 두 자리(계정 ID 와 PC 이름 둘 다 등록)는 WhatsApp 을 업무 메신저로 지정 — 거래처(농장·포워더·대행사) 대화의 화면·방 이름·문장을 받음. 위챗은 그대로 localExtraction.",
   "localExtraction": {
     "enabled": true,
     "consentedUsers": [
@@ -127,11 +146,12 @@
       "MN506C7A6A710A046E",
       "MNF64400D6CD233E3A",
       "MN9B6750A0A37D561D",
-      "MN2F3C3CEDBE96B26C"
+      "MN2F3C3CEDBE96B26C",
+      "MN1D726A373D679F9A"
     ],
     "_note": "2026-09-29 사장님 지시: 동의서 회수 전이지만 전원 동의 상태로 간주하고 적용. 실제 동의서 회수 후 미동의자는 이 목록에서 뺄 것."
   },
-  "_localExtractionNote": "B안(로컬 처리). enabled=true 이고 이 PC의 userId(또는 hostname)가 consentedUsers 에 있을 때만 1:1·개인방·위챗 텍스트를 PC 메모리에서 추출해 업무 항목만 messenger.work 로 전송(원문·상대 이름·전화번호 없음). 그 외엔 차단(사용 시간만). 직원 서면 동의 후 명단 추가.",
+  "_localExtractionNote": "B안(로컬 처리). enabled=true 이고 이 PC의 userId(또는 hostname)가 consentedUsers 에 있을 때만 1:1·개인방·위챗 텍스트를 PC 메모리에서 추출해 업무 항목만 messenger.work 로 전송(원문·상대 이름·전화번호 없음). 그 외엔 차단(사용 시간만). 직원 서면 동의 후 명단 추가. [2026-11-13] MN1D726A373D679F9A(수입부 DESKTOP-05VLRN1 자리의 현재 계정) 추가 — 서면 동의 받음(사장님 확인).",
   "workDomains": [
     "nenovaweb.com",
     "nenova",
