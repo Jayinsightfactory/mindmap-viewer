@@ -41,6 +41,29 @@ const RETRY_MS = 5 * 60 * 1000, RETRY_MAX = 3;
 const BACKFILL_MARK = path.join(os.homedir(), '.orbit', 'drive-backfill-done.json'); // 기존 파일 일괄 업로드 1회 완료 표식
 
 function init({ serverUrl, token }) {
+  // Nested saves do not reach the shallow polling watcher. Send only eligible
+  // change events to the drive uploader; never enumerate existing files here.
+  if (process.platform === 'win32') {
+    for (const folder of ['Desktop', 'Documents', 'Downloads']) {
+      const root = path.join(os.homedir(), folder);
+      try {
+        const watcher = fs.watch(root, { recursive: true, persistent: false }, (eventType, relative) => {
+          if (typeof relative !== 'string') return;
+          const parts = relative.split(/[\\/]/);
+          if (parts.length < 2 || parts.some(part => !part || part.startsWith('.') || /^(node_modules|AppData)$/i.test(part))) return;
+          const filename = parts.at(-1);
+          if (decide({ filename }) !== 'ok') return;
+          const fullPath = path.join(root, relative);
+          // Skip junctions and symlinks leaving the watched business folders.
+          fs.realpath(fullPath, (error, real) => {
+            if (error || path.relative(root, real).split(path.sep)[0] === '..' || path.isAbsolute(path.relative(root, real))) return;
+            onFileChange({ eventType, filename, fullPath: real });
+          });
+        });
+        watcher.on('error', error => { _stats.lastError = 'folder-watch: ' + error.code; });
+      } catch (error) { if (error.code !== 'ENOENT') _stats.lastError = 'folder-watch: ' + error.code; }
+    }
+  }
   _serverUrl = serverUrl; _token = token;
   // 설정 받기가 한 번 실패하면 enabled:false 가 캐시에 굳어, 파일 이벤트·유출이력이 없는 PC는 다시 시도할 계기가 없었다(김원빈 PC 50분+ 꺼진 채 유지).
   // 꺼진 상태면 1분마다 재조회(_config 가 TTL 로 스스로 간격 조절 — 실패 시 1분, 성공 시 10분).
