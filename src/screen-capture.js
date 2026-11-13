@@ -17,7 +17,11 @@ const https = require('https');
 const { getAppProfileKey, normalizeAppName, sanitizeWindowTitle } = require('./data-quality');
 
 const CAPTURE_DIR   = path.join(os.homedir(), '.orbit', 'captures');
-const MAX_CAPTURES  = 500; // 개발 단계: 최대 보관
+const MAX_CAPTURES  = 500; // 평소 보관(최신 500장)
+// [2026-11-13] 아직 스풀로 못 올린 캡처는 최대 2000장까지 더 붙잡아 둔다(업로드가 막힌 동안 500장을 넘겨 지워져
+// 해독 기회를 잃던 문제). 이미 올린 것은 예전처럼 500장 밖이면 지우므로 평소 디스크 사용량은 그대로다.
+const MAX_UNSENT_CAPTURES = 2000;
+const MIN_FREE_BYTES_FOR_BACKLOG = 3 * 1024 * 1024 * 1024; // 여유 3GB 미만이면 예전 한도(500)로
 let _pruneTimer = null;
 
 // ── 변화 감지 기반 캡처 (고정 간격 아님) ──
@@ -449,11 +453,28 @@ function _sendAnalysisToServer(result, trigger, filepath) {
 
 function ensureDir() { fs.mkdirSync(CAPTURE_DIR, { recursive: true }); }
 
+// 지울 파일 고르기(순수 함수): 최신순 목록에서 keep 장은 무조건 보관, 그 밖은 "아직 안 올린 것"만 keepUnsent 장째까지 보관.
+function _pruneTargets(filesNewestFirst, sentSet, keep, keepUnsent) {
+  const del = [];
+  filesNewestFirst.forEach((f, i) => {
+    if (i < keep) return;
+    if (i < keepUnsent && !sentSet.has(f)) return;
+    del.push(f);
+  });
+  return del;
+}
+function _unsentKeepLimit(keep) {
+  try { if (fs.existsSync(path.join(os.homedir(), '.orbit', '.no-spool-upload'))) return keep; } catch {} // 스풀로 안 올리는 PC(분석 PC)는 예전대로
+  try { if (typeof fs.statfsSync === 'function') { const st = fs.statfsSync(CAPTURE_DIR); if (st.bavail * st.bsize < MIN_FREE_BYTES_FOR_BACKLOG) return keep; } } catch {}
+  return Math.max(keep, MAX_UNSENT_CAPTURES);
+}
 function pruneOldCaptures(keep = MAX_CAPTURES) {
   try {
     ensureDir();
     const files = fs.readdirSync(CAPTURE_DIR).filter(f => f.startsWith('screen-') && f.endsWith('.png')).sort().reverse();
-    files.slice(keep).forEach(f => {
+    let sentSet = new Set();
+    try { sentSet = new Set(fs.readFileSync(path.join(CAPTURE_DIR, '.spool-uploaded'), 'utf8').split(/\r?\n/).filter(Boolean)); } catch {}
+    _pruneTargets(files, sentSet, keep, _unsentKeepLimit(keep)).forEach(f => {
       try { fs.unlinkSync(path.join(CAPTURE_DIR, f)); } catch {}
       try { fs.unlinkSync(path.join(CAPTURE_DIR, f.replace(/\.png$/i, '.json'))); } catch {}
     });
@@ -1563,7 +1584,7 @@ module.exports = {
   start, stop, capture, getRecentCaptures, getLastAnalysis, getCurrentActivity,
   onAppChange, onKeyActivity, onKeyboardFlush, onWindowTitleChange, onToolEnd, onFileWrite,
   onKeyBurst, onMouseBurst, onMouseClick, onPrint, onExcelFormula,
-  uploadPendingToServer, uploadPendingToSpool,
+  uploadPendingToServer, uploadPendingToSpool, _pruneTargets,
   pause, resume, isPaused,
   setForegroundProvider, getFallbackStatus, _fallbackTestHooks,
   getStatus,
