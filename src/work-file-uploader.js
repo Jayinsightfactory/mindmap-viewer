@@ -68,7 +68,7 @@ function init({ serverUrl, token }) {
   // 설정 받기가 한 번 실패하면 enabled:false 가 캐시에 굳어, 파일 이벤트·유출이력이 없는 PC는 다시 시도할 계기가 없었다(김원빈 PC 50분+ 꺼진 채 유지).
   // 꺼진 상태면 1분마다 재조회(_config 가 TTL 로 스스로 간격 조절 — 실패 시 1분, 성공 시 10분).
   setInterval(() => { if (!_cfg || !_cfg.enabled) _config().catch(() => {}); }, 60 * 1000).unref?.();
-  setInterval(() => { for (const [fp, r] of _retry) { _retry.delete(fp); _upload(r.evt, r.tries).catch(() => {}); } }, RETRY_MS).unref?.();
+  setInterval(drainRetries, RETRY_MS).unref?.();
   // 기존 파일 일괄 업로드는 PC당 1회 자동(서버에서 기능이 켜져 있을 때만). 완료 표식이 있으면 건너뛴다. 재실행은 서버 명령 drive-backfill.
   setTimeout(async () => {
     try { const cfg = await _config(); if (fs.existsSync(BACKFILL_MARK)) return; if (!cfg || !cfg.enabled) return; // 설정은 마커와 무관하게 먼저 받는다(health 통계가 'not-fetched'로 진단을 가리지 않게)
@@ -123,6 +123,23 @@ function onFileChange(evt) {
 }
 
 const _queueRetry = (evt, tries, why) => { if (tries >= RETRY_MAX) { _stats.failed++; console.warn(`[work-file-uploader] 포기(${why}) ${evt.filename}`); return; } _retry.set(evt.fullPath, { tries: tries + 1, evt }); };
+let retryDrainActive = false;
+async function drainRetries() {
+  if (retryDrainActive) return;
+  retryDrainActive = true;
+  try {
+    // Snapshot so a failed retry waits for the next round.
+    for (const [file, entry] of [..._retry]) {
+      if (_retry.get(file) !== entry) continue;
+      _retry.delete(file);
+      try { await _upload(entry.evt, entry.tries); }
+      catch { _queueRetry(entry.evt, entry.tries, 'upload'); }
+      await new Promise(resolve => setTimeout(resolve, 1200));
+    }
+  } finally {
+    retryDrainActive = false;
+  }
+}
 async function _upload(evt, tries = 0) {
   const cfg = await _config(); if (!cfg || !cfg.enabled) return;
 
