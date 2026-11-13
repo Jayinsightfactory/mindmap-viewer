@@ -10,7 +10,7 @@
  *   ② 1KB ≤ 크기 ≤ 25MB, 임시파일(~$·.tmp·.) 아님, 실제 존재(삭제 이벤트 제외)
  *   ③ 업무 신호가 있다: 승인된 업무 도구 파일명 또는 차수(38-2/3802/38차…) 또는 업무 키워드(발주·입고·출고·원가·운임·견적·명세·결의·송금·인보이스·proforma·order·packing·불량…)
  *   ④ 개인 신호가 없다: 계약·contrato·이력서·급여·연봉·개인·사진·가족·병원·보험·여권·주민·통장·카드명세·연말정산·KakaoTalk_ 이미지·스크린샷…
- * 분류(차수·단계·부서·민감)는 네노바웹이 최종 판단. 같은 파일은 sha256 로 한 번만, 저장 직후 연타는 90초 디바운스.
+ * 분류(차수·단계·부서·민감)는 네노바웹이 최종 판단. 같은 파일은 sha256 로 한 번만, 연속 저장은 8초 디바운스.
  */
 const fs = require('fs');
 const path = require('path');
@@ -33,7 +33,7 @@ const JUNK_RE = /^[a-z]{6,}(\.\w+)?$|^[A-Za-z0-9]{12,}\.\w+$|^new\s|^제목 없�
 
 let _cfg = null, _cfgAt = 0, _cfgTtl = 10 * 60 * 1000, _serverUrl = null, _token = null;
 const _seenSha = new Map();   // sha → at (7일 보관)
-const _lastAt = new Map();    // fullPath → 마지막 업로드 시도 시각(디바운스)
+
 let _timers = new Map();      // fullPath → setTimeout (저장 연타 흡수)
 let _stats = { considered: 0, uploaded: 0, skippedPersonal: 0, skippedNoSignal: 0, skippedDup: 0, failed: 0, lastError: '', lastBackfill: null }; // heartbeat로 서버에 보고(PC별 원격 진단)
 const _retry = new Map();     // fullPath → { tries, evt } — 잠긴 파일·네트워크 실패는 5분 뒤 최대 3회 재시도
@@ -93,7 +93,7 @@ function onFileChange(evt) {
     const why = decide(evt);
     if (why === 'personal') { _stats.skippedPersonal++; return; }
     if (why !== 'ok') { if (why === 'no-signal') _stats.skippedNoSignal++; return; }
-    // 저장 연타(엑셀 자동저장·복사 중) 흡수: 마지막 변경 후 8초 조용하면 올린다. 이후 같은 파일은 90초 디바운스.
+    // 저장 연타(엑셀 자동저장·복사 중) 흡수: 마지막 변경 후 8초 조용하면 올린다.
     const prev = _timers.get(evt.fullPath); if (prev) clearTimeout(prev);
     _timers.set(evt.fullPath, setTimeout(() => { _timers.delete(evt.fullPath); _upload(evt).catch(() => {}); }, 8000));
   } catch {}
@@ -102,13 +102,14 @@ function onFileChange(evt) {
 const _queueRetry = (evt, tries, why) => { if (tries >= RETRY_MAX) { _stats.failed++; console.warn(`[work-file-uploader] 포기(${why}) ${evt.filename}`); return; } _retry.set(evt.fullPath, { tries: tries + 1, evt }); };
 async function _upload(evt, tries = 0) {
   const cfg = await _config(); if (!cfg || !cfg.enabled) return;
-  const last = _lastAt.get(evt.fullPath) || 0; if (tries === 0 && Date.now() - last < 90 * 1000) return;
+
   let st; try { st = fs.statSync(evt.fullPath); } catch { return; } // 삭제/이동됨
   if (!st.isFile() || st.size < MIN_BYTES || st.size > MAX_BYTES) return;
   let buf; try { buf = fs.readFileSync(evt.fullPath); } catch { return _queueRetry(evt, tries, 'locked'); } // 엑셀이 잠근 중 → 5분 뒤 재시도
   const sha = crypto.createHash('sha256').update(buf).digest('hex');
-  if (_seenSha.has(sha)) { _stats.skippedDup++; return; }
-  _lastAt.set(evt.fullPath, Date.now());
+  if (_seenSha.has(sha)) { _stats.skippedDup++; return true; }
+
+  let confirmed = false;
   const form = new FormData();
   form.append('file', new Blob([buf]), evt.filename);
   form.append('filename', evt.filename);
@@ -123,6 +124,7 @@ async function _upload(evt, tries = 0) {
     const j = await r.json().catch(() => ({}));
     if (r.ok && j.success) {
       _seenSha.set(sha, Date.now()); _stats.uploaded++;
+      confirmed = true;
       const c = j.classification || {};
       console.log(`[work-file-uploader] ${j.duplicate ? '중복' : '업로드'} ${evt.filename} → ${c.cycle || '-'} / ${c.stage || '-'}${c.sensitive ? ' 🔒' : ''}`);
     } else if (r.status >= 500 || r.status === 429) { _queueRetry(evt, tries, 'server ' + r.status); }
@@ -130,6 +132,7 @@ async function _upload(evt, tries = 0) {
   } catch (e) { _stats.lastError = 'network: ' + e.message; _queueRetry(evt, tries, 'network'); }
   // sha 캐시 7일 정리
   const cut = Date.now() - 7 * 86400e3; for (const [k, at] of _seenSha) if (at < cut) _seenSha.delete(k);
+  return confirmed;
 }
 
 function getStats() { return { ..._stats, enabled: !!(_cfg && _cfg.enabled), cfgUser: _cfg ? (_cfg.userName || '') : '', cfgReason: _cfg ? (_cfg.reason || '') : 'not-fetched', retryQueue: _retry.size }; }
@@ -139,9 +142,17 @@ function getStats() { return { ..._stats, enabled: !!(_cfg && _cfg.enabled), cfg
 // 중복(sha)은 서버가 걸러 주므로 여러 번 실행해도 안전하다.
 let _backfillRunning = false;
 async function backfill({ depth = 3, maxFiles = 1000, maxAgeDays = 548, dryRun = false } = {}) {
-  if (_backfillRunning) return { ok: false, reason: 'already-running' };
   const cfg = await _config(); if (!cfg || !cfg.enabled) { _stats.lastBackfill = { at: new Date().toISOString(), ok: false, reason: 'not-enabled' }; return { ok: false, reason: 'not-enabled' }; }
+  if (_backfillRunning) return { ok: false, reason: 'already-running' };
   _backfillRunning = true;
+  try {
+    return await runBackfill({ depth, maxFiles, maxAgeDays, dryRun });
+  } finally {
+    _backfillRunning = false;
+  }
+}
+
+async function runBackfill({ depth, maxFiles, maxAgeDays, dryRun }) {
   const home = os.homedir(); const roots = ['Desktop', 'Documents', 'Downloads'].map((d) => path.join(home, d));
   const cut = Date.now() - maxAgeDays * 86400e3; const found = [];
   const walk = (dir, d) => {
@@ -161,18 +172,17 @@ async function backfill({ depth = 3, maxFiles = 1000, maxAgeDays = 548, dryRun =
   found.sort((a, b) => b.mtime - a.mtime); // 최신부터
   const list = found.slice(0, maxFiles);
   console.log(`[work-file-uploader] backfill 시작: 후보 ${found.length}건, 올릴 것 ${list.length}건${dryRun ? ' (dryRun — 목록만)' : ''}`);
-  if (dryRun) { _backfillRunning = false; return { ok: true, dryRun: true, candidates: found.length, sample: list.slice(0, 60).map((f) => path.relative(home, f.full)) }; }
-  let n = 0;
+  if (dryRun) { return { ok: true, dryRun: true, candidates: found.length, sample: list.slice(0, 60).map((f) => path.relative(home, f.full)) }; }
+  let n = 0, confirmed = 0;
   for (const f of list) {
-    _lastAt.delete(f.full); // backfill 은 디바운스 무시
-    await _upload({ eventType: 'backfill', filename: f.name, fullPath: f.full });
+
+    if (await _upload({ eventType: 'backfill', filename: f.name, fullPath: f.full })) confirmed++;
     n++; await new Promise((r) => setTimeout(r, 1200));
   }
-  _backfillRunning = false;
   const s = getStats();
-  _stats.lastBackfill = { at: new Date().toISOString(), ok: true, candidates: found.length, attempted: n };
+  _stats.lastBackfill = { at: new Date().toISOString(), ok: confirmed === found.length, candidates: found.length, attempted: n, confirmed };
   console.log(`[work-file-uploader] backfill 완료: 시도 ${n}, 누적 업로드 ${s.uploaded}, 중복 ${s.skippedDup}, 실패 ${s.failed}`);
-  return { ok: true, candidates: found.length, attempted: n, stats: s };
+  return { ok: confirmed === found.length, candidates: found.length, attempted: n, confirmed, stats: s };
 }
 
 module.exports = { init, onFileChange, decide, getStats, backfill, getConfig: _config };

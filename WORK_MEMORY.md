@@ -2427,3 +2427,7 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 - 원인: 캡처 파일명 `screen-<ms>-fallback-appchange-focused.png` 를 split('-') → 트리거 'fallback', 상태 'appchange' 로 오인 → `_spoolWorthUploading` false → 스풀 미업로드(처리완료 표시). 강명훈 11/09 캡처 325 중 fallback 144(44%) 해독 0. 전직원 fallback 비중은 1~6%라 그 PC만 두드러짐.
 - 수정: src/screen-capture.js `_parseCaptureName` 도입(2곳). 검증: 합성 파일명 5종 true/false 확인.
 - 반영 조건: 직원 PC는 코드 자동배포(code-sync)로 반영. 이후 fallback 캡처 비율만큼 해독 대상 증가 → 야간 워커 부하 소폭 증가.
+
+## 2026-11-13 업무드라이브 누락 조사
+- 운영 업로더 8대 활성, 5대 실패 카운터 확인. 파일명 없는 내용 해시 목록 명령 추가. 연속 저장 생략 제거·기존파일 일괄 완료 조건에 서버 확인 적용. 전 직원 대조 및 배포 미검증.
+검색어: drive-inventory confirmed 업무드라이브 재저장
