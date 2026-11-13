@@ -643,7 +643,8 @@ function createFlowMapRouter(deps = {}) {
         const D = P.days[day] = P.days[day] || { saves: 0, matched: 0 };
         const e = d.erp || {};
         // 'no_save'(신규 버튼으로 빈 입력창만 열고 저장 안 함)는 저장이 아니므로 저장 건수(분모)에서 뺀다 — 넣으면 일치율이 허위로 낮아져 전산 대조 공백 오경보가 난다.
-        if (e.reason !== 'no_save') { P.saves++; D.saves++; }
+        // 'not_covered'(엑셀 저장·품목관리 등 전산 대조 원천 밖 화면)도 같은 이유로 분모에서 뺀다 — 대조가 불가능한 저장이 일치율을 깎는 오경보 방지.
+        if (e.reason !== 'no_save' && e.reason !== 'not_covered') { P.saves++; D.saves++; }
         if (d.uia && d.uia.screen) P.screens[d.uia.screen] = (P.screens[d.uia.screen] || 0) + 1;
         if (e.matched) {
           P.matched++; D.matched++; P.sec += d.durationSec || 0;
