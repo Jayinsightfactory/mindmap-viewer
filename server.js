@@ -466,6 +466,10 @@ app.use('/api/', (req, res, next) => {
 
 // Stripe Webhook은 서명 검증을 위해 원본 바디(Buffer)가 필요 — JSON 파싱 전에 처리
 app.use('/api/payment/webhook', express.raw({ type: 'application/json' }));
+// [2026-11-13] 화면 스풀 업로드만 8MB 허용. 데몬은 PNG 5MB 이하를 올리는데(base64 ≈ 6.7MB) 전역 2MB 한도에 걸려
+// 1.5MB 넘는 화면이 PayloadTooLargeError 로 거절되고 3분마다 재전송만 반복됐다(실측 83초에 26건).
+// 스풀은 디스크에 바로 쓰므로(메모리 큐 아님) 이 경로만 올린다. /api/hook 2MB 사전 차단은 그대로.
+app.post('/api/vision/spool', express.json({ limit: '8mb' }));
 app.use(express.json({ limit: '2mb' }));
 app.use(require('./src/hidden-users').middleware); // [2026-10-05] /my-work 목록 숨김(config/hidden-users.json)
 // 프로덕션: 압축된 JS 우선 사용
