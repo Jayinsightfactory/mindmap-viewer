@@ -480,6 +480,26 @@ async function executeCommand(cmd) {
       break;
 
     // [2026-09-21] 업무 드라이브 기존 파일 일괄 업로드 — 게이트 통과분만, 초당 1건. 여러 번 보내도 sha 중복은 서버가 거른다.
+    case 'drive-inventory': {
+      const run = cmd.data?.run;
+      if (!/^[a-f0-9]{24}$/.test(run || '')) break;
+      const { inventory } = require(path.join(ROOT, 'src/work-drive-inventory'));
+      const report = async (page) => {
+        const event = { id: 'drive-inventory-' + run + '-' + (page.done ? 'end' : page.page),
+          type: 'work.drive-inventory', source: 'work-drive-inventory', timestamp: new Date().toISOString(),
+          data: { run, ...page } };
+        const response = await fetch(new URL('/api/hook', _serverUrl), { method: 'POST',
+          headers: { Authorization: 'Bearer ' + _token, 'Content-Type': 'application/json',
+            'X-Device-Id': encodeURIComponent(os.hostname()) },
+          body: JSON.stringify({ events: [event] }), signal: AbortSignal.timeout(30000) });
+        const result = await response.json();
+        if (!response.ok || !result.success || result._dbErrors?.length) throw new Error('inventory page rejected');
+      };
+      inventory(report)
+        .then(() => reportStatus('command_executed', 'drive-inventory ' + run))
+        .catch(() => reportStatus('command_fail', 'drive-inventory ' + run));
+      break;
+    }
     case 'drive-backfill': {
       try {
         const up = require(path.join(ROOT, 'src/work-file-uploader'));
