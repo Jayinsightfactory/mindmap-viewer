@@ -93,3 +93,12 @@ describe('erp-change-link isEstimateEditScreen', () => {
     expect(isEstimateEditScreen(undefined)).toBe(false);
   });
 });
+
+describe('erp-change-link isDistributeScreen', () => {
+  const { isDistributeScreen } = require('../../src/erp-change-link');
+  test('출고 분배 저장은 작성자 컬럼이 없어 미대조 처리, 다른 화면은 아님', () => {
+    expect(isDistributeScreen('출고 분배')).toBe(true);
+    expect(isDistributeScreen('출고 분배 내역 조회')).toBe(false);
+    expect(isDistributeScreen(undefined)).toBe(false);
+  });
+});
