@@ -50,7 +50,8 @@ const SAVE_STEP = /^(저장|확정|확정취소|신규|수정|삭제|적용|등�
 // 전산 대조 원천(주문·출고·입고 이력)에 흔적이 남지 않는 화면: 품목 기준정보(Product 에 작성자·시각 컬럼 없음)·엑셀 내보내기(파일 저장).
 // 저장처럼 보여도 대조 불가 → 'no_change'(헛수고 오인)가 아니라 'not_covered' 로 분류한다.
 // 불량/검역 등록: exe 가 Estimate 음수행만 INSERT — Estimate 에는 작성자 컬럼이 없고 EstimateDtm 은 업무일자라 대조 불가(웹 원장 이력 WebSalesDefectDeductionHistory 는 웹 경유분만).
-const NO_LOG_SCREEN = /^(엑셀 저장|품목관리|신규 제품 등록|불량\/검역 등록)$/;
+// 업체별 품목 단가관리: CustomerProdCost(거래처×품목 단가)는 작성자·시각 컬럼이 없어 대조 원천에 흔적이 없다(11/12 17:27 김도준 수정 1건 no_change 오인).
+const NO_LOG_SCREEN = /^(엑셀 저장|품목관리|신규 제품 등록|불량\/검역 등록|업체별 품목 단가관리)$/;
 const isNoLogScreen = (screen) => NO_LOG_SCREEN.test(String(screen || '').trim());
 // 인쇄·견적서 출력 화면: 출력은 데이터를 바꾸지 않는다(앞 단계 저장이 원천에 잡히면 그대로 matched). 못 찾았을 때만 헛수고(no_change)가 아니라 not_covered 로 분류.
 // 입고 원장삭제: 전산 대조 원천(WarehouseMaster 생성 시각만 기록)에 삭제 흔적이 없다 → 'no_change'(헛수고 오인)가 아니라 'not_covered'.
