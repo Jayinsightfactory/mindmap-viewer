@@ -59,7 +59,7 @@ function req(method, urlPath, body) {
     if (TOKEN) headers['Authorization'] = 'Bearer ' + TOKEN;
     if (payload) headers['Content-Length'] = Buffer.byteLength(payload);
     const r = mod.request({ hostname: u.hostname, port: u.port || (u.protocol === 'https:' ? 443 : 80), path: u.pathname + u.search, method, headers, timeout: 45000 },
-      res => { let d = ''; res.on('data', c => d += c); res.on('end', () => { try { resolve(JSON.parse(d)); } catch { resolve({}); } }); });
+      res => { let d = ''; res.setEncoding('utf8'); res.on('data', c => d += c); res.on('end', () => { try { resolve(JSON.parse(d)); } catch { resolve({}); } }); });
     r.on('error', reject); r.on('timeout', () => { r.destroy(); reject(new Error('timeout')); });
     if (payload) r.write(payload); r.end();
   });
