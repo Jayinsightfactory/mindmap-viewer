@@ -518,20 +518,46 @@ async function visionCli(base64, ctx, model) {
   const _gate = require('../src/cli-gate');
   await _gate.acquire();
   return new Promise((resolve) => {
-    // VISION_CLI_MODEL로 모델 지정(예: sonnet / haiku). 미설정 시 CLI 계정 기본모델.
-    const _args = ['-p', prompt, '--allowedTools', 'Read', '--add-dir', TEMP_DIR];
-    const _m = model || process.env.VISION_CLI_MODEL;
-    if (_m) _args.push('--model', _m);
-    execFile(CLAUDE_CLI, _args,
-      { timeout: 120000, maxBuffer: 2 * 1024 * 1024 }, (err, stdout) => {
+    // [2026-11-19] 끝나지 않는 호출 방지: execFile 의 timeout 은 claude.exe 본체만 죽이고, 손자 프로세스가
+    // 출력 파이프를 쥐고 있으면 콜백이 영영 안 와서 게이트 자리·_spoolBusy 가 풀리지 않아 워커가 무기한 멈춘다
+    // (스풀 워커 11/18 23:52 이후 로그 정지, 코드 갱신 재기동도 막힘). 콜백과 무관한 하드 타이머로 PID 트리를 끊고 결과 null 로 마감.
+    let _settled = false;
+    let _child = null;
+    let _hard = null;
+    const _finish = (val) => {
+      if (_settled) return;
+      _settled = true;
+      if (_hard) clearTimeout(_hard);
       try { fs.unlinkSync(tmpFile); } catch {}
       _gate.release();
-      if (err) {
-        _gate.detectAuthFailure((err.message || '') + ' ' + String(stdout || '')); // 자격증명 이상이면 전 워커 병렬 1 강등
-        console.warn(`  CLI 분석 실패: ${err.message}`); resolve(null); return;
-      }
-      resolve(_parseResult(String(stdout)));
-    });
+      resolve(val);
+    };
+    try {
+      // VISION_CLI_MODEL로 모델 지정(예: sonnet / haiku). 미설정 시 CLI 계정 기본모델.
+      const _args = ['-p', prompt, '--allowedTools', 'Read', '--add-dir', TEMP_DIR];
+      const _m = model || process.env.VISION_CLI_MODEL;
+      if (_m) _args.push('--model', _m);
+      _child = execFile(CLAUDE_CLI, _args,
+        { timeout: 120000, maxBuffer: 2 * 1024 * 1024 }, (err, stdout) => {
+        if (err) {
+          _gate.detectAuthFailure((err.message || '') + ' ' + String(stdout || '')); // 자격증명 이상이면 전 워커 병렬 1 강등
+          console.warn(`  CLI 분석 실패: ${String(err.message || '').slice(0, 200)}`); _finish(null); return;
+        }
+        _finish(_parseResult(String(stdout)));
+      });
+      _hard = setTimeout(() => {
+        console.warn('  CLI 분석 강제 마감: 150초 무응답 — 해당 호출의 프로세스 트리만 종료');
+        try {
+          if (_child && _child.pid) {
+            if (process.platform === 'win32') execFile('taskkill', ['/PID', String(_child.pid), '/T', '/F'], () => {});
+            else _child.kill('SIGKILL');
+          }
+        } catch {}
+        _finish(null);
+      }, 150000);
+    } catch (e) {
+      console.warn(`  CLI 호출 시작 실패: ${e.message}`); _finish(null); // 동기 예외여도 게이트 자리 반납
+    }
   });
 }
 
