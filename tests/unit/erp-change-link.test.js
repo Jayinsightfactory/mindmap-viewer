@@ -102,3 +102,13 @@ describe('erp-change-link isDistributeScreen', () => {
     expect(isDistributeScreen(undefined)).toBe(false);
   });
 });
+
+describe('erp-change-link isStockAdjust', () => {
+  const { isStockAdjust } = require('../../src/erp-change-link');
+  test('재고 조정 등록 화면 또는 조정등록 단계는 이력이 없어 미대조 처리, 다른 화면은 아님', () => {
+    expect(isStockAdjust({ screen: '재고 조정 등록', steps: ['저장'] })).toBe(true);
+    expect(isStockAdjust({ screen: '신규 주문 등록', steps: ['새로고침', '조정등록', '저장'] })).toBe(true);
+    expect(isStockAdjust({ screen: '신규 주문 등록', steps: ['저장'] })).toBe(false);
+    expect(isStockAdjust(undefined)).toBe(false);
+  });
+});

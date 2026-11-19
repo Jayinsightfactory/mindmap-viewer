@@ -64,6 +64,10 @@ const isEstimateEditScreen = (screen) => /^견적서 관리$/.test(String(screen
 // 출고 분배 화면의 저장: exe 가 ShipmentDetail 기존 행을 UPDATE 할 뿐 작성자·시각 컬럼이 없어 대조 원천(erp-change-log shipment)에 흔적이 거의 안 남는다
 // (11/12 14:10~14:55 강현우 출고 분배 저장 5건 동안 원천의 강현우 변경 0건). 'no_change'(헛수고 오인)가 아니라 'not_covered'. 흔적이 잡히는 건은 rows 가 비지 않아 그대로 matched.
 const isDistributeScreen = (screen) => /^출고 분배$/.test(String(screen || '').trim());
+// 재고 조정 등록: exe 가 재고(StockMaster·ProductStock)만 갱신하고 작성자·시각 이력이 없어 대조 원천에 흔적이 없다
+// (11/17 강현우 재고 조정 저장 8건: 시각 근처 nenovass1 변경 0건). 화면 이름이 '신규 주문 등록' 등으로 잘못 읽혀도 '조정등록' 단계가 있으면 같은 동작이다.
+// 'no_change'(헛수고 오인)가 아니라 'not_covered'. 흔적이 잡히는 건은 rows 가 비지 않아 그대로 matched.
+const isStockAdjust = (uia) => /^재고 조정 등록$/.test(String((uia && uia.screen) || '').trim()) || ((uia && uia.steps) || []).includes('조정등록');
 const isPrintScreen = (screen) => /^(인쇄|견적서 출력)$/.test(String(screen || '').trim());
 // '신규'는 빈 입력창을 여는 버튼일 뿐 저장이 아니다 — 저장 확인 단계(저장·확정·수정·삭제·적용·등록·업로드·분배)나 saved>0 이 있어야 '저장했다'로 본다.
 const REAL_SAVE_STEP = /^(저장|확정|확정취소|수정|삭제|적용|등록|업로드|분배)$/;
@@ -184,7 +188,7 @@ async function linkErpChanges(pool, hours = 2, opts = {}) {
     const th = typedHits(rows, typed);
     const erpData = rows.length
       ? { matched: true, changeId: rows[0].changeId, ...summarize(rows), typed: { checked: !!typed, customers: th.customers, items: th.items, confirmed: !!(th.customers.length || th.items.length) } }
-      : { matched: false, reason: (isNoLogScreen(x.d.uia.screen) || isPrintScreen(x.d.uia.screen) || isLedgerDelete(x.d.uia) || isWarehouseEditScreen(x.d.uia.screen) || isEstimateEditScreen(x.d.uia.screen) || isDistributeScreen(x.d.uia.screen)) ? 'not_covered' : !hasRealSave(x.d.uia) ? 'no_save' : changes.some(r => r.kind === 'shipment') || /주문/.test(x.d.uia.screen || '') ? 'no_change' : 'not_covered' };
+      : { matched: false, reason: (isNoLogScreen(x.d.uia.screen) || isPrintScreen(x.d.uia.screen) || isLedgerDelete(x.d.uia) || isWarehouseEditScreen(x.d.uia.screen) || isEstimateEditScreen(x.d.uia.screen) || isDistributeScreen(x.d.uia.screen) || isStockAdjust(x.d.uia)) ? 'not_covered' : !hasRealSave(x.d.uia) ? 'no_save' : changes.some(r => r.kind === 'shipment') || /주문/.test(x.d.uia.screen || '') ? 'no_change' : 'not_covered' };
     if (rows.length) matched++;
     if (opts.dryRun) { sample.push({ id: x.a.id, user: x.user, screen: x.d.uia.screen, steps: x.d.uia.steps.slice(0, 8), saved: x.d.uia.saved, erp: erpData }); continue; }
     await pool.query(`UPDATE unified_events SET data = jsonb_set(data::jsonb, '{erp}', $2::jsonb) WHERE id=$1`, [x.a.id, JSON.stringify(erpData)]);
@@ -211,4 +215,4 @@ async function linkErpChanges(pool, hours = 2, opts = {}) {
   return { targets: targets.length, matched, changes: changes.length, users: userMap, ...(opts.dryRun ? { sample } : {}) };
 }
 
-module.exports = { isNoLogScreen, isPrintScreen, isLedgerDelete, isWarehouseEditScreen, isEstimateEditScreen, isDistributeScreen, hasRealSave, linkErpChanges, learnUserMap, summarize, fetchChanges, OFFICIAL_ERP_USER, typedHits, nameTokens };
+module.exports = { isNoLogScreen, isPrintScreen, isLedgerDelete, isWarehouseEditScreen, isEstimateEditScreen, isDistributeScreen, isStockAdjust, hasRealSave, linkErpChanges, learnUserMap, summarize, fetchChanges, OFFICIAL_ERP_USER, typedHits, nameTokens };
