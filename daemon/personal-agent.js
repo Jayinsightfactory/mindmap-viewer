@@ -978,7 +978,8 @@ async function main() {
   };
   const _uploadPendingDuringWorkHours = async () => {
     if (!_isKstWorkHours()) return;
-    try { await screenCapture?.uploadPendingToServer?.(20); } catch {}
+    // [2026-11-20] uploadPendingToServer(20) 가 .spool-uploaded 미참조로 동일 PNG를 app='' 중복 screen.capture로 2~3회 재전송하던 버그 해소 → 디스크 스풀 경로로 통일
+    try { await screenCapture?.uploadPendingToSpool?.(45); } catch {}
     try {
       if (driveUploader?.isEnabled?.()) await driveUploader.uploadPending();
     } catch {}
