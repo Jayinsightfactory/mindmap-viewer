@@ -986,6 +986,12 @@ let _localDone = (() => { try { return new Set(JSON.parse(fs.readFileSync(LOCAL_
 function _saveLocalState() { try { fs.writeFileSync(LOCAL_STATE_FILE, JSON.stringify({ done: [..._localDone].slice(-5000) })); } catch {} }
 let _localBusy = false;
 
+// [2026-11-20] 하이픈 트리거(fallback-appchange/fallback-timer) 누락 버그 해소: screen-capture._parseCaptureName 과 동일 규격
+function _parseLocalCaptureName(f) {
+  const m = String(f || '').match(/^screen-(\d+)-(fallback-appchange|fallback-timer|[^-]+)-?(.*)\.png$/i);
+  return m ? { f, epoch: parseInt(m[1], 10), trigger: m[2], focus: m[3] || '' } : null;
+}
+
 async function processLocalDir() {
   if (_localBusy) return 0;
   try {
@@ -998,16 +1004,13 @@ async function processLocalDir() {
     try { files = fs.readdirSync(LOCAL_DIR).filter(f => f.endsWith('.png')); }
     catch { console.warn(`[vision-local] 폴더 없음: ${LOCAL_DIR}`); return 0; }
     const host = os.hostname();
-    // 파일명에서 epoch·트리거 파싱, 미처리분만, 오래된→최신(세션 순서 보존)
-    const cand = files.map(f => {
-      const m = f.match(/screen-(\d+)-([a-z_]+)-([a-z]+)\.png/i);
-      return m ? { f, epoch: parseInt(m[1]), trigger: m[2], focus: m[3] } : null;
-    }).filter(x => x && !_localDone.has(x.f)).sort((a, b) => a.epoch - b.epoch);
+    // 파일명에서 epoch·트리거 파싱(하이픈 트리거 포함), 미처리분만, 오래된→최신(세션 순서 보존)
+    const cand = files.map(_parseLocalCaptureName).filter(x => x && !_localDone.has(x.f)).sort((a, b) => a.epoch - b.epoch);
     if (!cand.length) { console.log(`[vision-local] 신규 없음 (총 ${files.length}, 처리완료 ${_localDone.size})`); return 0; }
-    // 중복 컷: 유지 프레임 간 최소 간격. mouse_click(의도적 클릭)은 항상 유지.
+    // 중복 컷: 유지 프레임 간 최소 간격. mouse_click·fallback-appchange(의도적 클릭·전환)은 항상 유지.
     const work = []; let lastKept = 0;
     for (const c of cand) {
-      if (c.trigger === 'mouse_click' || c.epoch - lastKept >= LOCAL_MIN_GAP_MS) { work.push(c); lastKept = c.epoch; }
+      if (c.trigger === 'mouse_click' || c.trigger === 'fallback-appchange' || c.epoch - lastKept >= LOCAL_MIN_GAP_MS) { work.push(c); lastKept = c.epoch; }
       else _localDone.add(c.f); // 컷도 처리완료로 기록(재스캔 방지)
     }
     const batch = work.slice(0, LOCAL_BATCH);
@@ -1021,10 +1024,13 @@ async function processLocalDir() {
         if (stat.size > 6_000_000) { _localDone.add(c.f); continue; } // 6MB↑ 스킵
         const base64 = fs.readFileSync(full).toString('base64');
         const iso = new Date(c.epoch).toISOString();
+        // 사이드카(.json) 메타 로드 — app/windowTitle/excel/lastClick 복원으로 라우터(Sonnet) 및 필드 정밀도 향상
+        let side = {};
+        try { side = JSON.parse(fs.readFileSync(full.replace(/\.png$/i, '.json'), 'utf8')) || {}; } catch {}
         // [E1] 직전과 시각적으로 같은 화면이면 분석 스킵(처리완료 기록해 재스캔 방지)
-        if (await _isDupFrame(base64, `local|${host}`)) { _localDone.add(c.f); continue; }
+        if (await _isDupFrame(base64, _dedupKey(LOCAL_USER || host, side.app || 'local', side.windowTitle || ''), c.epoch)) { _localDone.add(c.f); continue; }
         const result = await visionAnalyze(base64, {
-          hostname: host, name: 'capture', windowTitle: '', trigger: c.trigger,
+          hostname: host, name: side.app || 'capture', windowTitle: side.windowTitle || '', trigger: c.trigger,
           forceModel: LOCAL_FORCE_MODEL,
           userId: LOCAL_USER, prevSummary: _getPrevSummary(LOCAL_USER || host),
         });
@@ -1036,7 +1042,7 @@ async function processLocalDir() {
           sessionId: `local-${host}-${Math.floor(c.epoch / 1800000)}`, // 30분 버킷 = 세션 형성 도움
           userId: LOCAL_USER, timestamp: iso,
           data: { hostname: host, originalCaptureId: c.f, trigger: c.trigger, ...result,
-            app: result.app || '', thumbnail: await _makeThumb(base64) },
+            app: result.app || side.app || '', thumbnail: await _makeThumb(base64), ..._whereCtx(side) },
         }] });
         const ok = await new Promise(resolve => {
           const sUrl = new URL('/api/hook', ORBIT_SERVER);
@@ -1075,7 +1081,8 @@ function _whereCtx(src) {
 // 데몬이 /api/vision/spool에 올린 파일을 list→file→분석→screen.analyzed→delete 로 한 건씩 비운다.
 // 스풀은 app/windowTitle 메타를 실어오므로 라우터(핵심=Sonnet)가 정상 작동한다(로컬 모드와 차이).
 const _nightNow = () => { const h = new Date().getHours(); return h >= 19 || h < 8; };
-const SPOOL_BATCH_N = parseInt(process.env.VISION_SPOOL_BATCH) || (_nightNow() ? 80 : 30); // 밤엔 틱당 더 많이 비운다
+const SPOOL_BATCH_N = parseInt(process.env.VISION_SPOOL_BATCH) || (_nightNow() ? 90 : 45); // [2026-11-20] 낮 30→45, 밤 80→90
+const SPOOL_POLL_MS = parseInt(process.env.VISION_SPOOL_POLL_MS) || 3 * 60 * 1000; // [2026-11-20] 10분→3분 (대기 백로그 유휴 지연 단축)
 let _spoolBusy = false;
 function _spoolReq(method, pathQ, timeout) {
   return new Promise(resolve => {
@@ -1234,7 +1241,7 @@ async function main() {
   console.log(`  소스: ${SPOOL_MODE ? '스풀 (전 직원 백로그 /api/vision/spool)' : LOCAL_MODE ? '로컬 폴더 (' + LOCAL_DIR + ')' : SERVER_QUEUE_MODE ? '서버 큐 (/api/vision/queue)' : 'Google Drive'}`);
   if (CLAUDE_CLI) console.log(`  CLI: ${CLAUDE_CLI}`);
   console.log(`  서버: ${ORBIT_SERVER}`);
-  console.log(`  폴링: ${(SERVER_QUEUE_MODE ? SERVER_QUEUE_POLL_MS / 1000 : POLL_INTERVAL / 1000)}초`);
+  console.log(`  폴링: ${(SPOOL_MODE ? SPOOL_POLL_MS / 1000 : SERVER_QUEUE_MODE ? SERVER_QUEUE_POLL_MS / 1000 : POLL_INTERVAL / 1000)}초`);
 
   if (SPOOL_MODE) {
     // 스풀 모드: 서버 볼륨에 모인 전 직원 백로그를 무과금 CLI로 소진(라우터 정상 작동)
@@ -1242,7 +1249,7 @@ async function main() {
     const first = await processSpool();
     console.log(`[vision-spool] 첫 배치: ${first}건`);
     if (process.argv.includes('--once')) { process.exit(0); }
-    _loop(processSpool, SERVER_QUEUE_POLL_MS);
+    _loop(processSpool, SPOOL_POLL_MS);
   } else if (LOCAL_MODE) {
     // 로컬 폴더 모드: PNG 백로그 소급 분석 (무과금 CLI). 사용자 ID 없으면 결과 귀속 불가.
     if (!LOCAL_USER) console.warn('  ⚠ userId 없음(.orbit-config.json) — 분석결과 귀속 안 됨');
@@ -1270,4 +1277,4 @@ async function main() {
 
 // [2026-09-29] require 시(bin/vision-backfill.js) 메인루프 미실행 — 직접 실행할 때만 동작(기존 동작 불변)
 if (require.main === module) main().catch(e => { console.error(e.message); process.exit(1); });
-module.exports = { visionAnalyze, visionCli, _buildPrompt, _parseResult, _isValidResult, _refreshWfCatalog, _workflowBlock, pickModel, _isDupHash, _dupCache, _dedupKey, ORBIT_SERVER, ORBIT_TOKEN, USE_CLI, CLAUDE_CLI };
+module.exports = { visionAnalyze, visionCli, _buildPrompt, _parseResult, _isValidResult, _refreshWfCatalog, _workflowBlock, pickModel, _isDupHash, _dupCache, _dedupKey, _parseLocalCaptureName, ORBIT_SERVER, ORBIT_TOKEN, USE_CLI, CLAUDE_CLI };

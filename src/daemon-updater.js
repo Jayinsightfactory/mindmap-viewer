@@ -16,6 +16,7 @@ const fs   = require('fs');
 const os   = require('os');
 const http = require('http');
 const https = require('https');
+const crypto = require('crypto');
 
 const ROOT = path.resolve(__dirname, '..');
 
@@ -103,10 +104,33 @@ function _repairConfigServerUrl() {
   return false;
 }
 
-function getLocalVersion() {
+const RELEASE_VERSION_FILE = path.join(ROOT, '.orbit-release-version');
+
+function _getGitHeadRaw(rootDir = ROOT) {
   try {
-    return execSync('git rev-parse HEAD', { cwd: ROOT, timeout: 5000, windowsHide: true, stdio: 'pipe' }).toString().trim().slice(0, 8);
-  } catch { return 'unknown'; }
+    return execSync('git rev-parse HEAD', { cwd: rootDir, timeout: 5000, windowsHide: true, stdio: 'pipe' }).toString().trim().slice(0, 8);
+  } catch { return null; }
+}
+
+function _readBundleVersionMeta(rootDir = ROOT) {
+  try {
+    const p = path.join(rootDir, '.orbit-release-version');
+    if (!fs.existsSync(p)) return null;
+    const meta = JSON.parse(fs.readFileSync(p, 'utf8'));
+    return (meta && typeof meta.version === 'string' && meta.version.trim()) ? meta : null;
+  } catch { return null; }
+}
+
+function getLocalVersion(rootDir = ROOT) {
+  const gitHead = _getGitHeadRaw(rootDir);
+  const bundleMeta = _readBundleVersionMeta(rootDir);
+  // 서버 번들로 업데이트된 경우(GitHub Private 환경): git HEAD가 수동으로 바뀌지 않았으면 번들 버전을 정본으로 사용
+  if (bundleMeta && _isRealVersion(bundleMeta.version)) {
+    if (!gitHead || !bundleMeta.gitHeadAtInstall || gitHead === bundleMeta.gitHeadAtInstall) {
+      return bundleMeta.version.slice(0, 8);
+    }
+  }
+  return gitHead || 'unknown';
 }
 
 function _isRealVersion(v) {
@@ -273,61 +297,215 @@ while ($true) {
   }
 }
 
+function fetchReleaseMeta(serverUrl = _serverUrl, token = _token) {
+  return new Promise((resolve) => {
+    if (!serverUrl) return resolve(null);
+    try {
+      const url = new URL('/api/daemon/release-meta', serverUrl);
+      const mod = url.protocol === 'https:' ? https : http;
+      const headers = { 'X-Device-Id': encodeURIComponent(os.hostname()) };
+      if (token) headers['Authorization'] = 'Bearer ' + token;
+      const req = mod.get({ hostname: url.hostname, port: url.port || (url.protocol === 'https:' ? 443 : 80),
+        path: url.pathname, headers, timeout: 15000 }, (res) => {
+        let data = '';
+        res.on('data', c => data += c);
+        res.on('end', () => {
+          if (res.statusCode !== 200) return resolve(null);
+          try { resolve(JSON.parse(data)); } catch { resolve(null); }
+        });
+      });
+      req.on('error', () => resolve(null));
+      req.on('timeout', () => { req.destroy(); resolve(null); });
+    } catch { resolve(null); }
+  });
+}
+
+function _downloadBundleToFile(bundleUrl, token, destPath) {
+  return new Promise((resolve, reject) => {
+    const url = new URL(bundleUrl);
+    const mod = url.protocol === 'https:' ? https : http;
+    const headers = { 'X-Device-Id': encodeURIComponent(os.hostname()) };
+    if (token) headers['Authorization'] = 'Bearer ' + token;
+    const req = mod.get({ hostname: url.hostname, port: url.port || (url.protocol === 'https:' ? 443 : 80),
+      path: url.pathname + url.search, headers, timeout: 60000 }, (res) => {
+      if (res.statusCode !== 200) {
+        res.resume();
+        return reject(new Error(`release-bundle HTTP ${res.statusCode}`));
+      }
+      const hash = crypto.createHash('sha256');
+      const ws = fs.createWriteStream(destPath);
+      res.on('data', (chunk) => hash.update(chunk));
+      res.pipe(ws);
+      ws.on('finish', () => resolve({ sha256: hash.digest('hex') }));
+      ws.on('error', reject);
+      res.on('error', reject);
+    });
+    req.on('error', reject);
+    req.on('timeout', () => { req.destroy(new Error('release-bundle download timeout')); });
+  });
+}
+
+function _copyDirOverlay(srcDir, dstDir) {
+  fs.mkdirSync(dstDir, { recursive: true });
+  for (const entry of fs.readdirSync(srcDir, { withFileTypes: true })) {
+    if (entry.name === 'node_modules' || entry.name === '.git' || entry.name === '.env') continue;
+    const sp = path.join(srcDir, entry.name);
+    const dp = path.join(dstDir, entry.name);
+    if (entry.isDirectory()) {
+      _copyDirOverlay(sp, dp);
+    } else if (entry.isFile()) {
+      fs.copyFileSync(sp, dp);
+    }
+  }
+}
+
+function _isPinnedBadVersion(ver) {
+  try {
+    const pinPath = path.join(os.homedir(), '.orbit', '.code-pin');
+    if (!fs.existsSync(pinPath)) return false;
+    const pin = JSON.parse(fs.readFileSync(pinPath, 'utf8'));
+    if (pin?.bad && ver && (String(pin.bad).startsWith(ver.slice(0, 8)) || String(ver).startsWith(String(pin.bad).slice(0, 8)))) {
+      return true;
+    }
+  } catch {}
+  return false;
+}
+
+/**
+ * 1차 업데이트 경로 (GitHub Private 무토큰): Railway 서버에서 인증된 tar.gz 번들을 받아 SHA-256 검증 후 적용.
+ * 실패 시 호출자가 2차 git pull 폴백으로 넘어간다.
+ */
+async function updateFromServerBundle({ serverUrl = _serverUrl, token = _token, rootDir = ROOT } = {}) {
+  if (!serverUrl || !token) return { ok: false, reason: 'missing_server_or_token' };
+  const meta = await fetchReleaseMeta(serverUrl, token);
+  if (!meta || !meta.ok || !_isRealVersion(meta.version) || !/^[0-9a-f]{64}$/i.test(meta.sha256 || '')) {
+    return { ok: false, reason: 'invalid_release_meta' };
+  }
+  const targetVer = meta.version.slice(0, 8);
+  if (_isPinnedBadVersion(targetVer)) {
+    return { ok: true, upToDate: true, reason: 'pinned_bad_version' };
+  }
+  const localVer = getLocalVersion(rootDir);
+  if (localVer === targetVer) {
+    return { ok: true, upToDate: true, version: targetVer };
+  }
+  const tmpBundle = path.join(os.tmpdir(), `orbit-dl-${targetVer}-${Date.now()}.tar.gz`);
+  const stageDir = path.join(os.tmpdir(), `orbit-stage-${targetVer}-${Date.now()}`);
+  try {
+    const bundleUrl = new URL(meta.bundlePath || '/api/daemon/release-bundle', serverUrl).toString();
+    const { sha256 } = await _downloadBundleToFile(bundleUrl, token, tmpBundle);
+    if (sha256.toLowerCase() !== meta.sha256.toLowerCase()) {
+      throw new Error(`SHA-256 불일치 (got=${sha256.slice(0, 12)} exp=${meta.sha256.slice(0, 12)})`);
+    }
+    fs.mkdirSync(stageDir, { recursive: true });
+    execSync(`tar -xzf "${tmpBundle}" -C "${stageDir}"`, { timeout: 60000, windowsHide: true, stdio: 'pipe' });
+    // 핵심 파일 존재 검증(깨진 아카이브 덮어쓰기 차단)
+    for (const reqFile of ['daemon/personal-agent.js', 'src/daemon-updater.js', 'package.json']) {
+      if (!fs.existsSync(path.join(stageDir, reqFile))) {
+        throw new Error(`번들 필수 파일 누락: ${reqFile}`);
+      }
+    }
+    const pkgPath = path.join(rootDir, 'package.json');
+    const pkgBefore = fs.existsSync(pkgPath) ? fs.readFileSync(pkgPath, 'utf8') : '';
+    _copyDirOverlay(stageDir, rootDir);
+    const pkgAfter = fs.existsSync(pkgPath) ? fs.readFileSync(pkgPath, 'utf8') : '';
+    const verPath = path.join(rootDir, '.orbit-release-version');
+    const tmpVer = verPath + '.tmp-' + Date.now();
+    fs.writeFileSync(tmpVer, JSON.stringify({
+      version: targetVer,
+      sha256: meta.sha256,
+      updatedAt: new Date().toISOString(),
+      source: 'server-bundle',
+      gitHeadAtInstall: _getGitHeadRaw(rootDir),
+    }, null, 2), 'utf8');
+    fs.renameSync(tmpVer, verPath);
+    return { ok: true, upToDate: false, version: targetVer, pkgChanged: pkgBefore !== pkgAfter };
+  } finally {
+    try { if (fs.existsSync(tmpBundle)) fs.unlinkSync(tmpBundle); } catch {}
+    try { if (fs.existsSync(stageDir)) fs.rmSync(stageDir, { recursive: true, force: true }); } catch {}
+  }
+}
+
+let _updatingNow = false;
 // == PART 2: Multi-fallback update chain ==
-// Step 1: git fetch + reset --hard
+// Step 0 (1차): Railway 서버 무토큰 번들 스트리밍 (GitHub Private 환경 지원)
+// Step 1 (2차 폴백): git fetch + reset --hard
 // Step 2: repair remote + retry
 // Step 3: rm + clone (full re-download)
-// Step 4: irm install.ps1 (re-install)
-function pullAndRestart(reason) {
-  console.log(`[daemon-updater] update start: ${reason}`);
-  reportStatus('update_start', reason);
-  _showToast('Orbit AI', 'Updating...');
-
-  // Step 1: normal git fetch + reset
+async function pullAndRestart(reason) {
+  if (_updatingNow) return false;
+  _updatingNow = true;
   try {
-    execSync('git fetch origin', { cwd: ROOT, timeout: 30000, windowsHide: true, stdio: 'pipe' });
-    const localVer = getLocalVersion();
-    const remoteVer = (() => {
-      try { return execSync('git rev-parse origin/main', { cwd: ROOT, timeout: 5000, windowsHide: true, stdio: 'pipe' }).toString().trim().slice(0, 8); } catch { return null; }
-    })();
-    if (remoteVer && localVer === remoteVer) {
-      console.log('[daemon-updater] already up to date');
-      reportStatus('update_skip', 'Already up to date');
+    console.log(`[daemon-updater] update start: ${reason}`);
+    reportStatus('update_start', reason);
+    _showToast('Orbit AI', 'Updating...');
+
+    // Step 0 (1차): Railway 서버 번들 업데이트 (직원 PC에 GitHub 토큰 불필요)
+    try {
+      const bRes = await updateFromServerBundle();
+      if (bRes.ok && bRes.upToDate) {
+        console.log(`[daemon-updater] server-bundle already up to date (${bRes.version || bRes.reason})`);
+        reportStatus('update_skip', 'Already up to date (server-bundle)');
+        return false;
+      }
+      if (bRes.ok && !bRes.upToDate) {
+        return _postUpdate(`step0: server-bundle ${bRes.version}`, { pkgChanged: bRes.pkgChanged });
+      }
+      console.warn('[daemon-updater] step0 server-bundle skipped/fallback:', bRes.reason);
+    } catch (e0) {
+      console.warn('[daemon-updater] step0 server-bundle failed (git fallback):', e0.message);
+    }
+
+    // Step 1 (2차 폴백): normal git fetch + reset
+    try {
+      execSync('git fetch origin', { cwd: ROOT, timeout: 30000, windowsHide: true, stdio: 'pipe' });
+      const localVer = getLocalVersion();
+      const remoteVer = (() => {
+        try { return execSync('git rev-parse origin/main', { cwd: ROOT, timeout: 5000, windowsHide: true, stdio: 'pipe' }).toString().trim().slice(0, 8); } catch { return null; }
+      })();
+      if (remoteVer && localVer === remoteVer) {
+        console.log('[daemon-updater] already up to date');
+        reportStatus('update_skip', 'Already up to date');
+        return false;
+      }
+      execSync('git reset --hard origin/main', { cwd: ROOT, timeout: 15000, windowsHide: true, stdio: 'pipe' });
+      try { if (fs.existsSync(RELEASE_VERSION_FILE)) fs.unlinkSync(RELEASE_VERSION_FILE); } catch {}
+      return _postUpdate('step1: git reset');
+    } catch (e1) {
+      console.warn('[daemon-updater] step1 failed:', e1.message);
+    }
+
+    // Step 2: repair remote + retry
+    try {
+      _repairGitRemote();
+      execSync('git fetch origin', { cwd: ROOT, timeout: 30000, windowsHide: true, stdio: 'pipe' });
+      execSync('git reset --hard origin/main', { cwd: ROOT, timeout: 15000, windowsHide: true, stdio: 'pipe' });
+      try { if (fs.existsSync(RELEASE_VERSION_FILE)) fs.unlinkSync(RELEASE_VERSION_FILE); } catch {}
+      return _postUpdate('step2: remote repair + reset');
+    } catch (e2) {
+      console.warn('[daemon-updater] step2 failed:', e2.message);
+    }
+
+    // Step 3: full re-clone
+    try {
+      const backupDir = ROOT + '-backup-' + Date.now();
+      fs.renameSync(ROOT, backupDir);
+      execSync(`git clone "${CANONICAL_GIT_REPO}" "${ROOT}"`, { timeout: 60000, windowsHide: true, stdio: 'pipe' });
+      // Copy node_modules from backup
+      const nmSrc = path.join(backupDir, 'node_modules');
+      if (fs.existsSync(nmSrc)) {
+        try { fs.renameSync(nmSrc, path.join(ROOT, 'node_modules')); } catch {}
+      }
+      // Clean backup after success
+      try { fs.rmSync(backupDir, { recursive: true, force: true }); } catch {}
+      return _postUpdate('step3: full re-clone');
+    } catch (e3) {
+      console.warn('[daemon-updater] step3 failed:', e3.message);
+      reportStatus('update_fail', `all steps failed: ${e3.message}`);
       return false;
     }
-    execSync('git reset --hard origin/main', { cwd: ROOT, timeout: 15000, windowsHide: true, stdio: 'pipe' });
-    return _postUpdate('step1: git reset');
-  } catch (e1) {
-    console.warn('[daemon-updater] step1 failed:', e1.message);
-  }
-
-  // Step 2: repair remote + retry
-  try {
-    _repairGitRemote();
-    execSync('git fetch origin', { cwd: ROOT, timeout: 30000, windowsHide: true, stdio: 'pipe' });
-    execSync('git reset --hard origin/main', { cwd: ROOT, timeout: 15000, windowsHide: true, stdio: 'pipe' });
-    return _postUpdate('step2: remote repair + reset');
-  } catch (e2) {
-    console.warn('[daemon-updater] step2 failed:', e2.message);
-  }
-
-  // Step 3: full re-clone
-  try {
-    const backupDir = ROOT + '-backup-' + Date.now();
-    fs.renameSync(ROOT, backupDir);
-    execSync(`git clone "${CANONICAL_GIT_REPO}" "${ROOT}"`, { timeout: 60000, windowsHide: true, stdio: 'pipe' });
-    // Copy node_modules from backup
-    const nmSrc = path.join(backupDir, 'node_modules');
-    if (fs.existsSync(nmSrc)) {
-      try { fs.renameSync(nmSrc, path.join(ROOT, 'node_modules')); } catch {}
-    }
-    // Clean backup after success
-    try { fs.rmSync(backupDir, { recursive: true, force: true }); } catch {}
-    return _postUpdate('step3: full re-clone');
-  } catch (e3) {
-    console.warn('[daemon-updater] step3 failed:', e3.message);
-    reportStatus('update_fail', `all steps failed: ${e3.message}`);
-    return false;
+  } finally {
+    _updatingNow = false;
   }
 }
 
@@ -381,11 +559,13 @@ function _migrateLauncherNoWindow(orbitDirArg) {
   return results;
 }
 
-function _postUpdate(step) {
+function _postUpdate(step, { pkgChanged } = {}) {
   // npm install if package.json changed
   try {
-    const diffFiles = execSync('git diff HEAD~1 --name-only', { cwd: ROOT, timeout: 5000, windowsHide: true, stdio: 'pipe' }).toString();
-    if (diffFiles.includes('package.json')) {
+    const needNpm = typeof pkgChanged === 'boolean'
+      ? pkgChanged
+      : execSync('git diff HEAD~1 --name-only', { cwd: ROOT, timeout: 5000, windowsHide: true, stdio: 'pipe' }).toString().includes('package.json');
+    if (needNpm) {
       if (process.platform === 'win32') {
         spawn('powershell.exe', ['-WindowStyle', 'Hidden', '-Command', `cd '${ROOT}'; npm install --production 2>&1 | Out-Null`], {
           detached: true, stdio: 'ignore', windowsHide: true,
@@ -475,7 +655,7 @@ async function executeCommand(cmd) {
       break;
 
     case 'gitpull-worker':
-      pullAndRestart(cmd.data?.reason || 'safe-cmd: gitpull-worker');
+      await pullAndRestart(cmd.data?.reason || 'safe-cmd: gitpull-worker');
       reportStatus('command_executed', 'gitpull-worker');
       break;
 
@@ -748,15 +928,25 @@ async function _checkCycle() {
     if (_isIdle() || elapsed > MAX_IDLE_WAIT_MS) {
       const reason = _pendingUpdate.reason + (elapsed > MAX_IDLE_WAIT_MS ? ' (forced after 30min)' : ' (idle)');
       _pendingUpdate = null;
-      pullAndRestart(reason);
+      await pullAndRestart(reason);
       return;
     }
   }
 }
 
-// -- Periodic git check (1hr interval, independent of server)
-function _periodicGitCheck() {
+// -- Periodic version check (1hr interval: 1차 서버 release-meta, 2차 git direct 폴백)
+async function _periodicGitCheck() {
   try {
+    const meta = await fetchReleaseMeta();
+    if (meta && meta.ok && _isRealVersion(meta.version)) {
+      const local = getLocalVersion();
+      const remote = meta.version.slice(0, 8);
+      if (_isRealVersion(local) && local !== remote && !_isPinnedBadVersion(remote)) {
+        _pendingUpdate = { reason: `periodic release-meta mismatch: ${local} -> ${remote}`, since: Date.now() };
+        console.log(`[daemon-updater] release-meta mismatch (${local} -> ${remote}), update queued`);
+      }
+      return;
+    }
     if (_gitDirectCheck()) {
       // Queue update, wait for idle
       _pendingUpdate = { reason: 'periodic git check: version mismatch', since: Date.now() };
@@ -899,9 +1089,7 @@ function start() {
           return JSON.parse(_out).version || null;
         } catch { return null; }
       })();
-      const _lcHash = (() => {
-        try { return execSync('git rev-parse HEAD', { cwd: ROOT, timeout: 5000, windowsHide: true, stdio: 'pipe' }).toString().trim().slice(0, 8); } catch { return null; }
-      })();
+      const _lcHash = getLocalVersion();
       if (_isRealVersion(_svHash) && _isRealVersion(_lcHash) && _svHash !== _lcHash) {
         console.log(`[daemon-updater] 동기 버전 불일치: ${_lcHash} -> ${_svHash} → 즉시 git pull (crash 전)`);
         try {
@@ -1000,7 +1188,7 @@ function start() {
     if (!serverInfo || !serverInfo.version) {
       console.log('[daemon-updater] server unreachable at startup -> git direct check');
       if (_gitDirectCheck()) {
-        pullAndRestart('startup: server unreachable + git update found');
+        await pullAndRestart('startup: server unreachable + git update found');
         return;
       }
     } else {
@@ -1010,7 +1198,7 @@ function start() {
         // 이유: 크래시 루프(~22s 주기)에서는 30분 타임아웃이 영원히 도달하지 못함
         // (매 32s 재시작 시 _pendingUpdate 메모리 초기화됨)
         console.log(`[daemon-updater] startup version mismatch: ${local} -> ${serverInfo.version} → 즉시 업데이트`);
-        pullAndRestart(`startup version mismatch: ${local} -> ${serverInfo.version}`);
+        await pullAndRestart(`startup version mismatch: ${local} -> ${serverInfo.version}`);
         return;
       }
       if (serverInfo.version && !_isRealVersion(serverInfo.version)) {
@@ -1030,4 +1218,4 @@ function stop() {
   if (_gitCheckTimer) { clearInterval(_gitCheckTimer); _gitCheckTimer = null; }
 }
 
-module.exports = { start, stop, getLocalVersion, pullAndRestart, checkServerVersion, reportStatus, _migrateLauncherNoWindow };
+module.exports = { start, stop, getLocalVersion, pullAndRestart, checkServerVersion, fetchReleaseMeta, updateFromServerBundle, reportStatus, _migrateLauncherNoWindow };

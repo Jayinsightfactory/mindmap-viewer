@@ -2445,6 +2445,25 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 - 수정: bin/vision-worker.js visionCli — 150초 하드 타이머로 해당 호출 프로세스 트리만 종료 + 동기 예외에도 게이트 반납 + 실패 로그 200자 절단(로그 30MB 비대 방지).
 - 검증: 구문검사 통과. 실제 정지 재현·수정 후 산출 회복은 미검증(워커 재기동 필요).
 검색어: vision-spool 정지 _spoolBusy execFile 손자프로세스 하드타이머 해독률 2.9%
+## 2026-11-20 Railway RAM 다이어트 — Postgres 10.7GB→2GB 상한 (연결 목표: g18)
+- 원인: getStats 1분 주기 events 전체 GROUP BY + 하트비트 워치독 TEXT 캐스팅 풀스캔(seq_scan 1,695만회)으로 PG 페이지캐시 10.7~10.9GB 고착. 30일 정리는 text<timestamptz 오류로 매일 실패(보존은 event-archiver 가 이미 30일 유지 중). PG 로그 hostname 컬럼 없음 153건/400줄, jsonb NUL 오류, daemon.register session_id 누락.
+- 수정(#103 c6c94bc): getStats=reltuples+TABLESAMPLE 0.5%·30분 캐시, 워치독 ISO 사전필터(87,614→2,081블록), 정리=KEEP_DAYS+14일 2만행 배치 백스톱+VACUUM(ANALYZE), PC충돌=SQLite tracker_pings 조회(6h 1회), insertEvent NUL 제거, register 컬럼 보강, 풀 30→12+error 핸들러, 힙 4096→768. 운영: idx_events_data_gin DROP CONCURRENTLY(events 4280→3001MB), ALTER SYSTEM shared_buffers 256MB/effective_cache_size 512MB/work_mem 4MB, Postgres 메모리 상한 2GB(serviceInstanceLimitsUpdate) 후 재배포 1회(약 1분 끊김, 앱 무재시작 재연결 확인).
+- 실측: Postgres 적용 전 10.7GB(1h avg)/max 10.9GB → 적용 후 1.95GB(상한 2GB 안 캐시). mindmap-viewer 205~391MB, jest 285 통과, CI Node18/20/22 통과, 배포 후 hostname 오류 0건.
+- 원복: serviceInstanceLimitsUpdate memoryGB 24 / ALTER SYSTEM RESET 3종 후 재시작. 별건(미수정): archive_log 1,829건 drive_file 전부 NULL(Drive 업로드 실패 상태로 삭제 진행), pad_mouse_map ON CONFLICT 제약 없음, check-hostname 의 PG tracker_pings.hostname 조회.
+- 검색어: RAM 다이어트 getStats TABLESAMPLE reltuples idx_events_data_gin shared_buffers 메모리 상한 2GB tracker_pings hostname NUL jsonb g18
+## 2026-11-20 백업 유실 하드 가드 · DDL lock_timeout · 무토큰 데몬 릴리즈 경로 (연결 목표: g18, g19)
+- 원인 진단: archive_log drive_file NULL 1,829건 = Railway 변수 GOOGLE_SERVICE_ACCOUNT_JSON 존재 / GOOGLE_DRIVE_CAPTURES_FOLDER_ID 미설정 상태에서 event-archiver 가 HTTP 오류 응답을 미검사한 채 drive_file=null 로 events DELETE 를 강행. 또한 배포 교체 시 createTables() 의 무조건 ALTER TABLE events 가 잔여 SELECT 와 락 경합해 6분+ 부팅 행 유발(#62).
+- 수정: ① event-archiver._archiveUser Drive 백업(drive_file IS NOT NULL) 미검증 시 DELETE 완전 차단 + 공용 deleteVerifiedArchivedEvents 가드를 server.js(_cleanupOldEvents·_runDailyMaintenance)·routes/data-archive.js(90일) 전수 적용(노이즈/임시 테이블 정리는 인덱스 사전필터 유지). ② db-pg.js createTables()·daemon-command-queue.js 에 SET lock_timeout='5s' + information_schema 선확인 적용(이미 일치 시 ACCESS EXCLUSIVE 락 0회, 55P03 경고 흡수). ③ src/daemon-release.js 신규 + GET /api/daemon/release-meta·/release-bundle(Orbit Bearer 인증 강제, os.tmpdir 디스크 캐시 스트리밍 RAM +0MB) + daemon-updater.js·guardian-watchdog.ps1·personal-agent.js 1차 서버 번들(SHA-256 검증·.orbit-release-version) / 2차 git pull 폴백 구축(직원 PC GitHub 토큰 0, install.ps1 무변경, 광역 원격명령 미발송).
+- 검증: tests/unit/private-ready-and-backup-guard.test.js 7건 신규 포함 jest 31 suites / 292 tests 통과, PS1 파서 오류 0건. 배포 후 /health 200 · /api/daemon/release-meta 200 · /release-bundle 무인증 401 실측.
+- 남은 작업: Google Drive 공유 폴더 생성 후 Railway GOOGLE_DRIVE_CAPTURES_FOLDER_ID 설정 시 30일 백업 후 자동 삭제 재개 가능(미설정 동안은 원본 100% 보존).
+- 검색어: drive_file 하드 가드 event-archiver lock_timeout 5s daemon-release release-meta release-bundle GitHub Private 무토큰 g18 g19
+
+## 2026-11-20 업무데이터 유입·수집 커버리지 보강 — 스풀 유실·중복 캡처·파일 하위폴더·완전성 오탐 수리 (연결 목표: g01, g19)
+- 원인 진단: ① 11/19 실측 `screen.capture` 3,645건 중 도착 1,302건(36%)·해독 831건(23%) · 서버 대기 스풀 5장 — `_spoolWorthUploading`이 `app_switch`/`title_change`/`fallback-timer` idle 캡처를 영구 스킵, RAM≥90%에서 스풀 중단, `personal-agent.js`의 `uploadPendingToServer(20)`가 `.spool-uploaded` 미참조로 동일 PNG를 `app:''` 중복 `screen.capture`로 2~3회 재전송 ② `vision-worker.js` `--local` 정규식이 하이픈 트리거(`fallback-appchange/timer`) 전량 누락·사이드카 미로드, 스풀 폴링 10분·`/api/vision/spool/list` 상한 60 ③ `file-change-watcher.js`가 Desktop/Documents/Downloads depth 0만 감시해 하위폴더 엑셀 저장 시 폴더명만 수집 + 네이버웍스 드라이브 미포함 ④ `completeness.js`가 09:00 KST 출근 전(07:00 배치)에도 `elapsed>=0.1`로 13명 전원 `pc-off` 유실 오판.
+- 수정: `src/screen-capture.js`(`_spoolWorthUploading`에 `app_switch`/`title_change`/`fallback-timer` 및 비쿨다운 `kakao_periodic` 허용, `uploadPendingToSpool` RAM 96%·5.8MB·90초/45건, `.remote-uploaded` 마킹·`.spool-uploaded` 중복 차단), `daemon/personal-agent.js`(부팅/시간별 복구 `uploadPendingToSpool(45)`로 통일), `bin/vision-worker.js`+`server.js`(`_parseLocalCaptureName` 하이픈 지원·사이드카 로드·스풀 3분/낮45·밤90·서버상한 100), `src/file-change-watcher.js`(1단계 업무 하위폴더 문서감시 + 네이버웍스/LINE WORKS 드라이브 추가), `src/completeness.js`(09:00 KST 이전 `elapsed=0` 처리).
+- 검증: `tests/unit/work-data-inflow-boost.test.js` 5건 신규 포함 전체 Jest 테스트 통과 및 구문검사 통과.
+- 인계 5줄: ①저장소=`mindmap-viewer`(PR #106/#107/#108) ②수정=`src/screen-capture.js`, `daemon/personal-agent.js`, `src/file-change-watcher.js`, `bin/vision-worker.js`, `server.js`, `src/completeness.js`, `tests/unit/work-data-inflow-boost.test.js` ③PR #107/#108 추가 보완=`completeness.js` 48h 증분 스캔 + single-flight + `(type || '') = ANY($1)` / `CROSS JOIN LATERAL` 역방향 인덱스 스캔으로 2GB PG `BitmapAnd(idx_events_type)` 67~114s 병목 및 `[hook] insertEvent FAIL` 타임아웃 유실 차단 ④검증=Jest 32/32·CI·실서버 배포 `/api/completeness` 단축 실측 ⑤잠금 없음.
+- 검색어: 업무데이터 유입 부족 _spoolWorthUploading uploadPendingToSpool 중복캡처 file-change-watcher 하위폴더 네이버웍스드라이브 completeness 07시 오탐 BitmapAnd idx_events_type LATERAL g01 g19
 
 ## 2026-11-20 승인 OneDrive 신규 업무파일 카나리
 

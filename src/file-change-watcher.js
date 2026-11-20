@@ -18,31 +18,69 @@ const POLL_INTERVAL = 5000; // 5초마다 체크 (fs.watch 대체)
 // [2026-10-05] Google Drive/OneDrive 동기화 폴더 추가 — 엑셀을 드라이브에서 바로 열어 저장하는 PC는
 // 바탕화면/문서/다운로드만 보면 파일 저장이 0건으로 잡혔다. 동기화 루트 + 바로 아래 하위폴더(최대 40개)만,
 // 문서 확장자만 본다(깊은 재귀·대용량 스캔 금지). 폴더 목록은 10분마다 갱신, 새로 생긴 폴더는 조용히 기준점만 잡음.
+// [2026-11-20] ① 바탕화면/문서/다운로드 1단계 하위 업무폴더 추가(하위폴더 엑셀 저장 시 폴더명만 잡히던 사각지대 해소)
+//   ② 네이버웍스 드라이브(NAVER WORKS Drive / LINE WORKS Drive) 동기화 루트 추가(강명훈 등 파일 근거 2.6% 사각지대 해소).
 const _DOC_EXT = /\.(xlsx|xlsm|xlsb|xls|csv|docx?|pptx?|pdf|hwpx?)$/i;
+const _SKIP_SUBDIR_RE = /^(\.|node_modules$|appdata$|카카오톡 받은 파일$|kakao files$|kakaotalk downloads$|\$recycle\.bin$|system volume information$|temp$|tmp$|cache$)/i;
+function _isSkippedSubdir(name) { return !name || _SKIP_SUBDIR_RE.test(String(name).trim()); }
 function _cloudRoots() {
   const home = os.homedir(); const out = [];
-  const cands = [process.env.OneDrive, process.env.OneDriveCommercial, process.env.OneDriveConsumer,
-    path.join(home, 'OneDrive'), path.join(home, 'Google Drive'), path.join(home, '내 드라이브'), path.join(home, 'My Drive')];
-  for (const L of 'DEFGHI') { cands.push(L + ':\\내 드라이브', L + ':\\My Drive', L + ':\\공유 드라이브', L + ':\\Shared drives'); } // 구글드라이브 가상드라이브(기본 G:)
-  try { for (const f of fs.readdirSync(home)) if (/^OneDrive - /i.test(f)) cands.push(path.join(home, f)); } catch {}
+  const cands = [
+    process.env.OneDrive, process.env.OneDriveCommercial, process.env.OneDriveConsumer,
+    path.join(home, 'OneDrive'), path.join(home, 'Google Drive'), path.join(home, '내 드라이브'), path.join(home, 'My Drive'),
+    path.join(home, 'NAVER WORKS Drive'), path.join(home, '네이버웍스 드라이브'), path.join(home, 'LINE WORKS Drive'), path.join(home, 'Works Drive'),
+  ];
+  for (const L of 'DEFGHI') {
+    cands.push(
+      L + ':\\내 드라이브', L + ':\\My Drive', L + ':\\공유 드라이브', L + ':\\Shared drives',
+      L + ':\\NAVER WORKS Drive', L + ':\\네이버웍스 드라이브', L + ':\\LINE WORKS Drive', L + ':\\Works Drive'
+    );
+  } // 구글드라이브·네이버웍스 가상드라이브
+  try {
+    for (const f of fs.readdirSync(home)) {
+      if (/^(OneDrive - |NAVER WORKS|네이버웍스|LINE WORKS)/i.test(f)) cands.push(path.join(home, f));
+    }
+  } catch {}
   for (const d of cands) { if (!d) continue; try { if (fs.statSync(d).isDirectory() && !out.some(o => o.toLowerCase() === d.toLowerCase())) out.push(d); } catch {} }
   return out;
 }
 let _dirCache = null, _dirCacheAt = 0, _cloudSet = new Set();
+function _collectSubdirs(roots, maxPerRoot = 40) {
+  const subs = [];
+  for (const r of roots) {
+    try {
+      let n = 0;
+      for (const e of fs.readdirSync(r, { withFileTypes: true })) {
+        if (n >= maxPerRoot) break;
+        if (e.isDirectory() && !_isSkippedSubdir(e.name)) {
+          subs.push(path.join(r, e.name));
+          n++;
+        }
+      }
+    } catch {}
+  }
+  return subs;
+}
 function _getWatchDirs() {
   if (_dirCache && Date.now() - _dirCacheAt < 10 * 60 * 1000) return _dirCache;
   const home = os.homedir();
   const base = [path.join(home, 'Desktop'), path.join(home, 'Documents'), path.join(home, 'Downloads')]
     .filter(d => { try { fs.accessSync(d); return true; } catch { return false; } });
+  const baseSubdirs = _collectSubdirs(base, 40);
   const cloud = [];
   try {
-    for (const r of _cloudRoots()) {
-      cloud.push(r);
-      try { let n = 0; for (const e of fs.readdirSync(r, { withFileTypes: true })) { if (n >= 40) break; if (e.isDirectory() && !e.name.startsWith('.')) { cloud.push(path.join(r, e.name)); n++; } } } catch {}
-    }
+    const cRoots = _cloudRoots();
+    for (const r of cRoots) cloud.push(r);
+    for (const s of _collectSubdirs(cRoots, 40)) cloud.push(s);
   } catch {}
-  _cloudSet = new Set(cloud);
-  const all = [...base, ...cloud.filter(c => !base.includes(c))];
+  // 동기화 폴더 및 바탕화면/문서/다운로드 하위폴더는 문서 확장자(_DOC_EXT)만 추적(노이즈·성능 보호)
+  _cloudSet = new Set([...baseSubdirs, ...cloud]);
+  const all = [];
+  const seen = new Set();
+  for (const d of [...base, ...baseSubdirs, ...cloud]) {
+    const k = d.toLowerCase();
+    if (!seen.has(k)) { seen.add(k); all.push(d); }
+  }
   // 새로 추가된 폴더는 기존 파일을 '신규'로 쏟아내지 않도록 기준점만 저장
   if (_dirCache) for (const d of all) if (!_dirCache.includes(d)) _seed(d);
   _dirCache = all; _dirCacheAt = Date.now();
@@ -133,4 +171,4 @@ function getRecentChanges(count = 20) {
 
 function isRunning() { return _pollTimer !== null; }
 
-module.exports = { start, stop, getRecentChanges, isRunning };
+module.exports = { start, stop, getRecentChanges, isRunning, _getWatchDirs, _cloudRoots, _isSkippedSubdir, _collectSubdirs, _DOC_EXT };
