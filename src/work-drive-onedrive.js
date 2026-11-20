@@ -48,15 +48,23 @@ async function scan(root, decide) {
   let visited = 0;
   while (stack.length) {
     const dir = stack.pop();
-    if (path.relative(dir, await fs.realpath(dir)) !== '') continue;
-    const entries = await fs.opendir(dir);
+    let entries;
+    try {
+      if (path.relative(dir, await fs.realpath(dir)) !== '') continue;
+      entries = await fs.opendir(dir);
+    } catch (error) {
+      if (dir === root || error.code !== 'ENOENT') throw error;
+      continue;
+    }
     for await (const entry of entries) {
       if (++visited > MAX_FILES) throw Error('approved-root-limit');
       if (skip(entry.name) || entry.isSymbolicLink()) continue;
       const file = path.join(dir, entry.name);
       if (entry.isDirectory()) { stack.push(file); continue; }
       if (!entry.isFile() || decide({ filename: entry.name, approvedOneDrive: true }) !== 'ok') continue;
-      const stat = await fs.stat(file);
+      let stat;
+      try { stat = await fs.stat(file); }
+      catch (error) { if (error.code === 'ENOENT') continue; throw error; }
       files.set(keyOf(path.relative(root, file)), { file, filename: entry.name, size: stat.size, modified: stat.mtimeMs, fingerprint: [stat.size, stat.mtimeMs, stat.birthtimeMs, stat.ino].join(':') });
     }
   }
@@ -85,7 +93,8 @@ function createApprovedPoll({ root, stateFile, ownerId, getConfig, upload, decid
       for (const [key, value] of current) {
         if (previous === null || previous[key] === value.fingerprint) { next[key] = value.fingerprint; continue; }
         const stable = now() - value.modified >= SETTLE_MS && value.size >= 1024 && value.size <= 25 * 1024 * 1024;
-        if (stable && submissions < MAX_UPLOADS && path.relative(value.file, await fs.realpath(value.file)) === '' && await ready(value.file)) {
+        const real = stable && submissions < MAX_UPLOADS ? await fs.realpath(value.file).catch(() => null) : null;
+        if (real && path.relative(value.file, real) === '' && await ready(value.file)) {
           submissions++;
           if (await upload({ ...value, root, ownerId })) { next[key] = value.fingerprint; continue; }
         }
