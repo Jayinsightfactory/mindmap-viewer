@@ -47,22 +47,32 @@ async function _aggregateImpl(pool) {
   const scanDays = hasWarmDaily ? LIVE_SCAN_DAYS : LOOKBACK_DAYS;
   const since = new Date(Date.now() - scanDays * 864e5).toISOString();
   const hbSince = new Date(Date.now() - (hasWarmDaily ? HB_SCAN_DAYS : LOOKBACK_DAYS) * 864e5).toISOString();
-  // timestamp 는 TEXT(ISO) — 인덱스 범위 스캔(최근 48h)으로 PG 풀·RAM 고갈 방지
+  let names = {};
+  try { (await pool.query('SELECT id, name FROM orbit_auth_users')).rows.forEach((u) => { names[u.id] = u.name || ''; }); } catch {}
+  const userIds = Object.keys(names).filter((id) => id !== 'local' && id !== 'system');
+  // timestamp 는 TEXT(ISO) — (type || '') 로 idx_events_type BitmapAnd(33만행 랜덤 I/O, 67~114s)를 회피해 48h 증분 스캔을 ~3~9s로 단축
   const { rows } = await pool.query(
     `SELECT user_id, type, to_char((timestamp::timestamptz AT TIME ZONE 'Asia/Seoul')::date, 'YYYY-MM-DD') AS d, COUNT(*)::int AS n
        FROM events
-      WHERE timestamp >= $2 AND type = ANY($1) AND user_id NOT IN ('local','system')
+      WHERE timestamp >= $2 AND (type || '') = ANY($1) AND user_id NOT IN ('local','system')
       GROUP BY 1, 2, 3`, [TYPES, since]);
-  // 직원별 최신 heartbeat(시각·hostname) — 최근 72h 인덱스 스캔 + orbit_pc_links 폴백
-  const { rows: hb } = await pool.query(
-    `SELECT DISTINCT ON (user_id) user_id, timestamp, data_json->>'hostname' AS hostname
-       FROM events WHERE timestamp >= $1 AND type = 'daemon.heartbeat'
-      ORDER BY user_id, timestamp DESC`, [hbSince]);
+  // 직원별 최신 heartbeat(시각·hostname) — idx_events_user_time 역방향 LIMIT 1(LATERAL, ~3s) 우선, 유저 목록 없으면 폴백
+  const { rows: hb } = userIds.length
+    ? await pool.query(
+        `SELECT u.id AS user_id, e.timestamp, e.data_json->>'hostname' AS hostname
+           FROM unnest($1::text[]) AS u(id)
+           CROSS JOIN LATERAL (
+             SELECT timestamp, data_json FROM events
+              WHERE user_id = u.id AND timestamp >= $2 AND (type || '') = 'daemon.heartbeat'
+              ORDER BY timestamp DESC LIMIT 1
+           ) e`, [userIds, hbSince])
+    : await pool.query(
+        `SELECT DISTINCT ON (user_id) user_id, timestamp, data_json->>'hostname' AS hostname
+           FROM events WHERE timestamp >= $1 AND (type || '') = 'daemon.heartbeat'
+          ORDER BY user_id, timestamp DESC`, [hbSince]);
   // 데몬이 실제로 폴링하는 살아있는 hostname 키 = 최근 소비된 명령의 hostname (대소문자 분열 함정 대비)
   let liveKeys = [];
   try { liveKeys = (await pool.query(`SELECT DISTINCT ON (lower(hostname)) hostname, consumed_at FROM orbit_daemon_commands WHERE consumed_at IS NOT NULL AND consumed_at > NOW() - INTERVAL '14 days' ORDER BY lower(hostname), consumed_at DESC`)).rows; } catch {}
-  let names = {};
-  try { (await pool.query('SELECT id, name FROM orbit_auth_users')).rows.forEach((u) => { names[u.id] = u.name || ''; }); } catch {}
   // 같은 직원이 여러 user_id 로 쪼개진 사고(실측 10/21: 아드리아나 10/12 재등록 → 새 id, 박성수·정재훈·김원빈 2개 id) → 이름으로 합친다.
   //   파이프라인이 옛 id 만 알고 있으면 "캡처 0건 7일"로 보이지만 실제론 새 id 로 들어오고 있었다.
   const byUser = {}, uidsOf = {};
