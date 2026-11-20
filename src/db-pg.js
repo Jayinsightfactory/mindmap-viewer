@@ -51,8 +51,30 @@ async function waitForTables() {
   if (_tablesReady) await _tablesReady;
 }
 
+// [2026-11-20 무중단 락 보호] 배포 교체 시 구 컨테이너의 잔여 SELECT 때문에 DDL이 ACCESS EXCLUSIVE 락을
+// 무한 대기하며 부팅(waitForTables)이 600초 고착되던 장애(#62) 재발 방지: 전용 세션에 lock_timeout='5s' 적용.
+async function _queryWithLockTimeout(sql, lockTimeout = '5s') {
+  if (typeof pool.connect === 'function') {
+    const client = await pool.connect();
+    try {
+      await client.query(`SET lock_timeout = '${lockTimeout}'`);
+      return await client.query(sql);
+    } catch (e) {
+      if (e.code === '55P03' || /lock timeout/i.test(e.message || '')) {
+        console.warn(`[DB] DDL lock_timeout(${lockTimeout}) 초과 — 기존 스키마 유지하고 부팅 계속: ${e.message}`);
+        return null;
+      }
+      throw e;
+    } finally {
+      try { await client.query('RESET lock_timeout'); } catch {}
+      client.release();
+    }
+  }
+  return pool.query(sql);
+}
+
 async function createTables() {
-  await pool.query(`
+  await _queryWithLockTimeout(`
     CREATE TABLE IF NOT EXISTS events (
       id TEXT PRIMARY KEY,
       type TEXT NOT NULL,
@@ -75,9 +97,20 @@ async function createTables() {
     EXCEPTION WHEN others THEN NULL;
     END $$;
 
-    -- source NOT NULL 기본값 수리 (기존 테이블에 DEFAULT 없을 수 있음)
-    ALTER TABLE events ALTER COLUMN source SET DEFAULT 'daemon';
-    ALTER TABLE events ALTER COLUMN source DROP NOT NULL;
+    -- source NOT NULL 기본값 수리: 카탈로그 선확인 후 이미 만족하면 ALTER TABLE 스킵(ACCESS EXCLUSIVE 락 0회)
+    DO $$ BEGIN
+      PERFORM set_config('lock_timeout', '5s', true);
+      IF EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = 'public' AND table_name = 'events' AND column_name = 'source'
+          AND (is_nullable = 'NO' OR column_default IS NULL)
+      ) THEN
+        ALTER TABLE events ALTER COLUMN source SET DEFAULT 'daemon';
+        ALTER TABLE events ALTER COLUMN source DROP NOT NULL;
+      END IF;
+    EXCEPTION WHEN lock_not_available THEN
+      RAISE NOTICE 'skip ALTER events.source due to lock_timeout';
+    END $$;
 
     CREATE INDEX IF NOT EXISTS idx_events_session   ON events(session_id);
     CREATE INDEX IF NOT EXISTS idx_events_type      ON events(type);
@@ -101,7 +134,17 @@ async function createTables() {
       title TEXT
     );
 
-    ALTER TABLE sessions ADD COLUMN IF NOT EXISTS title TEXT;
+    DO $$ BEGIN
+      PERFORM set_config('lock_timeout', '5s', true);
+      IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = 'public' AND table_name = 'sessions' AND column_name = 'title'
+      ) THEN
+        ALTER TABLE sessions ADD COLUMN title TEXT;
+      END IF;
+    EXCEPTION WHEN lock_not_available THEN
+      RAISE NOTICE 'skip ALTER sessions.title due to lock_timeout';
+    END $$;
 
     CREATE TABLE IF NOT EXISTS files (
       path TEXT PRIMARY KEY,
@@ -174,15 +217,23 @@ async function createTables() {
     CREATE INDEX IF NOT EXISTS idx_wm_user ON workspace_members(user_id);
     CREATE INDEX IF NOT EXISTS idx_wm_ws   ON workspace_members(workspace_id);
 
-    ALTER TABLE workspace_members ADD COLUMN IF NOT EXISTS team_hierarchy_id TEXT;
-    -- [2026-06-18] 라이브 테이블이 옛 스키마(PK 없음)로 생성돼 INSERT ... ON CONFLICT 실패
-    -- (workspace-add-member/setup-nenova "no unique constraint matching ON CONFLICT").
-    -- CREATE TABLE IF NOT EXISTS는 기존 테이블을 못 고치므로 unique 인덱스+status 컬럼을 보강.
-    ALTER TABLE workspace_members ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'active';
+    -- [2026-11-20] 카탈로그 선확인 + lock_timeout 5s: 이미 존재하는 컬럼은 ALTER TABLE 생략(무잠금 부팅)
+    DO $$ BEGIN
+      PERFORM set_config('lock_timeout', '5s', true);
+      IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='workspace_members' AND column_name='team_hierarchy_id') THEN
+        ALTER TABLE workspace_members ADD COLUMN team_hierarchy_id TEXT;
+      END IF;
+      IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='workspace_members' AND column_name='status') THEN
+        ALTER TABLE workspace_members ADD COLUMN status TEXT NOT NULL DEFAULT 'active';
+      END IF;
+      IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='workspace_members' AND column_name='department_id') THEN
+        ALTER TABLE workspace_members ADD COLUMN department_id TEXT;
+      END IF;
+    EXCEPTION WHEN lock_not_available THEN
+      RAISE NOTICE 'skip ALTER workspace_members due to lock_timeout';
+    END $$;
     CREATE UNIQUE INDEX IF NOT EXISTS uq_wm_ws_user ON workspace_members(workspace_id, user_id);
     CREATE UNIQUE INDEX IF NOT EXISTS uq_ws_id ON workspaces(id);
-    ALTER TABLE workspace_members ADD COLUMN IF NOT EXISTS department_id TEXT;
-    ALTER TABLE workspace_members ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'active';
 
     CREATE TABLE IF NOT EXISTS team_hierarchy (
       id           TEXT PRIMARY KEY,

@@ -199,14 +199,16 @@ function createDataArchiveRouter({ getDb }) {
         return;
       }
 
-      // 75% 이상: 노이즈 이벤트 먼저 삭제 (install.progress, daemon.update 등)
+      // 75% 이상: 노이즈 이벤트 먼저 삭제 (install.progress, daemon.update 등 — ISO 사전필터로 인덱스 활용)
       const noiseTypes = ['install.progress', 'install.diag', 'daemon.update', 'daemon.error'];
+      const noiseCutoffIso = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
       const noiseRes = await db.query(`
         DELETE FROM events
         WHERE type = ANY($1)
+          AND timestamp < $2
           AND timestamp::timestamptz < NOW() - INTERVAL '7 days'
         RETURNING id
-      `, [noiseTypes]);
+      `, [noiseTypes, noiseCutoffIso]);
       const noiseDeleted = noiseRes.rowCount || 0;
 
       if (noiseDeleted > 0) {
@@ -223,13 +225,15 @@ function createDataArchiveRouter({ getDb }) {
         return;
       }
 
-      // 여전히 75% 이상: idle 이벤트 삭제 (30일 이전)
+      // 여전히 75% 이상: idle 이벤트 삭제 (30일 이전 — ISO 사전필터로 인덱스 활용)
+      const idleCutoffIso = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
       const idleRes = await db.query(`
         DELETE FROM events
         WHERE type = 'idle'
+          AND timestamp < $1
           AND timestamp::timestamptz < NOW() - INTERVAL '30 days'
         RETURNING id
-      `);
+      `, [idleCutoffIso]);
       const idleDeleted = idleRes.rowCount || 0;
       if (idleDeleted > 0) {
         console.log(`[data-archive] idle 삭제: ${idleDeleted}건 (30일 이전)`);
@@ -245,14 +249,11 @@ function createDataArchiveRouter({ getDb }) {
         return;
       }
 
-      // 여전히 75% 이상: 90일 이전 데이터 삭제 (학습 데이터 보존 기간 초과분)
-      const archiveRes = await db.query(`
-        DELETE FROM events
-        WHERE timestamp::timestamptz < NOW() - INTERVAL '${ARCHIVE_KEEP_DAYS} days'
-        RETURNING id
-      `);
-      const archived = archiveRes.rowCount || 0;
-      console.log(`[data-archive] ${ARCHIVE_KEEP_DAYS}일 이전 아카이브: ${archived}건 삭제`);
+      // [2026-11-20 하드 가드] 90일 이전 원본 events 는 archive_log.drive_file IS NOT NULL 백업이 검증된 구간만 삭제
+      const { deleteVerifiedArchivedEvents } = require('../src/event-archiver');
+      const cutoff90Iso = new Date(Date.now() - ARCHIVE_KEEP_DAYS * 24 * 60 * 60 * 1000).toISOString();
+      const guardRes = await deleteVerifiedArchivedEvents(db, cutoff90Iso, { tag: 'data-archive' });
+      console.log(`[data-archive] ${ARCHIVE_KEEP_DAYS}일 이전 아카이브: ${guardRes.deleted}건 삭제 (skipped=${guardRes.skipped}, reason=${guardRes.reason || 'ok'})`);
 
       // 최종 상태
       const finalRes = await db.query(`SELECT pg_database_size('railway') as bytes`);

@@ -37,19 +37,26 @@ function dedupeKey(hostname, action, command, data) {
 
 async function ensureSchema(pool) {
   await pool.query(`
-    ALTER TABLE orbit_daemon_commands ADD COLUMN IF NOT EXISTS id INTEGER;
     CREATE SEQUENCE IF NOT EXISTS orbit_daemon_commands_id_seq;
-    ALTER TABLE orbit_daemon_commands ALTER COLUMN id SET DEFAULT nextval('orbit_daemon_commands_id_seq');
-    ALTER TABLE orbit_daemon_commands ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ DEFAULT (NOW() + INTERVAL '${DEFAULT_TTL_MIN} minutes');
-    ALTER TABLE orbit_daemon_commands ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'pending';
-    ALTER TABLE orbit_daemon_commands ADD COLUMN IF NOT EXISTS executed_at TIMESTAMPTZ;
-    ALTER TABLE orbit_daemon_commands ADD COLUMN IF NOT EXISTS result_json JSONB;
-    ALTER TABLE orbit_daemon_commands ADD COLUMN IF NOT EXISTS delivered_count INTEGER DEFAULT 0;
-    ALTER TABLE orbit_daemon_commands ADD COLUMN IF NOT EXISTS redeliver_count INTEGER DEFAULT 0;
-    ALTER TABLE orbit_daemon_commands ADD COLUMN IF NOT EXISTS dedupe_key TEXT;
     CREATE TABLE IF NOT EXISTS orbit_daemon_command_purges (
       id SERIAL PRIMARY KEY, hostname TEXT, reason TEXT, count INTEGER DEFAULT 0, actions TEXT, ts TIMESTAMPTZ DEFAULT NOW()
     );
+    DO $$ BEGIN
+      PERFORM set_config('lock_timeout', '5s', true);
+      IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='orbit_daemon_commands' AND column_name='dedupe_key') THEN
+        ALTER TABLE orbit_daemon_commands ADD COLUMN IF NOT EXISTS id INTEGER;
+        ALTER TABLE orbit_daemon_commands ALTER COLUMN id SET DEFAULT nextval('orbit_daemon_commands_id_seq');
+        ALTER TABLE orbit_daemon_commands ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ DEFAULT (NOW() + INTERVAL '${DEFAULT_TTL_MIN} minutes');
+        ALTER TABLE orbit_daemon_commands ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'pending';
+        ALTER TABLE orbit_daemon_commands ADD COLUMN IF NOT EXISTS executed_at TIMESTAMPTZ;
+        ALTER TABLE orbit_daemon_commands ADD COLUMN IF NOT EXISTS result_json JSONB;
+        ALTER TABLE orbit_daemon_commands ADD COLUMN IF NOT EXISTS delivered_count INTEGER DEFAULT 0;
+        ALTER TABLE orbit_daemon_commands ADD COLUMN IF NOT EXISTS redeliver_count INTEGER DEFAULT 0;
+        ALTER TABLE orbit_daemon_commands ADD COLUMN IF NOT EXISTS dedupe_key TEXT;
+      END IF;
+    EXCEPTION WHEN lock_not_available THEN
+      RAISE NOTICE 'skip ALTER orbit_daemon_commands due to lock_timeout';
+    END $$;
   `);
   // id 백필: 시퀀스를 기존 최대값 뒤로 맞춘 뒤 NULL 행에 번호 부여(1회만 비용, 이후는 0행)
   await pool.query(`SELECT setval('orbit_daemon_commands_id_seq', GREATEST(COALESCE((SELECT MAX(id) FROM orbit_daemon_commands), 0), COALESCE((SELECT last_value FROM orbit_daemon_commands_id_seq), 0)) + 1, false)`);
