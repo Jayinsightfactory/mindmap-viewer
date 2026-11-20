@@ -22,21 +22,42 @@ const isWeekday = (d) => { const w = weekdayOf(d); return w >= 1 && w <= 5; };
 const median = (xs) => { if (!xs.length) return 0; const s = [...xs].sort((a, b) => a - b); const m = s.length >> 1; return s.length % 2 ? s[m] : Math.round((s[m - 1] + s[m]) / 2); };
 
 let _cache = { at: 0, data: null };
+let _inflight = null;
+const LIVE_SCAN_DAYS = 2; // orbit_completeness_daily 에 7일+ 이력이 이미 있으면 events 는 최근 48h 만 스캔(2GB PG 풀 고갈·insertEvent 타임아웃 방지)
+const HB_SCAN_DAYS = 3;
 
 async function aggregate(pool) {
   if (_cache.data && Date.now() - _cache.at < CACHE_MS) return _cache.data;
-  const since = new Date(Date.now() - LOOKBACK_DAYS * 864e5).toISOString();
-  // timestamp 는 TEXT(ISO) — timestamptz 로 캐스팅 후 KST 일자로 묶는다(UTC/KST 혼용 함정)
+  if (_inflight) return _inflight;
+  _inflight = _aggregateImpl(pool).finally(() => { _inflight = null; });
+  return _inflight;
+}
+
+async function _aggregateImpl(pool) {
+  const histSinceDate = kstDate(Date.now() - LOOKBACK_DAYS * 864e5);
+  let histRows = [];
+  let hasWarmDaily = false;
+  try {
+    await pool.query(`CREATE TABLE IF NOT EXISTS orbit_completeness_daily (name TEXT NOT NULL, kst_date TEXT NOT NULL, capture INT DEFAULT 0, analyzed INT DEFAULT 0, keyboard INT DEFAULT 0, mouse INT DEFAULT 0, heartbeat INT DEFAULT 0, updated_at TIMESTAMPTZ DEFAULT NOW(), PRIMARY KEY (name, kst_date))`);
+    histRows = (await pool.query(`SELECT name, kst_date, capture, analyzed, keyboard, mouse, heartbeat FROM orbit_completeness_daily WHERE kst_date >= $1`, [histSinceDate])).rows;
+    const distinctDates = new Set(histRows.map((h) => h.kst_date));
+    hasWarmDaily = distinctDates.size >= 7;
+  } catch (e) { console.warn('[completeness] daily 선조회 실패(전체 스캔 폴백):', e.message); }
+
+  const scanDays = hasWarmDaily ? LIVE_SCAN_DAYS : LOOKBACK_DAYS;
+  const since = new Date(Date.now() - scanDays * 864e5).toISOString();
+  const hbSince = new Date(Date.now() - (hasWarmDaily ? HB_SCAN_DAYS : LOOKBACK_DAYS) * 864e5).toISOString();
+  // timestamp 는 TEXT(ISO) — 인덱스 범위 스캔(최근 48h)으로 PG 풀·RAM 고갈 방지
   const { rows } = await pool.query(
     `SELECT user_id, type, to_char((timestamp::timestamptz AT TIME ZONE 'Asia/Seoul')::date, 'YYYY-MM-DD') AS d, COUNT(*)::int AS n
        FROM events
-      WHERE type = ANY($1) AND timestamp >= $2 AND user_id NOT IN ('local','system')
+      WHERE timestamp >= $2 AND type = ANY($1) AND user_id NOT IN ('local','system')
       GROUP BY 1, 2, 3`, [TYPES, since]);
-  // 직원별 최신 heartbeat(시각·hostname) — daemon-health 는 1시간 창이라 며칠 죽은 PC 는 아예 안 보이는 사각지대를 메운다
+  // 직원별 최신 heartbeat(시각·hostname) — 최근 72h 인덱스 스캔 + orbit_pc_links 폴백
   const { rows: hb } = await pool.query(
     `SELECT DISTINCT ON (user_id) user_id, timestamp, data_json->>'hostname' AS hostname
-       FROM events WHERE type = 'daemon.heartbeat' AND timestamp >= $1
-      ORDER BY user_id, timestamp DESC`, [since]);
+       FROM events WHERE timestamp >= $1 AND type = 'daemon.heartbeat'
+      ORDER BY user_id, timestamp DESC`, [hbSince]);
   // 데몬이 실제로 폴링하는 살아있는 hostname 키 = 최근 소비된 명령의 hostname (대소문자 분열 함정 대비)
   let liveKeys = [];
   try { liveKeys = (await pool.query(`SELECT DISTINCT ON (lower(hostname)) hostname, consumed_at FROM orbit_daemon_commands WHERE consumed_at IS NOT NULL AND consumed_at > NOW() - INTERVAL '14 days' ORDER BY lower(hostname), consumed_at DESC`)).rows; } catch {}
@@ -55,7 +76,6 @@ async function aggregate(pool) {
   // [실측 10/21] screen.capture 는 보존 ~14일(_cleanupOldEvents) → events 만으로는 '4주 같은 요일' 기대치를 못 만든다.
   //   일별 집계를 orbit_completeness_daily 에 매번 upsert 해 두고(원본 행이 지워져도 집계는 남음), 과거분은 표에서 읽어 합친다.
   try {
-    await pool.query(`CREATE TABLE IF NOT EXISTS orbit_completeness_daily (name TEXT NOT NULL, kst_date TEXT NOT NULL, capture INT DEFAULT 0, analyzed INT DEFAULT 0, keyboard INT DEFAULT 0, mouse INT DEFAULT 0, heartbeat INT DEFAULT 0, updated_at TIMESTAMPTZ DEFAULT NOW(), PRIMARY KEY (name, kst_date))`);
     const vals = []; const ph = [];
     for (const [name, days] of Object.entries(byUser)) for (const [d, x] of Object.entries(days)) { ph.push(`($${vals.length + 1},$${vals.length + 2},$${vals.length + 3},$${vals.length + 4},$${vals.length + 5},$${vals.length + 6},$${vals.length + 7})`); vals.push(name, d, x.capture, x.analyzed, x.keyboard, x.mouse, x.heartbeat); }
     for (let i = 0; i < ph.length; i += 200) {
@@ -64,8 +84,7 @@ async function aggregate(pool) {
       await pool.query(`INSERT INTO orbit_completeness_daily (name, kst_date, capture, analyzed, keyboard, mouse, heartbeat) VALUES ${chunk.join(',')}
         ON CONFLICT (name, kst_date) DO UPDATE SET capture = GREATEST(orbit_completeness_daily.capture, EXCLUDED.capture), analyzed = GREATEST(orbit_completeness_daily.analyzed, EXCLUDED.analyzed), keyboard = GREATEST(orbit_completeness_daily.keyboard, EXCLUDED.keyboard), mouse = GREATEST(orbit_completeness_daily.mouse, EXCLUDED.mouse), heartbeat = GREATEST(orbit_completeness_daily.heartbeat, EXCLUDED.heartbeat), updated_at = NOW()`, cv);
     }
-    const { rows: hist } = await pool.query(`SELECT name, kst_date, capture, analyzed, keyboard, mouse, heartbeat FROM orbit_completeness_daily WHERE kst_date >= $1`, [kstDate(Date.now() - LOOKBACK_DAYS * 864e5)]);
-    for (const h of hist) { const u = byUser[h.name] || (byUser[h.name] = {}); const day = u[h.kst_date] || (u[h.kst_date] = { capture: 0, analyzed: 0, keyboard: 0, mouse: 0, heartbeat: 0 }); for (const k of ['capture', 'analyzed', 'keyboard', 'mouse', 'heartbeat']) day[k] = Math.max(day[k], h[k] || 0); }
+    for (const h of histRows) { const u = byUser[h.name] || (byUser[h.name] = {}); const day = u[h.kst_date] || (u[h.kst_date] = { capture: 0, analyzed: 0, keyboard: 0, mouse: 0, heartbeat: 0 }); for (const k of ['capture', 'analyzed', 'keyboard', 'mouse', 'heartbeat']) day[k] = Math.max(day[k], h[k] || 0); }
   } catch (e) { console.warn('[completeness] daily 보존 실패(집계는 계속):', e.message); }
   const lastHb = {}; for (const r of hb) { const key = names[r.user_id] || r.user_id; if (!lastHb[key] || lastHb[key].at < r.timestamp) lastHb[key] = { at: r.timestamp, hostname: r.hostname || null, userId: r.user_id }; }
   const uids = {}; for (const [k, set] of Object.entries(uidsOf)) uids[k] = [...set];
@@ -235,4 +254,4 @@ function mount(app, { dbModule, adminOk }) {
   console.log('[completeness] mounted: /api/completeness, /recover, /report-line (auto-restart=' + (process.env.COMPLETENESS_AUTO_RESTART || 'canary') + ')');
 }
 
-module.exports = { mount, buildReport, classifyZero, reportLine, median, expectedFor };
+module.exports = { mount, aggregate, buildReport, classifyZero, reportLine, median, expectedFor };
