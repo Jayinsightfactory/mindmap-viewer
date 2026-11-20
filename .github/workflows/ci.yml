@@ -29,6 +29,9 @@ jobs:
       - name: Run tests
         run: npm test
 
+      - name: Verify approved OneDrive work uploads
+        run: node --test tests/work-drive-onedrive.check.js tests/work-drive-inventory.check.js tests/work-file-uploader.check.js
+
       - name: Upload coverage
         if: matrix.node == '20'
         uses: actions/upload-artifact@v4

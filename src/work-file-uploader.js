@@ -44,6 +44,7 @@ let _timers = new Map();      // fullPath → setTimeout (저장 연타 흡수)
 let _stats = {
   considered: 0, uploaded: 0, skippedPersonal: 0, skippedNoSignal: 0, skippedDup: 0, failed: 0, lastError: '', lastBackfill: null,
   skippedExt: 0, skippedTemp: 0, skippedJunk: 0, skippedTooSmall: 0, skippedTooBig: 0, server507: 0, serverRetry: 0,
+  approvedStored: 0, approvedDuplicates: 0, // 승인 OneDrive(opt-in) 신규 파일 수신 집계
 };
 // 사유별 최근 파일명 표본(각 20개). 개인(personal)은 파일명 대신 건수만 — 프라이버시.
 const SAMPLE_MAX = 20;
@@ -83,27 +84,36 @@ function init({ serverUrl, token }) {
     }
   }
   _serverUrl = serverUrl; _token = token;
+  const approvedNewFilesOnly = require('./work-drive-onedrive').startApprovedOneDrive({
+    getConfig: async () => {
+      const cfg = await _config({ fresh: true });
+      return cfg?.enabled && await supportsApprovedOneDrive(cfg) ? cfg : null;
+    },
+    decide,
+    upload: (file) => _upload({ filename: file.filename, fullPath: file.file, eventType: 'approved-onedrive', approved: file }),
+  }).catch(() => { console.warn('[work-file-uploader] approved OneDrive unavailable'); return true; });
   // 설정 받기가 한 번 실패하면 enabled:false 가 캐시에 굳어, 파일 이벤트·유출이력이 없는 PC는 다시 시도할 계기가 없었다(김원빈 PC 50분+ 꺼진 채 유지).
   // 꺼진 상태면 1분마다 재조회(_config 가 TTL 로 스스로 간격 조절 — 실패 시 1분, 성공 시 10분).
   setInterval(() => { if (!_cfg || !_cfg.enabled) _config().catch(() => {}); }, 60 * 1000).unref?.();
   setInterval(drainRetries, RETRY_MS).unref?.();
   // 기존 파일 일괄 업로드는 PC당 1회 자동(서버에서 기능이 켜져 있을 때만). 완료 표식이 있으면 건너뛴다. 재실행은 서버 명령 drive-backfill.
   setTimeout(async () => {
-    try { const cfg = await _config(); if (fs.existsSync(BACKFILL_MARK)) return; if (!cfg || !cfg.enabled) return; // 설정은 마커와 무관하게 먼저 받는다(health 통계가 'not-fetched'로 진단을 가리지 않게)
+    try { const cfg = await _config(); if (await approvedNewFilesOnly || fs.existsSync(BACKFILL_MARK)) return; if (!cfg || !cfg.enabled) return;
       const r = await backfill({}); _stats.lastBackfill = { at: new Date().toISOString(), auto: true, ...r, stats: undefined }; if (r && r.ok) fs.writeFileSync(BACKFILL_MARK, JSON.stringify(_stats.lastBackfill));
     } catch (e) { _stats.lastError = 'auto-backfill: ' + e.message; console.warn('[work-file-uploader] 자동 backfill 실패:', e.message); }
   }, 2 * 60 * 1000).unref?.();
 }
 
-async function _config() {
+async function _config({ fresh = false } = {}) {
   if (!_serverUrl || !_token) return null;
-  if (_cfg && Date.now() - _cfgAt < _cfgTtl) return _cfg;
+  if (!fresh && _cfg && Date.now() - _cfgAt < _cfgTtl) return _cfg;
   try {
     const r = await fetch(`${_serverUrl}/api/daemon/nenova-ingest-config`, { headers: { Authorization: 'Bearer ' + _token, 'X-Device-Id': os.hostname() }, signal: AbortSignal.timeout(8000) });
     const j = await r.json().catch(() => ({}));
     _cfg = j && j.enabled ? j : { enabled: false, reason: (j && j.reason) || ('http ' + r.status) };
     _cfgTtl = 10 * 60 * 1000;
   } catch (e) {
+    if (fresh) return null;
     // 실패 원인을 heartbeat(cfgReason)로 보고 — 예전엔 빈 문자열이라 PC별 원인 구분이 불가능했다. 이전에 받은 정상 설정은 유지.
     const why = 'fetch: ' + ((e && e.cause && (e.cause.code || e.cause.message)) || (e && e.name) || '') + ' ' + ((e && e.message) || '');
     _cfg = (_cfg && _cfg.enabled) ? _cfg : { enabled: false, reason: why.trim().slice(0, 120) };
@@ -111,6 +121,13 @@ async function _config() {
   }
   _cfgAt = Date.now();
   return _cfg;
+}
+
+async function supportsApprovedOneDrive(cfg) {
+  try {
+    const r = await fetch(`${cfg.url}/api/work/drive-ingest`, { method: 'OPTIONS', headers: { Authorization: 'Bearer ' + cfg.token }, signal: AbortSignal.timeout(8000) });
+    return r.ok && (await r.json()).approvedOneDriveVersion === 1;
+  } catch { return false; }
 }
 
 // 올릴지 결정 — 이유를 돌려준다(로그·통계용). 내용은 읽지 않고 이름·크기만 본다.
@@ -121,6 +138,8 @@ function decide(evt) {
   if (name.startsWith('~$') || name.startsWith('.') || /\.tmp$/i.test(name)) return 'temp';
   if (PERSONAL_RE.test(name)) return 'personal';
   if (isApprovedTool) return 'ok';
+  // 승인 OneDrive(opt-in)가 확인한 CI 수량 PDF는 파일명 업무 신호가 없어도 받는다.
+  if (evt.approvedOneDrive === true && /(?:^|[^a-z0-9])ci(?=$|[^a-z0-9])/i.test(name) && /\.pdf$/i.test(name)) return 'ok';
   // 업무 신호는 파일명뿐 아니라 '상위 폴더 경로'에서도 인정한다(예: ...\45차 발주\sheet1.xlsx — 파일명엔 신호 없지만 폴더엔 있음).
   // 개인 폴더 오탐 방지: 폴더 경로에 개인 신호가 있으면 폴더 신호를 쓰지 않는다.
   const dirPath = String(evt.fullPath || '').slice(0, -name.length);
@@ -170,15 +189,30 @@ async function drainRetries() {
   }
 }
 async function _upload(evt, tries = 0) {
-  const cfg = await _config(); if (!cfg || !cfg.enabled) return;
+  const approved = evt.approved;
+  const cfg = await _config({ fresh: !!approved }); if (!cfg || !cfg.enabled) return;
+  if (approved && cfg.userId !== approved.ownerId) return false;
 
   let st; try { st = fs.statSync(evt.fullPath); } catch { return; } // 삭제/이동됨
   if (!st.isFile()) return;
-  if (st.size < MIN_BYTES) { if (tries === 0) { _stats.skippedTooSmall++; _sample('too-small', evt.filename); } return; }
-  if (st.size > MAX_BYTES) { if (tries === 0) { _stats.skippedTooBig++; _sample('too-big', evt.filename); } return; } // 서버 FILE_MAX 25MB 동일 — 유지
-  let buf; try { buf = fs.readFileSync(evt.fullPath); } catch { return _queueRetry(evt, tries, 'locked'); } // 엑셀이 잠근 중 → 5분 뒤 재시도
+  if (approved) { if (st.size < 1 || st.size > MAX_BYTES) return false; }
+  else {
+    if (st.size < MIN_BYTES) { if (tries === 0) { _stats.skippedTooSmall++; _sample('too-small', evt.filename); } return; }
+    if (st.size > MAX_BYTES) { if (tries === 0) { _stats.skippedTooBig++; _sample('too-big', evt.filename); } return; } // 서버 FILE_MAX 25MB 동일 — 유지
+  }
+  let buf;
+  try {
+    if (approved) {
+      if (st.size !== approved.size || st.mtimeMs !== approved.modified) return false;
+      buf = await fs.promises.readFile(evt.fullPath);
+      const after = await fs.promises.stat(evt.fullPath);
+      if (buf.length !== st.size || after.size !== st.size || after.mtimeMs !== st.mtimeMs || after.ino !== st.ino ||
+          path.relative(evt.fullPath, await fs.promises.realpath(evt.fullPath)) !== '') return false;
+      if (/\.pdf$/i.test(evt.filename) && (buf.subarray(0, 5).toString() !== '%PDF-' || !buf.subarray(-2048).includes('%%EOF'))) return false;
+    } else buf = fs.readFileSync(evt.fullPath); // 엑셀이 잠근 중 → 5분 뒤 재시도
+  } catch { return approved ? false : _queueRetry(evt, tries, 'locked'); }
   const sha = crypto.createHash('sha256').update(buf).digest('hex');
-  if (_seenSha.has(sha)) { _stats.skippedDup++; return true; }
+  if (!approved && _seenSha.has(sha)) { _stats.skippedDup++; return true; }
 
   let confirmed = false;
   const form = new FormData();
@@ -187,7 +221,7 @@ async function _upload(evt, tries = 0) {
   form.append('orbitUserId', cfg.userId || '');
   form.append('userName', cfg.userName || '');
   form.append('hostname', os.hostname());
-  form.append('dir', path.basename(path.dirname(evt.fullPath)));
+  form.append('dir', approved ? 'approved-onedrive' : path.basename(path.dirname(evt.fullPath)));
   form.append('mtime', new Date(st.mtimeMs).toISOString());
   form.append('eventType', evt.eventType);
   try {
@@ -197,10 +231,12 @@ async function _upload(evt, tries = 0) {
       _seenSha.set(sha, Date.now()); _stats.uploaded++; _sample('uploaded', evt.filename);
       confirmed = true;
       const c = j.classification || {};
-      console.log(`[work-file-uploader] ${j.duplicate ? '중복' : '업로드'} ${evt.filename} → ${c.cycle || '-'} / ${c.stage || '-'}${c.sensitive ? ' 🔒' : ''}`);
-    } else if (r.status >= 500 || r.status === 429) { if (r.status === 507) { _stats.server507++; _stats.lastError = '507 업무드라이브 저장공간 부족(서버)'; _sample('server-507', evt.filename); } _stats.serverRetry++; _queueRetry(evt, tries, 'server ' + r.status); }
+      if (approved) _stats[j.duplicate ? 'approvedDuplicates' : 'approvedStored']++;
+      else console.log(`[work-file-uploader] ${j.duplicate ? '중복' : '업로드'} ${evt.filename} → ${c.cycle || '-'} / ${c.stage || '-'}${c.sensitive ? ' 🔒' : ''}`);
+    } else if (approved) { _stats.lastError = 'approved-onedrive: HTTP ' + r.status; }
+    else if (r.status >= 500 || r.status === 429) { if (r.status === 507) { _stats.server507++; _stats.lastError = '507 업무드라이브 저장공간 부족(서버)'; _sample('server-507', evt.filename); } _stats.serverRetry++; _queueRetry(evt, tries, 'server ' + r.status); }
     else { _stats.failed++; _stats.lastError = `${r.status} ${j.error || ''}`.trim(); _sample('failed', evt.filename); console.warn(`[work-file-uploader] 실패 ${r.status} ${evt.filename}: ${j.error || ''}`); } // 4xx는 재시도해도 같음
-  } catch (e) { _stats.lastError = 'network: ' + e.message; _queueRetry(evt, tries, 'network'); }
+  } catch (e) { _stats.lastError = approved ? 'approved-onedrive: network' : 'network: ' + e.message; if (!approved) _queueRetry(evt, tries, 'network'); }
   // sha 캐시 7일 정리
   const cut = Date.now() - 7 * 86400e3; for (const [k, at] of _seenSha) if (at < cut) _seenSha.delete(k);
   return confirmed;
