@@ -163,11 +163,12 @@ async function _upload(evt, tries = 0) {
   if (approved && cfg.userId !== approved.ownerId) return false;
 
   let st; try { st = fs.statSync(evt.fullPath); } catch { return; } // 삭제/이동됨
-  if (!st.isFile() || st.size < MIN_BYTES || st.size > MAX_BYTES) return;
+  if (!st.isFile() || st.size < (approved ? 1 : MIN_BYTES) || st.size > MAX_BYTES) return;
   let buf;
   try {
     if (approved) {
-      if (st.size !== approved.size || st.mtimeMs !== approved.modified) return false;
+      if (st.size !== approved.size || st.mtimeMs !== approved.modified ||
+          path.relative(evt.fullPath, await fs.promises.realpath(evt.fullPath)) !== '') return false;
       buf = await fs.promises.readFile(evt.fullPath);
       const after = await fs.promises.stat(evt.fullPath);
       if (buf.length !== st.size || after.size !== st.size || after.mtimeMs !== st.mtimeMs || after.ino !== st.ino ||

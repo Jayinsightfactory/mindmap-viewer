@@ -92,7 +92,7 @@ function createApprovedPoll({ root, stateFile, ownerId, getConfig, upload, decid
       let submissions = 0;
       for (const [key, value] of current) {
         if (previous === null || previous[key] === value.fingerprint) { next[key] = value.fingerprint; continue; }
-        const stable = now() - value.modified >= SETTLE_MS && value.size >= 1024 && value.size <= 25 * 1024 * 1024;
+        const stable = now() - value.modified >= SETTLE_MS && value.size > 0 && value.size <= 25 * 1024 * 1024;
         const real = stable && submissions < MAX_UPLOADS ? await fs.realpath(value.file).catch(() => null) : null;
         if (real && path.relative(value.file, real) === '' && await ready(value.file)) {
           submissions++;
@@ -116,7 +116,7 @@ async function startApprovedOneDrive(options, { home = os.homedir(), env = proce
   catch (error) { if (error.code === 'ENOENT') return false; throw error; }
   if (approval?.enabled !== true) return false;
   if (typeof approval.userId !== 'string' || !approval.userId || !relativeParts(approval.relativeRoot)) return true;
-  const base = env.OneDriveCommercial || env.OneDrive;
+  const base = env.OneDriveCommercial;
   if (!base) return true;
   const root = await resolveWorkRoot(base, approval.relativeRoot);
   if (!root) return true;

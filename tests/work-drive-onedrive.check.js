@@ -48,7 +48,7 @@ test('approved OneDrive tracks new nested files across restart, postpones placeh
   await first();
   assert.equal(samples.length, 0);
   const fresh = path.join(nested, 'CI.pdf');
-  await fs.writeFile(fresh + '.crdownload', data);
+  await fs.writeFile(fresh + '.crdownload', '%PDF-1.7\n%%EOF');
   const restart = createApprovedPoll(options);
   await restart();
   assert.equal(samples.length, 0);
