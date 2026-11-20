@@ -122,6 +122,7 @@ describe('work-data-inflow-boost (업무데이터 유입·수집 보강 회귀 �
       query: jest.fn(async (sql, params) => {
         calls.push({ sql, params });
         if (sql.includes('FROM orbit_completeness_daily')) return { rows: warmRows };
+        if (sql.includes('FROM orbit_auth_users')) return { rows: [{ id: 'U1', name: '설연주' }] };
         if (sql.includes('FROM events')) {
           await new Promise(r => setTimeout(r, 20));
           return { rows: [] };
@@ -133,6 +134,10 @@ describe('work-data-inflow-boost (업무데이터 유입·수집 보강 회귀 �
     expect(r1).toBe(r2); // single-flight 공유
     const evCall = calls.find(c => c.sql.includes('GROUP BY 1, 2, 3'));
     expect(evCall).toBeTruthy();
+    expect(evCall.sql).toContain("(type || '') = ANY($1)");
+    const hbCall = calls.find(c => c.sql.includes('CROSS JOIN LATERAL'));
+    expect(hbCall).toBeTruthy();
+    expect(hbCall.params[0]).toEqual(['U1']);
     const spanMs = Date.now() - Date.parse(evCall.params[1]);
     expect(spanMs).toBeLessThan(3 * 864e5); // 35일이 아니라 2일(48h) 증분 스캔
   });
