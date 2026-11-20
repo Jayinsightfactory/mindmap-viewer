@@ -108,4 +108,32 @@ describe('work-data-inflow-boost (업무데이터 유입·수집 보강 회귀 �
     expect(src).toContain('screenCapture?.uploadPendingToSpool?.(45)');
     expect(src).not.toContain('screenCapture?.uploadPendingToServer?.(20)');
   });
+
+  test('completeness.aggregate: daily 이력이 7일+ 있으면 events 스캔을 48h로 축소 + 동시요청 single-flight 공유', async () => {
+    jest.resetModules();
+    const freshComp = require('../../src/completeness');
+    const calls = [];
+    const warmRows = Array.from({ length: 10 }, (_, i) => ({
+      name: '설연주',
+      kst_date: `2026-11-${String(10 + i).padStart(2, '0')}`,
+      capture: 300, analyzed: 150, keyboard: 100, mouse: 100, heartbeat: 500,
+    }));
+    const mockPool = {
+      query: jest.fn(async (sql, params) => {
+        calls.push({ sql, params });
+        if (sql.includes('FROM orbit_completeness_daily')) return { rows: warmRows };
+        if (sql.includes('FROM events')) {
+          await new Promise(r => setTimeout(r, 20));
+          return { rows: [] };
+        }
+        return { rows: [] };
+      }),
+    };
+    const [r1, r2] = await Promise.all([freshComp.aggregate(mockPool), freshComp.aggregate(mockPool)]);
+    expect(r1).toBe(r2); // single-flight 공유
+    const evCall = calls.find(c => c.sql.includes('GROUP BY 1, 2, 3'));
+    expect(evCall).toBeTruthy();
+    const spanMs = Date.now() - Date.parse(evCall.params[1]);
+    expect(spanMs).toBeLessThan(3 * 864e5); // 35일이 아니라 2일(48h) 증분 스캔
+  });
 });
