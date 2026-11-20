@@ -2445,3 +2445,15 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 - 수정: bin/vision-worker.js visionCli — 150초 하드 타이머로 해당 호출 프로세스 트리만 종료 + 동기 예외에도 게이트 반납 + 실패 로그 200자 절단(로그 30MB 비대 방지).
 - 검증: 구문검사 통과. 실제 정지 재현·수정 후 산출 회복은 미검증(워커 재기동 필요).
 검색어: vision-spool 정지 _spoolBusy execFile 손자프로세스 하드타이머 해독률 2.9%
+
+## 2026-11-20 승인 OneDrive 신규 업무파일 카나리
+
+- 검색어: 승인 OneDrive 업무 폴더 CI.pdf 신규 파일 장비 인계 담당자 체크포인트 클라우드 자리표시자
+- 기본 비활성. 공식 연결된 Orbit 사용자와 일치하는 장비의 관리 승인 파일이 담긴 승인 하위 폴더만 대상이다. 최초 검사는 기존 파일을 기준점에 기록한다. 이후 완성된 파일부터 ERP 수신 capability를 인증으로 확인한 뒤 올린다. 파일명 없이 신규·중복을 별도 집계한다.
+- 운영 승인 파일은 해당 PC의 .orbit/work-drive-onedrive-approved.json에 enabled, 공식 userId, OneDrive 상대 업무 경로를 관리자가 설정한다. root 레벨·경로 이탈·미확인 사용자는 거부한다. 운영 확장 전 실제 OneDrive 및 현 직원 세션을 확인한다.
+
+1. 작업 위치: mindmap-viewer / codex/approved-onedrive-new-files / 격리 worktree .orbit-drive-newfiles, main 기준 92ea40d.
+2. 완료: 선택적 승인 OneDrive 신규 파일 폴링·파일 지문 체크포인트·로컬 가용성 검사·등록자 일치·CI 단축명 처리.
+3. 남음: 실제 업무 폴더, 직원 본인의 정상 Orbit 연결, 실파일 및 직원 열람 검증. 운영 cold restart 안전 확인과 1대 동기화 전 전체 main 배포 보류.
+4. 검증: 합성 중첩/재시작/자리표시자/확장/온전히 내려받은 파일/실패 재시도 회귀 및 기존 업로더. 실제 OneDrive Files On-Demand와 직원 로그인 미검증.
+5. 주의: 파일명·실제 경로·계정 값 비공개. 이전 파일 귀속 변경과 자동 일괄 재전송을 하지 않는다.
