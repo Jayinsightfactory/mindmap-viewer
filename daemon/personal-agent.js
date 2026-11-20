@@ -710,6 +710,13 @@ const _daemonStartedAt = Date.now();
 let _codeVersion = null;
 function _getCodeVersion() {
   if (_codeVersion) return _codeVersion;
+  try {
+    const du = require(path.join(ROOT, 'src', 'daemon-updater'));
+    if (typeof du.getLocalVersion === 'function') {
+      _codeVersion = du.getLocalVersion();
+      return _codeVersion;
+    }
+  } catch {}
   try { _codeVersion = execSync('git rev-parse HEAD', { cwd: ROOT, timeout: 5000, windowsHide: true, stdio: 'pipe' }).toString().trim().slice(0, 8); }
   catch { _codeVersion = 'unknown'; }
   return _codeVersion;

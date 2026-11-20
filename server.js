@@ -2646,6 +2646,41 @@ app.get('/api/daemon/version', (req, res) => {
   });
 });
 
+// [2026-11-20] GitHub Private 전환 대비 — 직원 PC 무토큰(GitHub 무접속) 데몬 릴리즈 서빙
+// 번들은 os.tmpdir() 디스크 캐시에 1회 생성 후 fs.createReadStream 스트리밍(서버 RAM +0MB).
+const daemonRelease = require('./src/daemon-release');
+app.get('/api/daemon/release-meta', async (req, res) => {
+  try {
+    const { verifyTokenAsync } = require('./src/auth');
+    const authUser = await daemonRelease.authenticateDaemonRequest(req, { verifyTokenAsync, isAdminReqAsync });
+    const { meta } = await daemonRelease.ensureReleaseBundle({
+      rootDir: __dirname,
+      version: _serverVersion || 'unknown',
+    });
+    res.json({ ...meta, authenticated: !!authUser });
+  } catch (e) {
+    console.error('[daemon-release] release-meta 오류:', e.message);
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+app.get('/api/daemon/release-bundle', async (req, res) => {
+  try {
+    const { verifyTokenAsync } = require('./src/auth');
+    const authUser = await daemonRelease.authenticateDaemonRequest(req, { verifyTokenAsync, isAdminReqAsync });
+    if (!authUser) {
+      return res.status(401).json({ ok: false, error: 'daemon authentication required' });
+    }
+    await daemonRelease.streamReleaseBundle(res, {
+      rootDir: __dirname,
+      version: _serverVersion || 'unknown',
+    });
+  } catch (e) {
+    console.error('[daemon-release] release-bundle 오류:', e.message);
+    if (!res.headersSent) res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
 // Phase 0: 위험 명령 차단 + safe-cmd 매핑
 const FORBIDDEN_DAEMON_ACTIONS = new Set(['reinstall']);
 const RESTART_TO_SAFE = { restart: 'gitpull-worker' };
@@ -7729,11 +7764,12 @@ async function _runDailyMaintenance(trigger = 'auto') {
       summary.steps.learning = { ok: true, pcs: results.length };
     } catch (e) { summary.steps.learning = { ok: false, error: e.message }; }
 
-    // Step 2: events 30일 이상 삭제
+    // Step 2: events 30일 이상 삭제 (하드 가드: archive_log.drive_file IS NOT NULL 백업 검증 행만 삭제)
     try {
       const cutoff = new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString();
-      const { rowCount } = await pool.query('DELETE FROM events WHERE timestamp < $1', [cutoff]);
-      summary.steps.events_purge = { ok: true, deleted: rowCount, cutoff };
+      const { deleteVerifiedArchivedEvents } = require('./src/event-archiver');
+      const guardRes = await deleteVerifiedArchivedEvents(pool, cutoff, { tag: 'daily-maint' });
+      summary.steps.events_purge = { ok: true, deleted: guardRes.deleted, skipped: guardRes.skipped, reason: guardRes.reason || null, cutoff };
     } catch (e) { summary.steps.events_purge = { ok: false, error: e.message }; }
 
     // Step 2B: DB pressure purge.
@@ -10106,20 +10142,14 @@ async function startServer() {
         // 이 루프는 아카이버가 놓친 행만 치우는 백스톱: KEEP_DAYS+14일 지난 행을 2만 행씩 나눠 삭제(행 잠금만, 테이블 잠금·VACUUM FULL 없음).
         // events.timestamp 는 TEXT(ISO) — 예전 `timestamp < NOW() - INTERVAL` 은 text<timestamptz 타입 오류로 매일 실패했다.
         // ISO 문자열 컷오프와 비교하면 idx_events_timestamp 를 그대로 탄다.
+        // [2026-11-20 하드 가드] archive_log.drive_file IS NOT NULL 백업이 검증된 구간만 배치 삭제(미백업 원본은 30일+ 지나도 절대 삭제 금지)
         const _keepDays = ((typeof eventArchiver !== 'undefined' && eventArchiver?.KEEP_DAYS) || 30) + 14;
         const _cutoffIso = new Date(Date.now() - _keepDays * 24 * 60 * 60 * 1000).toISOString();
-        let rowCount = 0;
-        for (let _i = 0; _i < 50; _i++) { // 1회 최대 100만 행, 배치 사이 1초 쉼
-          const r = await pool.query(
-            `DELETE FROM events WHERE id IN (SELECT id FROM events WHERE timestamp < $1 LIMIT 20000)`,
-            [_cutoffIso]
-          );
-          rowCount += r.rowCount;
-          if (r.rowCount < 20000) break;
-          await new Promise(res => setTimeout(res, 1000));
-        }
+        const _delFn = eventArchiver?.deleteVerifiedArchivedEvents || require('./src/event-archiver').deleteVerifiedArchivedEvents;
+        const _guardRes = await _delFn(pool, _cutoffIso, { batchSize: 20000, maxBatches: 50, pauseMs: 1000, tag: 'cleanup' });
+        const rowCount = _guardRes.deleted || 0;
         if (rowCount > 0) {
-          console.log(`[cleanup] ${_keepDays}일 지난 미아카이브 이벤트 ${rowCount}개 삭제 (컷오프 ${_cutoffIso})`);
+          console.log(`[cleanup] ${_keepDays}일 지난 Drive 백업 검증 이벤트 ${rowCount}개 삭제 (컷오프 ${_cutoffIso})`);
           await pool.query('VACUUM (ANALYZE) events').catch(() => {});
         }
         // 테이블 크기 로깅
