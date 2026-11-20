@@ -203,7 +203,8 @@ async function _upload(evt, tries = 0) {
   let buf;
   try {
     if (approved) {
-      if (st.size !== approved.size || st.mtimeMs !== approved.modified) return false;
+      if (st.size !== approved.size || st.mtimeMs !== approved.modified ||
+          path.relative(evt.fullPath, await fs.promises.realpath(evt.fullPath)) !== '') return false;
       buf = await fs.promises.readFile(evt.fullPath);
       const after = await fs.promises.stat(evt.fullPath);
       if (buf.length !== st.size || after.size !== st.size || after.mtimeMs !== st.mtimeMs || after.ino !== st.ino ||
