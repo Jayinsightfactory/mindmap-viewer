@@ -43,3 +43,7 @@ test-screenshots/
 test-results/
 artifacts/screenshots/
 Dockerfile.bak
+*.pem
+recorder/screenshots/
+data/*.db
+data/*.sqlite3
