@@ -4858,7 +4858,7 @@ app.post('/api/vision/spool', async (req, res) => {
 app.get('/api/vision/spool/list', (req, res) => {
   const token = (req.headers.authorization || '').replace('Bearer ', '').trim();
   if (!token.startsWith('orbit_')) return res.status(401).json({ error: 'orbit token required' });
-  const n = Math.min(parseInt(req.query.n) || 30, 60);
+  const n = Math.min(parseInt(req.query.n) || 30, 100);
   try {
     const users = fs.readdirSync(VISION_SPOOL_DIR).filter(u => { try { return fs.statSync(path.join(VISION_SPOOL_DIR, u)).isDirectory(); } catch { return false; } });
     const perUser = {}; let total = 0;

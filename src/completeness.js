@@ -108,7 +108,10 @@ function buildReport(agg, days) {
       const day = byDay[d] || { capture: 0, analyzed: 0, keyboard: 0, mouse: 0, heartbeat: 0 };
       const fullExpected = expectedFor(byDay, d);
       // 오늘은 하루가 안 끝났으니 근무시간(09~18 KST) 경과 비율만큼만 기대한다(14시에 하루치 전부를 기대해 '부분 유실' 오탐 금지)
-      const elapsed = d === today ? Math.max(0.1, Math.min(1, (new Date(todayMs + KST).getUTCHours() + new Date(todayMs + KST).getUTCMinutes() / 60 - 9) / 9)) : 1;
+      // [2026-11-20] 09:00 KST 출근 전(07:00 정기 배치 등)에는 기대치 0(status='none') — 전원 pc-off 오탐 방지
+      const kstNow = new Date(todayMs + KST);
+      const rawElapsed = (kstNow.getUTCHours() + kstNow.getUTCMinutes() / 60 - 9) / 9;
+      const elapsed = d === today ? (rawElapsed <= 0 ? 0 : Math.max(0.1, Math.min(1, rawElapsed))) : 1;
       const expected = Math.round(fullExpected * elapsed);
       const ratio = expected > 0 ? Math.round((day.capture / expected) * 1000) / 10 : null;
       let status, cause = null;
