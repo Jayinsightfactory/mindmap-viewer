@@ -2445,3 +2445,9 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 - 수정: bin/vision-worker.js visionCli — 150초 하드 타이머로 해당 호출 프로세스 트리만 종료 + 동기 예외에도 게이트 반납 + 실패 로그 200자 절단(로그 30MB 비대 방지).
 - 검증: 구문검사 통과. 실제 정지 재현·수정 후 산출 회복은 미검증(워커 재기동 필요).
 검색어: vision-spool 정지 _spoolBusy execFile 손자프로세스 하드타이머 해독률 2.9%
+## 2026-11-20 Railway RAM 다이어트 — Postgres 10.7GB→2GB 상한 (연결 목표: g18)
+- 원인: getStats 1분 주기 events 전체 GROUP BY + 하트비트 워치독 TEXT 캐스팅 풀스캔(seq_scan 1,695만회)으로 PG 페이지캐시 10.7~10.9GB 고착. 30일 정리는 text<timestamptz 오류로 매일 실패(보존은 event-archiver 가 이미 30일 유지 중). PG 로그 hostname 컬럼 없음 153건/400줄, jsonb NUL 오류, daemon.register session_id 누락.
+- 수정(#103 c6c94bc): getStats=reltuples+TABLESAMPLE 0.5%·30분 캐시, 워치독 ISO 사전필터(87,614→2,081블록), 정리=KEEP_DAYS+14일 2만행 배치 백스톱+VACUUM(ANALYZE), PC충돌=SQLite tracker_pings 조회(6h 1회), insertEvent NUL 제거, register 컬럼 보강, 풀 30→12+error 핸들러, 힙 4096→768. 운영: idx_events_data_gin DROP CONCURRENTLY(events 4280→3001MB), ALTER SYSTEM shared_buffers 256MB/effective_cache_size 512MB/work_mem 4MB, Postgres 메모리 상한 2GB(serviceInstanceLimitsUpdate) 후 재배포 1회(약 1분 끊김, 앱 무재시작 재연결 확인).
+- 실측: Postgres 적용 전 10.7GB(1h avg)/max 10.9GB → 적용 후 1.95GB(상한 2GB 안 캐시). mindmap-viewer 205~391MB, jest 285 통과, CI Node18/20/22 통과, 배포 후 hostname 오류 0건.
+- 원복: serviceInstanceLimitsUpdate memoryGB 24 / ALTER SYSTEM RESET 3종 후 재시작. 별건(미수정): archive_log 1,829건 drive_file 전부 NULL(Drive 업로드 실패 상태로 삭제 진행), pad_mouse_map ON CONFLICT 제약 없음, check-hostname 의 PG tracker_pings.hostname 조회.
+- 검색어: RAM 다이어트 getStats TABLESAMPLE reltuples idx_events_data_gin shared_buffers 메모리 상한 2GB tracker_pings hostname NUL jsonb g18
