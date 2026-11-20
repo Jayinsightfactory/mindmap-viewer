@@ -3760,10 +3760,11 @@ app.post('/api/daemon/register', async (req, res) => {
     // 4) 등록 이벤트 기록
     if (_pool) {
       _pool.query(
-        `INSERT INTO events (id, type, user_id, data_json, timestamp) VALUES ($1, $2, $3, $4, NOW())`,
-        [`register-${hostname}-${Date.now()}`, 'daemon.register', matchedUserId || `pc_${hostname}`,
-         JSON.stringify({ hostname, platform, nodeVersion, matchedUserId, autoToken: !!matchedToken })]
-      ).catch(() => {});
+        // session_id NOT NULL·timestamp(TEXT ISO) 계약 준수 — 예전엔 session_id 누락으로 매번 INSERT 실패(catch 로 묻힘)
+        `INSERT INTO events (id, type, source, session_id, user_id, data_json, timestamp) VALUES ($1, $2, 'daemon', $3, $4, $5, $6)`,
+        [`register-${hostname}-${Date.now()}`, 'daemon.register', `daemon-${hostname}`, matchedUserId || `pc_${hostname}`,
+         JSON.stringify({ hostname, platform, nodeVersion, matchedUserId, autoToken: !!matchedToken }), new Date().toISOString()]
+      ).catch((e) => console.warn('[daemon/register] 이벤트 기록 실패:', e.message));
     }
 
     res.json({
@@ -4391,13 +4392,18 @@ app.post('/api/hook', async (req, res) => {
       // PC-유저 충돌 감지: 같은 hostname이 다른 userId로 이미 등록된 경우 경고
       if (hookHostname) {
         try {
-          const _pool = dbModule.getDb();
-          if (_pool?.query) {
-            const { rows: existingPing } = await _pool.query(
-              `SELECT user_id FROM tracker_pings WHERE hostname = $1 AND user_id != $2 AND user_id != 'local' LIMIT 1`,
-              [hookHostname, hookUserId]
-            );
+          // hostname 이 있는 tracker_pings 는 SQLite authDb(아래 upsert 대상)뿐 — PG tracker_pings 는 (user_id,last_ping)만 있어
+          // 예전 PG 조회는 hook 마다 "column hostname does not exist" 에러(초당 수 건)였다. 같은 PC 충돌 기록은 6시간에 1번만.
+          const _authDbPing = require('./src/auth').getDb();
+          if (!global._pcConflictSeen) global._pcConflictSeen = new Map();
+          const _lastConflict = global._pcConflictSeen.get(hookHostname) || 0;
+          if (_authDbPing?.prepare && Date.now() - _lastConflict > 6 * 60 * 60 * 1000) {
+            const _prevPing = _authDbPing.prepare(
+              `SELECT userId AS user_id FROM tracker_pings WHERE hostname = ? AND userId != ? AND userId != 'local' LIMIT 1`
+            ).get(hookHostname, hookUserId);
+            const existingPing = _prevPing ? [_prevPing] : [];
             if (existingPing.length > 0) {
+              global._pcConflictSeen.set(hookHostname, Date.now());
               console.warn(`[hook] PC conflict: hostname=${hookHostname} was userId=${existingPing[0].user_id}, now userId=${hookUserId}`);
               // 관리자에게 알림 이벤트 기록
               try {
@@ -10096,13 +10102,25 @@ async function startServer() {
       try {
         const pool = dbModule.getDb();
         if (!pool?.query) return;
-        // 30일 이상 된 이벤트 삭제
-        const { rowCount } = await pool.query(
-          `DELETE FROM events WHERE timestamp < NOW() - INTERVAL '30 days'`
-        );
+        // 보존 계약의 주인은 src/event-archiver.js(KEEP_DAYS 기본 30일: Drive 아카이브 → archive_log → 삭제, 매일 03:00 KST).
+        // 이 루프는 아카이버가 놓친 행만 치우는 백스톱: KEEP_DAYS+14일 지난 행을 2만 행씩 나눠 삭제(행 잠금만, 테이블 잠금·VACUUM FULL 없음).
+        // events.timestamp 는 TEXT(ISO) — 예전 `timestamp < NOW() - INTERVAL` 은 text<timestamptz 타입 오류로 매일 실패했다.
+        // ISO 문자열 컷오프와 비교하면 idx_events_timestamp 를 그대로 탄다.
+        const _keepDays = ((typeof eventArchiver !== 'undefined' && eventArchiver?.KEEP_DAYS) || 30) + 14;
+        const _cutoffIso = new Date(Date.now() - _keepDays * 24 * 60 * 60 * 1000).toISOString();
+        let rowCount = 0;
+        for (let _i = 0; _i < 50; _i++) { // 1회 최대 100만 행, 배치 사이 1초 쉼
+          const r = await pool.query(
+            `DELETE FROM events WHERE id IN (SELECT id FROM events WHERE timestamp < $1 LIMIT 20000)`,
+            [_cutoffIso]
+          );
+          rowCount += r.rowCount;
+          if (r.rowCount < 20000) break;
+          await new Promise(res => setTimeout(res, 1000));
+        }
         if (rowCount > 0) {
-          console.log(`[cleanup] 오래된 이벤트 ${rowCount}개 삭제`);
-          await pool.query('VACUUM events').catch(() => {});
+          console.log(`[cleanup] ${_keepDays}일 지난 미아카이브 이벤트 ${rowCount}개 삭제 (컷오프 ${_cutoffIso})`);
+          await pool.query('VACUUM (ANALYZE) events').catch(() => {});
         }
         // 테이블 크기 로깅
         const sizeRes = await pool.query(
@@ -10148,8 +10166,12 @@ async function startServer() {
         `SELECT DISTINCT ON (user_id) user_id, timestamp, data_json
          FROM events
          WHERE type = 'daemon.heartbeat'
+           AND timestamp > $1
            AND timestamp::timestamptz > NOW() - INTERVAL '2 hours'
-         ORDER BY user_id, timestamp::timestamptz DESC`
+         ORDER BY user_id, timestamp::timestamptz DESC`,
+        // TEXT 컬럼 캐스팅만으론 인덱스를 못 타 5분마다 events 풀스캔(실측 87,614블록·267ms) → ISO 문자열 사전필터(3시간, 상위집합)로
+        // idx_events_timestamp/idx_events_type 비트맵 스캔(실측 2,081블록·35ms). 정확 판정은 기존 캐스팅 조건이 그대로 한다.
+        [new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString()]
       );
       const now = Date.now();
       let kicked = 0, silent = 0, degraded = 0;
