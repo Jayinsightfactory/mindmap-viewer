@@ -19,11 +19,13 @@ let _tablesReady = null;
 function initDatabase() {
   pool = new Pool({
     connectionString: process.env.DATABASE_URL,
-    max: 30,                        // 15유저 × 2 동시 쿼리 여유
+    max: 12,                        // 2026-11-20 30→12: 실측 동시 활성 쿼리 한 자릿수, PG 백엔드 메모리 절감
     idleTimeoutMillis: 10000,       // 유휴 연결 10초 후 반환
     connectionTimeoutMillis: 5000,  // 연결 대기 5초 타임아웃
   });
-  console.log('[DB] PostgreSQL 풀 생성 완료 (max=30)');
+  // DB 재시작·연결 끊김 시 유휴 클라이언트 오류를 흡수 — 다음 쿼리에서 풀이 새 연결로 자동 재연결
+  pool.on('error', (e) => console.warn('[DB] 유휴 연결 오류(자동 재연결):', e.message));
+  console.log('[DB] PostgreSQL 풀 생성 완료 (max=12)');
   // 테이블 생성 — _tablesReady Promise로 외부에서 await 가능
   _tablesReady = createTables()
     .then(() => console.log('[DB] PostgreSQL 테이블 초기화 완료'))
@@ -81,7 +83,9 @@ async function createTables() {
     CREATE INDEX IF NOT EXISTS idx_events_type      ON events(type);
     CREATE INDEX IF NOT EXISTS idx_events_timestamp ON events(timestamp);
     CREATE INDEX IF NOT EXISTS idx_events_parent    ON events(parent_event_id);
-    CREATE INDEX IF NOT EXISTS idx_events_data_gin  ON events USING GIN (data_json);
+    -- idx_events_data_gin(GIN data_json, 1.28GB) 제거 2026-11-20: 코드 전수 grep 결과 @>/?/?|/?&/@?/@@ WHERE 사용처 0,
+    -- 운영 pg_stat_user_indexes idx_scan=3(누적, 마지막 11-02 수동조회). 운영 DB 는 DROP INDEX CONCURRENTLY 로 정리.
+    -- 되돌릴 때 주의: 여기서 CREATE INDEX(비동시)를 다시 켜면 부팅 중 events 쓰기가 수 분간 잠긴다 → CONCURRENTLY 로 수동 생성.
 
     CREATE TABLE IF NOT EXISTS sessions (
       id TEXT PRIMARY KEY,
@@ -399,6 +403,12 @@ async function createTables() {
 }
 
 // ─── 이벤트 CRUD ────────────────────────────────────
+// PG jsonb 는 \u0000(NUL) 을 거부한다("unsupported Unicode escape sequence") — 데몬 로그 스냅샷(UTF-16 설치 로그 등)이
+// NUL 을 담아 이벤트가 통째로 유실되던 문제. 문자열 값의 NUL 만 제거해 직렬화한다(그 외 내용·구조는 그대로).
+function _jsonbSafe(v) {
+  return JSON.stringify(v, (k, x) => (typeof x === 'string' && x.includes('\u0000')) ? x.replace(/\u0000/g, '') : x);
+}
+
 async function insertEvent(event) {
   // session_id NOT NULL 대응: 트래커 이벤트에 session_id 없을 수 있음
   const sessionId = event.sessionId || `auto-${Date.now()}`;
@@ -423,7 +433,7 @@ async function insertEvent(event) {
     event.id, type, source,
     sessionId, event.userId || 'local', event.channelId || 'default',
     event.parentEventId || null, timestamp,
-    dataJson, metaJson,
+    _jsonbSafe(dataJson), _jsonbSafe(metaJson),
   ]);
   // sessionId를 이벤트에 반영 (upsertSession에서 사용)
   event.sessionId = sessionId;
@@ -646,12 +656,19 @@ async function clearAll() {
 }
 
 // ─── 통계 ───────────────────────────────────────────
+// events 는 수십만~수백만 행·수 GB. 예전엔 1분마다 COUNT/GROUP BY 풀스캔 → PG 컨테이너 페이지 캐시가 10GB대로 고정(2026-11-20 실측).
+// 큰 테이블: 행 수 = pg_class.reltuples(autovacuum/ANALYZE 추정치), aiSource·도구 비율 = TABLESAMPLE 0.5% 표본 비례 환산.
+// 작은 테이블(5만 행 미만·추정치 없음)은 기존처럼 정확 집계. 결과는 30분 캐시(표시·로그용 수치라 정확 COUNT 불필요).
+const STATS_EXACT_MAX_ROWS = 50000;
 const getStats = sharedAsyncCache(async () => {
+  const est = await pool.query("SELECT reltuples::bigint AS n FROM pg_class WHERE oid = 'events'::regclass");
+  const estRows = Number(est.rows[0]?.n);
+  const sampled = Number.isFinite(estRows) && estRows >= STATS_EXACT_MAX_ROWS;
   const [ai, s, f] = await Promise.all([
     pool.query(`
       SELECT metadata_json->>'aiSource' AS ai_source, COUNT(*) AS cnt,
              COUNT(*) FILTER (WHERE type LIKE 'tool.%') AS tool_count
-      FROM events GROUP BY metadata_json->>'aiSource'
+      FROM events ${sampled ? 'TABLESAMPLE SYSTEM (0.5)' : ''} GROUP BY metadata_json->>'aiSource'
     `),
     pool.query("SELECT COUNT(*) AS c FROM sessions"),
     pool.query("SELECT COUNT(*) AS c FROM files"),
@@ -659,13 +676,16 @@ const getStats = sharedAsyncCache(async () => {
 
   const aiSourceStats = {};
   let eventCount = 0, toolCount = 0;
+  for (const row of ai.rows) eventCount += Number(row.cnt);
+  // 표본이면 추정 총행수/표본행수 배율로 환산 (표본 0행이면 배율 0 → 비율 정보 없음)
+  const scale = sampled ? (eventCount > 0 ? estRows / eventCount : 0) : 1;
   for (const row of ai.rows) {
-    const count = Number(row.cnt);
-    eventCount += count;
-    toolCount += Number(row.tool_count);
+    const count = Math.round(Number(row.cnt) * scale);
+    toolCount += Math.round(Number(row.tool_count) * scale);
     const source = row.ai_source === null ? 'claude' : row.ai_source;
     if (source) aiSourceStats[source] = (aiSourceStats[source] || 0) + count;
   }
+  if (sampled) eventCount = estRows;
 
   return {
     eventCount,
@@ -673,8 +693,9 @@ const getStats = sharedAsyncCache(async () => {
     fileCount:    parseInt(f.rows[0].c),
     toolCount,
     aiSourceStats,
+    estimated: sampled,
   };
-}, 60_000);
+}, 30 * 60_000);
 
 // ─── 직렬화 헬퍼 ────────────────────────────────────
 function deserializeEvent(row) {
