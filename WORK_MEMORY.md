@@ -2464,3 +2464,12 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 - 검증: `tests/unit/work-data-inflow-boost.test.js` 5건 신규 포함 전체 Jest 테스트 통과 및 구문검사 통과.
 - 인계 5줄: ①저장소=`mindmap-viewer`(PR #106/#107/#108) ②수정=`src/screen-capture.js`, `daemon/personal-agent.js`, `src/file-change-watcher.js`, `bin/vision-worker.js`, `server.js`, `src/completeness.js`, `tests/unit/work-data-inflow-boost.test.js` ③PR #107/#108 추가 보완=`completeness.js` 48h 증분 스캔 + single-flight + `(type || '') = ANY($1)` / `CROSS JOIN LATERAL` 역방향 인덱스 스캔으로 2GB PG `BitmapAnd(idx_events_type)` 67~114s 병목 및 `[hook] insertEvent FAIL` 타임아웃 유실 차단 ④검증=Jest 32/32·CI·실서버 배포 `/api/completeness` 단축 실측 ⑤잠금 없음.
 - 검색어: 업무데이터 유입 부족 _spoolWorthUploading uploadPendingToSpool 중복캡처 file-change-watcher 하위폴더 네이버웍스드라이브 completeness 07시 오탐 BitmapAnd idx_events_type LATERAL g01 g19
+
+## 2026-11-21 CLAUDE.md 4분할 (docs/claude-md-4way-split)
+- 요약: CLAUDE.md(356줄)를 원칙만 남기고 사실/사례/휘발성을 docs/knowledge/{facts,cases,ephemeral}.md로 원문 이동(무손실, 줄 단위 검증 누락 0).
+- 검색어: CLAUDE.md 분할, 4분할, docs/knowledge, facts, cases, ephemeral, claude-md-4way-split
+1. 작업 위치: mindmap-viewer / docs/claude-md-4way-split / C:\Users\USER\nw-cld-split-mindmap-1121 / PR은 본문 참고(머지 금지)
+2. 완료: CLAUDE.md 정리, docs/knowledge/ 3파일 신설
+3. 남은 일: 사장님 검토·머지 결정, 테스트 계정 줄(facts.md) 정리·비밀번호 회전 결정
+4. 검증: 줄 단위 누락 0·링크 실재 확인 통과 / 미검증: 다른 도구가 CLAUDE.md 줄 위치를 참조하는지
+5. 주의/잠금: 기본 폴더(다른 세션 사용 중)는 건드리지 않음. 연결 목표: 미지정 / 학습 반영: 없음
