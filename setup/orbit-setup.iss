@@ -127,6 +127,7 @@ function VerifyTokenOnServer(Token: string): Boolean;
 var
   RC: Integer;
   TmpFile, ResultStr: string;
+  RawStr: AnsiString;
 begin
   Result := False;
   if Token = '' then Exit;
@@ -140,8 +141,9 @@ begin
     'if($r.ok){''OK:'' + $r.name + '' ('' + $r.email + '')''}else{''FAIL''} ' +
     '} catch { ''FAIL:'' + $_.Exception.Message } | Out-File ''' + TmpFile + ''' -Encoding ASCII"',
     '', SW_HIDE, ewWaitUntilTerminated, RC);
-  if LoadStringFromFile(TmpFile, ResultStr) then
+  if LoadStringFromFile(TmpFile, RawStr) then
   begin
+    ResultStr := String(RawStr);
     Result := Pos('OK:', ResultStr) > 0;
     // 사용자 이름 추출 (OK:이름 형식에서 이름 부분)
     if Result then

@@ -17,7 +17,11 @@ const https = require('https');
 const { getAppProfileKey, normalizeAppName, sanitizeWindowTitle } = require('./data-quality');
 
 const CAPTURE_DIR   = path.join(os.homedir(), '.orbit', 'captures');
-const MAX_CAPTURES  = 500; // 개발 단계: 최대 보관
+const MAX_CAPTURES  = 500; // 평소 보관(최신 500장)
+// [2026-11-13] 아직 스풀로 못 올린 캡처는 최대 2000장까지 더 붙잡아 둔다(업로드가 막힌 동안 500장을 넘겨 지워져
+// 해독 기회를 잃던 문제). 이미 올린 것은 예전처럼 500장 밖이면 지우므로 평소 디스크 사용량은 그대로다.
+const MAX_UNSENT_CAPTURES = 2000;
+const MIN_FREE_BYTES_FOR_BACKLOG = 3 * 1024 * 1024 * 1024; // 여유 3GB 미만이면 예전 한도(500)로
 let _pruneTimer = null;
 
 // ── 변화 감지 기반 캡처 (고정 간격 아님) ──
@@ -449,11 +453,28 @@ function _sendAnalysisToServer(result, trigger, filepath) {
 
 function ensureDir() { fs.mkdirSync(CAPTURE_DIR, { recursive: true }); }
 
+// 지울 파일 고르기(순수 함수): 최신순 목록에서 keep 장은 무조건 보관, 그 밖은 "아직 안 올린 것"만 keepUnsent 장째까지 보관.
+function _pruneTargets(filesNewestFirst, sentSet, keep, keepUnsent) {
+  const del = [];
+  filesNewestFirst.forEach((f, i) => {
+    if (i < keep) return;
+    if (i < keepUnsent && !sentSet.has(f)) return;
+    del.push(f);
+  });
+  return del;
+}
+function _unsentKeepLimit(keep) {
+  try { if (fs.existsSync(path.join(os.homedir(), '.orbit', '.no-spool-upload'))) return keep; } catch {} // 스풀로 안 올리는 PC(분석 PC)는 예전대로
+  try { if (typeof fs.statfsSync === 'function') { const st = fs.statfsSync(CAPTURE_DIR); if (st.bavail * st.bsize < MIN_FREE_BYTES_FOR_BACKLOG) return keep; } } catch {}
+  return Math.max(keep, MAX_UNSENT_CAPTURES);
+}
 function pruneOldCaptures(keep = MAX_CAPTURES) {
   try {
     ensureDir();
     const files = fs.readdirSync(CAPTURE_DIR).filter(f => f.startsWith('screen-') && f.endsWith('.png')).sort().reverse();
-    files.slice(keep).forEach(f => {
+    let sentSet = new Set();
+    try { sentSet = new Set(fs.readFileSync(path.join(CAPTURE_DIR, '.spool-uploaded'), 'utf8').split(/\r?\n/).filter(Boolean)); } catch {}
+    _pruneTargets(files, sentSet, keep, _unsentKeepLimit(keep)).forEach(f => {
       try { fs.unlinkSync(path.join(CAPTURE_DIR, f)); } catch {}
       try { fs.unlinkSync(path.join(CAPTURE_DIR, f.replace(/\.png$/i, '.json'))); } catch {}
     });
@@ -558,28 +579,45 @@ function _uploadCaptureToServer(filepath, trigger, context) {
   });
 }
 
+function _markRemoteUploaded(filename) {
+  if (!filename) return;
+  try {
+    ensureDir();
+    const marker = path.join(CAPTURE_DIR, '.remote-uploaded');
+    let sentSet = new Set();
+    try { sentSet = new Set(fs.readFileSync(marker, 'utf8').split(/\r?\n/).filter(Boolean)); } catch {}
+    if (sentSet.has(filename)) return;
+    sentSet.add(filename);
+    fs.writeFileSync(marker, [...sentSet].slice(-4000).join('\n'), 'utf8');
+  } catch {}
+}
+
 async function uploadPendingToServer(limit = 20) {
   ensureDir();
   let sentSet = new Set();
   const marker = path.join(CAPTURE_DIR, '.remote-uploaded');
   try { sentSet = new Set(fs.readFileSync(marker, 'utf8').split(/\r?\n/).filter(Boolean)); } catch {}
+  let spoolSet = new Set();
+  try { spoolSet = new Set(fs.readFileSync(path.join(CAPTURE_DIR, '.spool-uploaded'), 'utf8').split(/\r?\n/).filter(Boolean)); } catch {}
 
   let files = [];
   try {
     files = fs.readdirSync(CAPTURE_DIR)
-      .filter(f => f.startsWith('screen-') && f.endsWith('.png') && !sentSet.has(f))
+      .filter(f => f.startsWith('screen-') && f.endsWith('.png') && !sentSet.has(f) && !spoolSet.has(f))
       .sort();
   } catch { return 0; }
 
   let count = 0;
   for (const f of files.slice(0, limit)) {
     const filepath = path.join(CAPTURE_DIR, f);
-    const parts = f.replace(/\.png$/i, '').split('-');
+    const parts = _parseCaptureName(f);
     const trigger = parts[2] || 'boot_recovery';
     const activityLevel = parts[3] || 'unknown';
+    let meta = { app: '', windowTitle: '' };
+    try { meta = JSON.parse(fs.readFileSync(filepath.replace(/\.png$/i, '.json'), 'utf8')); } catch {}
     const ok = await _uploadCaptureToServer(filepath, trigger, {
-      app: '',
-      windowTitle: '',
+      app: meta.app || '',
+      windowTitle: meta.windowTitle || '',
       activityLevel,
       automationScore: 0,
       previousCapture: '',
@@ -590,7 +628,7 @@ async function uploadPendingToServer(limit = 20) {
     }
   }
   if (count > 0) {
-    try { fs.writeFileSync(marker, [...sentSet].join('\n'), 'utf8'); } catch {}
+    try { fs.writeFileSync(marker, [...sentSet].slice(-4000).join('\n'), 'utf8'); } catch {}
     console.log(`[screen-capture] 부팅 복구 업로드 ${count}건 완료`);
   }
   return count;
@@ -602,11 +640,19 @@ async function uploadPendingToServer(limit = 20) {
 // 트리거·상태 기반 사전 선별(분석 전, 파일명만으로 공짜) — "필요없는 것부터 안 올린다".
 // 유휴/쿨다운 화면은 새 정보가 거의 없어 제외. 의도적 작업 트리거(클릭·타이핑·인쇄 등)는 유지.
 // 향후 학습 루프(앱×트리거×상태별 유용도)로 이 규칙을 데이터 기반으로 정교화(v2).
-const _SPOOL_KEEP_TRIGGERS = new Set(['mouse_click', 'click', 'ui_click', 'click_burst', 'keyboard_flush', 'keyboard_done', 'keyboard_input', 'key_burst', 'excel_formula', 'print', 'ctrl_print', 'file_write', 'tool_end', 'fallback-appchange']);
+// 캡처 파일명 screen-<ms>-<trigger>-<state>.png 파싱. 하이픈 든 트리거(fallback-appchange/-timer)가
+// split('-')에서 'fallback'+'appchange'로 쪼개져 스풀 선별에서 전량 누락되던 버그 방지(강명훈 PC 해독 11%).
+function _parseCaptureName(f) {
+  const base = f.replace(/\.png$/i, '');
+  const m = base.match(/^screen-(\d+)-(fallback-appchange|fallback-timer|[^-]+)-?(.*)$/);
+  return m ? ['screen', m[1], m[2], m[3]] : base.split('-');
+}
+const _SPOOL_KEEP_TRIGGERS = new Set(['mouse_click', 'click', 'ui_click', 'click_burst', 'keyboard_flush', 'keyboard_done', 'keyboard_input', 'key_burst', 'excel_formula', 'print', 'ctrl_print', 'file_write', 'tool_end', 'fallback-appchange', 'fallback-timer', 'app_switch', 'title_change']);
 function _spoolWorthUploading(trigger, stateLabel) {
-  if (trigger === 'low_quality_click_burst') return false;              // 명시적 저품질
-  if (_SPOOL_KEEP_TRIGGERS.has(trigger)) return true;                    // 의도적 작업 트리거 → 상태 무관 유지
-  if (stateLabel === 'idle' || stateLabel === 'cooldown') return false;  // 나머지(주기/유휴 캡처)는 유휴면 제외
+  if (trigger === 'low_quality_click_burst' || trigger === 'startup') return false; // 명시적 저품질·부팅 노이즈
+  if (_SPOOL_KEEP_TRIGGERS.has(trigger)) return true;                               // 의도적 작업·창전환 트리거 → 상태 무관 유지
+  if (trigger === 'kakao_periodic') return stateLabel !== 'cooldown';               // privacy-gate 통과 업무방 PNG만 저장되므로 쿨다운 외 유지
+  if (stateLabel === 'idle' || stateLabel === 'cooldown') return false;             // 나머지(유휴 주기 캡처)는 유휴면 제외
   return stateLabel === 'active' || stateLabel === 'focused' || stateLabel === 'burst';
 }
 function _postSpool(serverUrl, token, body) {
@@ -624,13 +670,13 @@ function _postSpool(serverUrl, token, body) {
     } catch { resolve(false); }
   });
 }
-async function uploadPendingToSpool(limit = 30) { // [2026-09-14] 15→30: 3분당 한도에 막혀 이미지 미도달(사장님 승인 A안)
+async function uploadPendingToSpool(limit = 45) { // [2026-11-20] 30→45, 90초 주기, RAM 상한 96%, 크기 5.8MB (8MB JSON 상한 내)
   // 분석 PC(owner)는 --local로 자기 캡처를 직접 처리 → 스풀 업로드 스킵(중복 방지)
   try { if (fs.existsSync(path.join(os.homedir(), '.orbit', '.no-spool-upload'))) return 0; } catch {}
-  // RAM 92%+ 에서 PNG 1000장을 readdir/base64 하면 화면이 끊김
+  // RAM 96%+ 극심 포화 시만 스킵 (8GB 사무실 PC의 평소 90~93%에서 스풀 전면 중단되던 유실 해소)
   try {
     const ramPct = Math.round((1 - os.freemem() / os.totalmem()) * 100);
-    if (ramPct >= 90) return 0;
+    if (ramPct >= 96) return 0;
   } catch {}
   ensureDir();
   const orbitConfig = (() => { try { let r = fs.readFileSync(path.join(os.homedir(), '.orbit-config.json'), 'utf8'); if (r.charCodeAt(0) === 0xFEFF) r = r.slice(1); return JSON.parse(r); } catch { return {}; } })();
@@ -652,12 +698,12 @@ async function uploadPendingToSpool(limit = 30) { // [2026-09-14] 15→30: 3분�
   let count = 0, skipped = 0;
   for (const f of files.slice(0, limit)) {
     try {
-      const parts0 = f.replace(/\.png$/i, '').split('-');
+      const parts0 = _parseCaptureName(f);
       // 트리거·상태 사전 선별 — 필요없는 화면은 올리지 않고 처리완료로 표시(재스캔 방지)
       if (!_spoolWorthUploading(parts0[2] || '', parts0[3] || '')) { sentSet.add(f); skipped++; continue; }
       const filepath = path.join(CAPTURE_DIR, f);
       const st = fs.statSync(filepath);
-      if (st.size > 5_000_000) { sentSet.add(f); continue; }        // 5MB↑ 스킵
+      if (st.size > 5_800_000) { sentSet.add(f); continue; }        // 5.8MB↑(base64 ~7.7MB) 스킵 — 서버 8MB 상한 맞춤
       const parts = parts0;
       const epoch = parseInt(parts[1]) || Date.now();
       const trigger = parts[2] || '';
@@ -761,6 +807,11 @@ function _resolvePython() {
     bases.push('C:\\');
     for (const b of bases) {
       try { for (const d of fs.readdirSync(b)) if (/^Python3\d*$/i.test(d)) cands.push(path.join(b, d, 'python.exe')); } catch {}
+    }
+    // python.org 새 설치관리자(3.14+)는 %LOCALAPPDATA%\Python\pythoncore-3.xx-64 에 깐다 — 2026-11-09 강명훈 PC
+    if (process.env.LOCALAPPDATA) {
+      const pm = path.join(process.env.LOCALAPPDATA, 'Python');
+      try { for (const d of fs.readdirSync(pm).sort().reverse()) if (/^pythoncore-3/i.test(d)) cands.push(path.join(pm, d, 'python.exe')); } catch {}
     }
   } catch {}
   for (const c of cands) {
@@ -1014,9 +1065,10 @@ function capture(trigger = 'manual') {
     };
 
     if (_shouldSendImage(trigger, _lastActiveApp)) {
-      _uploadCaptureToServer(filepath, trigger, context);
+      _uploadCaptureToServer(filepath, trigger, context).then(ok => { if (ok) _markRemoteUploaded(filename); }).catch(() => {});
     } else {
       _sendCaptureMetadata(filepath, trigger, context);
+      _markRemoteUploaded(filename);
     }
 
     pruneOldCaptures();
@@ -1486,9 +1538,9 @@ function start(opts) {
   // 캡처 자가테스트 — 콜드스타트만. healer 재시작(skipSelfTest)과 30분 쿨다운은 생략
   // (재시작마다 PIL+pyautogui+PS 3중 캡처가 화면 끊김 유발, 2026-08-19)
   if (!(opts && opts.skipSelfTest) && _shouldRunSelfTest()) _runStartupSelfTest();
-  // 스풀 업로더: 로컬 캡처 백로그를 서버 볼륨으로(owner는 마커로 스킵). 3분 주기, 소량.
-  try { setTimeout(() => { uploadPendingToSpool().catch(() => {}); }, 60 * 1000); } catch {}
-  if (!_spoolTimer) _spoolTimer = setInterval(() => { uploadPendingToSpool().catch(() => {}); }, 3 * 60 * 1000);
+  // 스풀 업로더: 로컬 캡처 백로그를 서버 볼륨으로(owner는 마커로 스킵). 90초 주기, 45건.
+  try { setTimeout(() => { uploadPendingToSpool().catch(() => {}); }, 45 * 1000); } catch {}
+  if (!_spoolTimer) _spoolTimer = setInterval(() => { uploadPendingToSpool().catch(() => {}); }, 90 * 1000);
   try { setTimeout(() => pruneOldCaptures(), 20 * 1000); } catch {}
   if (!_pruneTimer) _pruneTimer = setInterval(() => pruneOldCaptures(), 10 * 60 * 1000);
   _startFallback();
@@ -1551,7 +1603,7 @@ module.exports = {
   start, stop, capture, getRecentCaptures, getLastAnalysis, getCurrentActivity,
   onAppChange, onKeyActivity, onKeyboardFlush, onWindowTitleChange, onToolEnd, onFileWrite,
   onKeyBurst, onMouseBurst, onMouseClick, onPrint, onExcelFormula,
-  uploadPendingToServer, uploadPendingToSpool,
+  uploadPendingToServer, uploadPendingToSpool, _pruneTargets, _parseCaptureName, _spoolWorthUploading,
   pause, resume, isPaused,
   setForegroundProvider, getFallbackStatus, _fallbackTestHooks,
   getStatus,

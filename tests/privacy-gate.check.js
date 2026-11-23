@@ -24,6 +24,8 @@ const cases = [
   ['카톡 친구목록 창', { app: 'kakaotalk', windowTitle: '카카오톡' }, 'messenger_private'],
   ['카톡 후보방(발주) 미적용', { app: 'kakaotalk', windowTitle: '발주 협의방' }, 'messenger_private'],
   ['위챗 WeChat', { app: 'weixin', windowTitle: 'WeChat' }, 'messenger_private'],
+  ['WhatsApp 데스크톱(whatsapp.root)', { app: 'whatsapp.root', windowTitle: 'WhatsApp' }, 'messenger_private'],
+  ['WhatsApp(whatsapp.exe)', { app: 'WhatsApp.exe', windowTitle: 'WhatsApp' }, 'messenger_private'],
   ['위챗 앱명 오인(제목만 Weixin)', { app: 'flores tiba', windowTitle: 'Weixin' }, 'messenger_private'],
   ['텔레그램', { app: 'telegram', windowTitle: 'Telegram' }, 'messenger_private'],
   ['크롬 구글검색 제목', { app: 'chrome', windowTitle: '장미 가격 - Google 검색 - Chrome' }, 'personal_web'],

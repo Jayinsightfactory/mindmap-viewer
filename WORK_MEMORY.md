@@ -2421,3 +2421,54 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 - capture-health: 6시간 넘은 설치중 → INSTALL_FAILED (ff26f51, 라이브 확인).
 - 감시 nenova-watchdog capture-blank 항목 추가(파워셸 캡처 절반 이상 10KB 미만). 첫 판정에서 L0C2IOT 7/8 검출.
 - 원격 exec(점검+설치 로그 py-install.log) 대기열 등록, PC 켜지면 실행. 결과 미확인.
+
+## 2026-11-10 [kmh-data-secure] 강명훈 PC 해독률 11% 원인 = 스풀 업로드 파일명 파싱 버그
+- 검색어: fallback-appchange, _spoolWorthUploading, uploadPendingToSpool, 해독률 11%
+- 원인: 캡처 파일명 `screen-<ms>-fallback-appchange-focused.png` 를 split('-') → 트리거 'fallback', 상태 'appchange' 로 오인 → `_spoolWorthUploading` false → 스풀 미업로드(처리완료 표시). 강명훈 11/09 캡처 325 중 fallback 144(44%) 해독 0. 전직원 fallback 비중은 1~6%라 그 PC만 두드러짐.
+- 수정: src/screen-capture.js `_parseCaptureName` 도입(2곳). 검증: 합성 파일명 5종 true/false 확인.
+- 반영 조건: 직원 PC는 코드 자동배포(code-sync)로 반영. 이후 fallback 캡처 비율만큼 해독 대상 증가 → 야간 워커 부하 소폭 증가.
+
+## 2026-11-13 업무드라이브 누락 조사
+- 운영 업로더 8대 활성, 5대 실패 카운터 확인. 파일명 없는 내용 해시 목록 명령 추가. 연속 저장 생략 제거·기존파일 일괄 완료 조건에 서버 확인 적용. 전 직원 대조 및 배포 미검증.
+검색어: drive-inventory confirmed 업무드라이브 재저장
+
+## 2026-11-13 업무드라이브 하위 폴더 저장
+- 직원 PC 4대 파일 27022개 중 색인 없는 22117개, 그중 19058개가 기존 일괄 탐색 깊이 밖. 기본 세 폴더에서 하위 변경을 Windows 파일 이벤트로 업로더에 연결. 개인·임시·개발 폴더 필터 유지. 기존 파일 일괄 전송 없음.
+검색어: recursive watch nested save 업무드라이브 하위폴더
+
+## 2026-11-13 업무파일 재시도 폭주 방지
+- 한 직원 PC 2604건 대기, 타임아웃 발생. 재시도는 PC별 한번에 1건만 처리하고 1.2초 간격. 중복 drain 및 같은 라운드 즉시 재시도 차단. 전체 업로드 미검증.
+검색어: drive retry drain backfill timeout
+
+## 2026-11-19 해독 2.9%(92/3187) 조사 — 스풀 워커 무기한 정지
+- 원인: ①주간 사용량 100%(11/17 15:17~11/19 00:00 리셋) 동안 스풀 워커가 claude -p 2391건 실패(빈 결과) ②리셋 후에도 스풀 워커(pid29588)가 11/18 23:52 이후 로그 정지·산출 0 — 코드 갱신 재기동도 안 됨(_spoolBusy 고착). 11/18 해독 92건은 전부 owner 로컬워커(직원 11명 0건).
+- 수정: bin/vision-worker.js visionCli — 150초 하드 타이머로 해당 호출 프로세스 트리만 종료 + 동기 예외에도 게이트 반납 + 실패 로그 200자 절단(로그 30MB 비대 방지).
+- 검증: 구문검사 통과. 실제 정지 재현·수정 후 산출 회복은 미검증(워커 재기동 필요).
+검색어: vision-spool 정지 _spoolBusy execFile 손자프로세스 하드타이머 해독률 2.9%
+## 2026-11-20 Railway RAM 다이어트 — Postgres 10.7GB→2GB 상한 (연결 목표: g18)
+- 원인: getStats 1분 주기 events 전체 GROUP BY + 하트비트 워치독 TEXT 캐스팅 풀스캔(seq_scan 1,695만회)으로 PG 페이지캐시 10.7~10.9GB 고착. 30일 정리는 text<timestamptz 오류로 매일 실패(보존은 event-archiver 가 이미 30일 유지 중). PG 로그 hostname 컬럼 없음 153건/400줄, jsonb NUL 오류, daemon.register session_id 누락.
+- 수정(#103 c6c94bc): getStats=reltuples+TABLESAMPLE 0.5%·30분 캐시, 워치독 ISO 사전필터(87,614→2,081블록), 정리=KEEP_DAYS+14일 2만행 배치 백스톱+VACUUM(ANALYZE), PC충돌=SQLite tracker_pings 조회(6h 1회), insertEvent NUL 제거, register 컬럼 보강, 풀 30→12+error 핸들러, 힙 4096→768. 운영: idx_events_data_gin DROP CONCURRENTLY(events 4280→3001MB), ALTER SYSTEM shared_buffers 256MB/effective_cache_size 512MB/work_mem 4MB, Postgres 메모리 상한 2GB(serviceInstanceLimitsUpdate) 후 재배포 1회(약 1분 끊김, 앱 무재시작 재연결 확인).
+- 실측: Postgres 적용 전 10.7GB(1h avg)/max 10.9GB → 적용 후 1.95GB(상한 2GB 안 캐시). mindmap-viewer 205~391MB, jest 285 통과, CI Node18/20/22 통과, 배포 후 hostname 오류 0건.
+- 원복: serviceInstanceLimitsUpdate memoryGB 24 / ALTER SYSTEM RESET 3종 후 재시작. 별건(미수정): archive_log 1,829건 drive_file 전부 NULL(Drive 업로드 실패 상태로 삭제 진행), pad_mouse_map ON CONFLICT 제약 없음, check-hostname 의 PG tracker_pings.hostname 조회.
+- 검색어: RAM 다이어트 getStats TABLESAMPLE reltuples idx_events_data_gin shared_buffers 메모리 상한 2GB tracker_pings hostname NUL jsonb g18
+## 2026-11-20 백업 유실 하드 가드 · DDL lock_timeout · 무토큰 데몬 릴리즈 경로 (연결 목표: g18, g19)
+- 원인 진단: archive_log drive_file NULL 1,829건 = Railway 변수 GOOGLE_SERVICE_ACCOUNT_JSON 존재 / GOOGLE_DRIVE_CAPTURES_FOLDER_ID 미설정 상태에서 event-archiver 가 HTTP 오류 응답을 미검사한 채 drive_file=null 로 events DELETE 를 강행. 또한 배포 교체 시 createTables() 의 무조건 ALTER TABLE events 가 잔여 SELECT 와 락 경합해 6분+ 부팅 행 유발(#62).
+- 수정: ① event-archiver._archiveUser Drive 백업(drive_file IS NOT NULL) 미검증 시 DELETE 완전 차단 + 공용 deleteVerifiedArchivedEvents 가드를 server.js(_cleanupOldEvents·_runDailyMaintenance)·routes/data-archive.js(90일) 전수 적용(노이즈/임시 테이블 정리는 인덱스 사전필터 유지). ② db-pg.js createTables()·daemon-command-queue.js 에 SET lock_timeout='5s' + information_schema 선확인 적용(이미 일치 시 ACCESS EXCLUSIVE 락 0회, 55P03 경고 흡수). ③ src/daemon-release.js 신규 + GET /api/daemon/release-meta·/release-bundle(Orbit Bearer 인증 강제, os.tmpdir 디스크 캐시 스트리밍 RAM +0MB) + daemon-updater.js·guardian-watchdog.ps1·personal-agent.js 1차 서버 번들(SHA-256 검증·.orbit-release-version) / 2차 git pull 폴백 구축(직원 PC GitHub 토큰 0, install.ps1 무변경, 광역 원격명령 미발송).
+- 검증: tests/unit/private-ready-and-backup-guard.test.js 7건 신규 포함 jest 31 suites / 292 tests 통과, PS1 파서 오류 0건. 배포 후 /health 200 · /api/daemon/release-meta 200 · /release-bundle 무인증 401 실측.
+- 남은 작업: Google Drive 공유 폴더 생성 후 Railway GOOGLE_DRIVE_CAPTURES_FOLDER_ID 설정 시 30일 백업 후 자동 삭제 재개 가능(미설정 동안은 원본 100% 보존).
+- 검색어: drive_file 하드 가드 event-archiver lock_timeout 5s daemon-release release-meta release-bundle GitHub Private 무토큰 g18 g19
+
+## 2026-11-20 업무데이터 유입·수집 커버리지 보강 — 스풀 유실·중복 캡처·파일 하위폴더·완전성 오탐 수리 (연결 목표: g01, g19)
+- 원인 진단: ① 11/19 실측 `screen.capture` 3,645건 중 도착 1,302건(36%)·해독 831건(23%) · 서버 대기 스풀 5장 — `_spoolWorthUploading`이 `app_switch`/`title_change`/`fallback-timer` idle 캡처를 영구 스킵, RAM≥90%에서 스풀 중단, `personal-agent.js`의 `uploadPendingToServer(20)`가 `.spool-uploaded` 미참조로 동일 PNG를 `app:''` 중복 `screen.capture`로 2~3회 재전송 ② `vision-worker.js` `--local` 정규식이 하이픈 트리거(`fallback-appchange/timer`) 전량 누락·사이드카 미로드, 스풀 폴링 10분·`/api/vision/spool/list` 상한 60 ③ `file-change-watcher.js`가 Desktop/Documents/Downloads depth 0만 감시해 하위폴더 엑셀 저장 시 폴더명만 수집 + 네이버웍스 드라이브 미포함 ④ `completeness.js`가 09:00 KST 출근 전(07:00 배치)에도 `elapsed>=0.1`로 13명 전원 `pc-off` 유실 오판.
+- 수정: `src/screen-capture.js`(`_spoolWorthUploading`에 `app_switch`/`title_change`/`fallback-timer` 및 비쿨다운 `kakao_periodic` 허용, `uploadPendingToSpool` RAM 96%·5.8MB·90초/45건, `.remote-uploaded` 마킹·`.spool-uploaded` 중복 차단), `daemon/personal-agent.js`(부팅/시간별 복구 `uploadPendingToSpool(45)`로 통일), `bin/vision-worker.js`+`server.js`(`_parseLocalCaptureName` 하이픈 지원·사이드카 로드·스풀 3분/낮45·밤90·서버상한 100), `src/file-change-watcher.js`(1단계 업무 하위폴더 문서감시 + 네이버웍스/LINE WORKS 드라이브 추가), `src/completeness.js`(09:00 KST 이전 `elapsed=0` 처리).
+- 검증: `tests/unit/work-data-inflow-boost.test.js` 5건 신규 포함 전체 Jest 테스트 통과 및 구문검사 통과.
+- 인계 5줄: ①저장소=`mindmap-viewer`(PR #106/#107/#108) ②수정=`src/screen-capture.js`, `daemon/personal-agent.js`, `src/file-change-watcher.js`, `bin/vision-worker.js`, `server.js`, `src/completeness.js`, `tests/unit/work-data-inflow-boost.test.js` ③PR #107/#108 추가 보완=`completeness.js` 48h 증분 스캔 + single-flight + `(type || '') = ANY($1)` / `CROSS JOIN LATERAL` 역방향 인덱스 스캔으로 2GB PG `BitmapAnd(idx_events_type)` 67~114s 병목 및 `[hook] insertEvent FAIL` 타임아웃 유실 차단 ④검증=Jest 32/32·CI·실서버 배포 `/api/completeness` 단축 실측 ⑤잠금 없음.
+- 검색어: 업무데이터 유입 부족 _spoolWorthUploading uploadPendingToSpool 중복캡처 file-change-watcher 하위폴더 네이버웍스드라이브 completeness 07시 오탐 BitmapAnd idx_events_type LATERAL g01 g19
+
+## 2026-11-23 해외 메신저(위챗·왓츠앱) 대화방 글 수신 통로 추가 (Claude)
+검색어: messenger-intake messenger_messages /api/messenger/import wechat whatsapp 위챗 왓츠앱 수입부 농장 대화방 수신
+1. 작업 위치: mindmap-viewer / 가지 feat/messenger-intake / 작업 폴더 mv-cld-messenger-intake.
+2. 완료: routes/messenger-intake.js 새로 만듦(POST /api/messenger/import · GET /messages · GET /rooms, 표 messenger_messages, 중복 제거 = channel + external_message_id). server.js 3줄(연결 + 조회 2종 관리자 잠금), routes/privacy.js 1줄(열람 기록 대상). 카톡 표·주소는 손대지 않음.
+3. 남은 일: 운영 PC 수집기(nenovakakao 수정안)가 승인·반영돼 첫 글이 들어오면 /api/messenger/rooms 로 건수 확인. 분석 쪽은 nenova-work-features 의 pull-messenger.js 가 읽는다.
+4. 검증: tests/unit/messenger-intake.test.js 9건 + 기존 kakao-import 2건 통과. 실제 운영 DB 에 표가 만들어지는지와 실제 글 수신은 미검증(첫 호출 때 표를 만든다).
+5. 주의: 수신 토큰은 카톡 수신과 같은 값을 쓴다(MESSENGER_IMPORT_TOKEN_SHA256 을 따로 주면 그 값). 되돌리기 = server.js 3줄·privacy.js 1줄·새 파일 2개 삭제(표는 남겨도 무해). 연결 목표: g01·g03 / 학습 반영: 있음

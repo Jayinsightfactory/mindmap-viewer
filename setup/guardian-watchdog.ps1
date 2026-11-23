@@ -16,7 +16,58 @@ function Log-Wd([string]$msg) {
   "[$ts] $msg" | Out-File -Append -Encoding utf8 -FilePath $logFile
 }
 
+function Guardian-ServerBundleSync {
+  # [2026-11-20] GitHub Private 전환 대비 1차 동기화: Orbit Bearer 토큰으로 서버 릴리즈 번들(SHA-256 검증) 적용
+  try {
+    $cfgPath = "$env:USERPROFILE\.orbit-config.json"
+    if (-not (Test-Path $cfgPath)) { return $false }
+    $cfg = Get-Content $cfgPath -Raw | ConvertFrom-Json
+    $tok = "$($cfg.token)".Trim()
+    $svr = if ($cfg.serverUrl) { "$($cfg.serverUrl)".TrimEnd('/') } else { $server.TrimEnd('/') }
+    if (-not $tok -or -not $svr) { return $false }
+    $hdrs = @{ 'Authorization' = "Bearer $tok"; 'X-Device-Id' = $hn }
+    $meta = Invoke-RestMethod -Uri "$svr/api/daemon/release-meta" -Headers $hdrs -TimeoutSec 15
+    if (-not $meta -or -not $meta.ok -or -not $meta.version -or -not $meta.sha256) { return $false }
+    $ver = "$($meta.version)".Substring(0, [Math]::Min(8, "$($meta.version)".Length))
+    $pinPath = "$env:USERPROFILE\.orbit\.code-pin"
+    if (Test-Path $pinPath) {
+      try {
+        $pin = Get-Content $pinPath -Raw | ConvertFrom-Json
+        if ($pin.bad -and "$($pin.bad)".StartsWith($ver)) { Log-Wd "bundle sync skipped (code-pin bad=$ver)"; return $true }
+      } catch {}
+    }
+    $verFile = Join-Path $dir '.orbit-release-version'
+    if (Test-Path $verFile) {
+      try { if ((Get-Content $verFile -Raw | ConvertFrom-Json).version -eq $ver) { return $true } } catch {}
+    }
+    $tmpTgz = Join-Path $env:TEMP "orbit-wd-$ver-$(Get-Random).tar.gz"
+    $tmpStage = Join-Path $env:TEMP "orbit-wd-stage-$ver-$(Get-Random)"
+    try {
+      $bUrl = if ($meta.bundlePath) { "$svr$($meta.bundlePath)" } else { "$svr/api/daemon/release-bundle" }
+      Invoke-WebRequest -Uri $bUrl -Headers $hdrs -OutFile $tmpTgz -TimeoutSec 60 -UseBasicParsing
+      $gotHash = (Get-FileHash -Path $tmpTgz -Algorithm SHA256).Hash.ToLower()
+      if ($gotHash -ne "$($meta.sha256)".ToLower()) { Log-Wd "bundle sha256 mismatch"; return $false }
+      New-Item -ItemType Directory -Path $tmpStage -Force | Out-Null
+      & tar -xzf $tmpTgz -C $tmpStage 2>$null
+      if (-not (Test-Path (Join-Path $tmpStage 'daemon\personal-agent.js'))) { Log-Wd "bundle missing personal-agent.js"; return $false }
+      Copy-Item -Path "$tmpStage\*" -Destination $dir -Recurse -Force
+      $gitHead = (git -C $dir rev-parse HEAD 2>$null); if ($gitHead) { $gitHead = "$gitHead".Trim().Substring(0, [Math]::Min(8, "$gitHead".Trim().Length)) }
+      @{ version = $ver; sha256 = $meta.sha256; updatedAt = (Get-Date).ToString('o'); source = 'guardian-bundle'; gitHeadAtInstall = $gitHead } | ConvertTo-Json | Out-File -Encoding utf8 -FilePath $verFile
+      Log-Wd "server bundle sync OK ($ver)"
+      return $true
+    } finally {
+      Remove-Item $tmpTgz -Force -ErrorAction SilentlyContinue
+      Remove-Item $tmpStage -Recurse -Force -ErrorAction SilentlyContinue
+    }
+  } catch {
+    Log-Wd "server bundle sync fallback to git: $_"
+    return $false
+  }
+}
+
 function Guardian-GitSync {
+  # 1차: 서버 무토큰 번들 동기화 (GitHub Private 환경 지원) → 실패 시 2차 git fetch 폴백
+  if (Guardian-ServerBundleSync) { return $true }
   try {
     Set-Location $dir
     git remote set-url origin $gitRepo 2>$null
@@ -61,6 +112,19 @@ function Guardian-EnsureStartDaemon {
   if (-not (Test-Path $startDaemon)) {
     Log-Wd 'start-daemon.ps1 missing'
     return $false
+  }
+  # [2026-11-09] 사용자가 로그인해 있으면 사용자 세션 작업(OrbitDaemon)으로 띄운다.
+  # 여기서 직접 띄우면 SYSTEM·세션0 으로 떠서 캡처가 빈 화면(3KB)이 되고 사용자 python 도 못 찾는다(강명훈 PC).
+  $loggedOn = $false
+  try { $loggedOn = [bool](Get-CimInstance Win32_ComputerSystem -EA Stop).UserName } catch {}
+  if ($loggedOn) {
+    schtasks /run /tn OrbitDaemon 2>$null | Out-Null
+    if ($LASTEXITCODE -eq 0) {
+      Start-Sleep 20  # 작업이 실제로 start-daemon 을 띄웠는지 확인, 안 떴으면 아래 기존 방식으로
+      $up = Get-WmiObject Win32_Process -Filter "Name='powershell.exe'" -ErrorAction SilentlyContinue | Where-Object { $_.ProcessId -ne $me -and $_.CommandLine -like '*start-daemon.ps1*' }
+      if ($up) { Log-Wd 'start-daemon via OrbitDaemon task (user session)'; return $true }
+      Log-Wd 'OrbitDaemon task did not start daemon — fallback'
+    }
   }
   Start-Process powershell.exe -ArgumentList @(
     '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass',

@@ -710,6 +710,13 @@ const _daemonStartedAt = Date.now();
 let _codeVersion = null;
 function _getCodeVersion() {
   if (_codeVersion) return _codeVersion;
+  try {
+    const du = require(path.join(ROOT, 'src', 'daemon-updater'));
+    if (typeof du.getLocalVersion === 'function') {
+      _codeVersion = du.getLocalVersion();
+      return _codeVersion;
+    }
+  } catch {}
   try { _codeVersion = execSync('git rev-parse HEAD', { cwd: ROOT, timeout: 5000, windowsHide: true, stdio: 'pipe' }).toString().trim().slice(0, 8); }
   catch { _codeVersion = 'unknown'; }
   return _codeVersion;
@@ -971,7 +978,8 @@ async function main() {
   };
   const _uploadPendingDuringWorkHours = async () => {
     if (!_isKstWorkHours()) return;
-    try { await screenCapture?.uploadPendingToServer?.(20); } catch {}
+    // [2026-11-20] uploadPendingToServer(20) 가 .spool-uploaded 미참조로 동일 PNG를 app='' 중복 screen.capture로 2~3회 재전송하던 버그 해소 → 디스크 스풀 경로로 통일
+    try { await screenCapture?.uploadPendingToSpool?.(45); } catch {}
     try {
       if (driveUploader?.isEnabled?.()) await driveUploader.uploadPending();
     } catch {}

@@ -18,6 +18,15 @@ const os = require('os');
 
 const SCRIPTS_DIR = path.join(os.homedir(), '.orbit', 'automations');
 
+/**
+ * 단계에 저장된 입력 텍스트(step.text)를 꺼낸다.
+ * 학습 템플릿은 개인정보 보호를 위해 보통 입력 내용을 저장하지 않는다(signature 의 'app:type' 만 있음).
+ * 그래서 text 가 있을 때만 쓰고, 없으면 null → 생성기는 자리표시자 + 안내 주석을 넣는다.
+ */
+function getStepText(step) {
+  return typeof step.text === 'string' && step.text.length > 0 ? step.text.replace(/[\r\n]+/g, ' ') : null;
+}
+
 function ensureDir() {
   fs.mkdirSync(SCRIPTS_DIR, { recursive: true });
 }
@@ -57,14 +66,24 @@ function generatePython(template) {
 
       case 'ui_click':
         const region = step.action.match(/:([LR][TB])$/)?.[1] || '';
-        const coords = { LT: '400, 300', RT: '1200, 300', LB: '400, 700', RB: '1200, 700' };
-        lines.push(`    # TODO: 정확한 좌표는 스크린샷 분석 후 조정`);
-        lines.push(`    pyautogui.click(${coords[region] || '960, 540'})  # ${region || '중앙'}`);
+        // 화면 4분면 중심을 해상도 비율로 계산 — 해상도가 달라도 같은 영역을 누름
+        const frac = { LT: '0.25, 0.25', RT: '0.75, 0.25', LB: '0.25, 0.75', RB: '0.75, 0.75' };
+        const [fx, fy] = (frac[region] || '0.5, 0.5').split(', ');
+        lines.push(`    # 영역 중심 클릭(${region || '중앙'}) — 더 정확한 위치가 필요하면 아래 비율만 조정`);
+        lines.push(`    sw, sh = pyautogui.size()`);
+        lines.push(`    pyautogui.click(int(sw * ${fx}), int(sh * ${fy}))`);
         break;
 
       case 'keyboard_input':
-        lines.push(`    # TODO: 실제 입력 내용은 학습 데이터에서 추출`);
-        lines.push(`    pyautogui.typewrite('input_text', interval=0.05)`);
+        {
+          const txt = getStepText(step);
+          if (txt) {
+            lines.push(`    pyautogui.write(${JSON.stringify(txt)}, interval=0.05)  # 한글은 pyperclip + ctrl+v 권장`);
+          } else {
+            lines.push(`    # 입력 내용은 개인정보 보호로 학습 데이터에 저장되지 않음 — 아래 값을 직접 채울 것`);
+            lines.push(`    pyautogui.typewrite('input_text', interval=0.05)`);
+          }
+        }
         break;
 
       case 'clipboard':
@@ -117,7 +136,15 @@ function generatePowerShell(template) {
     lines.push('# Excel COM 자동화');
     lines.push('$excel = New-Object -ComObject Excel.Application');
     lines.push('$excel.Visible = $true');
-    lines.push('$wb = $excel.Workbooks.Open("C:\\path\\to\\file.xlsx")  # TODO: 실제 파일 경로');
+    // 파일 경로: 템플릿에 있으면 그대로, 없으면 실행 인자(.\script.ps1 "파일.xlsx")로 받는다
+    const xlsxPath = template.filePath || template.xlsxPath;
+    if (xlsxPath) {
+      lines.push(`$xlsxPath = '${String(xlsxPath).replace(/'/g, "''")}'`);
+    } else {
+      lines.push('$xlsxPath = $args[0]  # 실행 시 엑셀 파일 경로를 첫 인자로 전달');
+      lines.push('if (-not $xlsxPath) { Write-Error "엑셀 파일 경로 인자가 필요합니다"; exit 1 }');
+    }
+    lines.push('$wb = $excel.Workbooks.Open($xlsxPath)');
     lines.push('$ws = $wb.Sheets(1)');
     lines.push('');
   }
@@ -146,16 +173,27 @@ function generatePowerShell(template) {
         break;
 
       case 'keyboard_input':
-        if (hasExcel) {
-          lines.push('# $ws.Range("A1").Value = "데이터"  # TODO: 실제 셀/데이터');
+        {
+          // 다른 생성기(Python/AHK)와 동일: 저장된 입력 텍스트가 있으면 실제 값으로, 없으면 안내 주석
+          const txt = getStepText(step);
+          if (hasExcel) {
+            if (txt) lines.push(`$ws.Range("A1").Value2 = '${txt.replace(/'/g, "''")}'  # 입력할 셀 주소(A1)는 필요 시 수정`);
+            else lines.push('# $ws.Range("A1").Value2 = "값"  # 입력 내용은 개인정보 보호로 저장되지 않음 — 셀 주소와 값을 직접 채울 것');
+          }
+          lines.push('Add-Type -AssemblyName System.Windows.Forms');
+          if (txt) {
+            // SendKeys 특수문자 이스케이프
+            const esc = txt.replace(/[{}+^%~()[\]]/g, c => `{${c}}`).replace(/'/g, "''");
+            lines.push(`[System.Windows.Forms.SendKeys]::SendWait('${esc}')`);
+          } else {
+            lines.push('# [System.Windows.Forms.SendKeys]::SendWait("text")  # 입력 내용은 저장되지 않음 — 직접 채울 것');
+          }
         }
-        lines.push('# Add-Type -AssemblyName System.Windows.Forms');
-        lines.push('# [System.Windows.Forms.SendKeys]::SendWait("text")');
         break;
 
       case 'ui_click':
         lines.push('# [System.Windows.Forms.Cursor]::Position = New-Object System.Drawing.Point(960, 540)');
-        lines.push('# TODO: 정확한 좌표는 학습 데이터에서');
+        lines.push('# 정확한 좌표는 학습 데이터/스크린샷에서 확인해 위 줄을 수정할 것');
         break;
 
       default:
@@ -192,10 +230,19 @@ function generateAutoHotkey(template) {
         lines.push('Sleep, 2000');
         break;
       case 'ui_click':
-        lines.push('Click, 960, 540  ; TODO: 좌표 조정');
+        {
+          // Python 생성기와 동일: 화면 4분면 중심을 해상도 비율로 계산
+          const region = step.action.match(/:([LR][TB])$/)?.[1] || '';
+          const frac = { LT: [0.25, 0.25], RT: [0.75, 0.25], LB: [0.25, 0.75], RB: [0.75, 0.75] };
+          const [fx, fy] = frac[region] || [0.5, 0.5];
+          lines.push(`Click, % Round(A_ScreenWidth * ${fx}), Round(A_ScreenHeight * ${fy})  ; ${region || '중앙'} 영역 중심 — 더 정확한 위치가 필요하면 비율만 조정`);
+        }
         break;
       case 'keyboard_input':
-        lines.push('SendInput, {Text}input  ; TODO: 실제 입력');
+        {
+          const txt = getStepText(step);
+          lines.push(txt ? `SendInput, {Text}${txt}` : 'SendInput, {Text}input  ; 입력 내용은 저장되지 않음 — 직접 채울 것');
+        }
         break;
       case 'clipboard':
         lines.push(step.action === 'copy' ? 'Send, ^c' : 'Send, ^v');
@@ -238,7 +285,7 @@ function generatePowerAutomate(template) {
         lines.push(`MouseAndKeyboard.SendMouseClick.Click ClickType: MouseAndKeyboard.MouseClickType.LeftClick X: 960 Y: 540`);
         break;
       case 'keyboard_input':
-        lines.push(`MouseAndKeyboard.SendKeys.FocusAndSendKeys TextToSend: $'''input''' DelayBetweenKeystrokes: 50`);
+        lines.push(`MouseAndKeyboard.SendKeys.FocusAndSendKeys TextToSend: $'''${getStepText(step) || 'input'}''' DelayBetweenKeystrokes: 50`);
         break;
       case 'clipboard':
         if (step.action === 'copy') {

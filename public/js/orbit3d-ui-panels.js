@@ -3167,8 +3167,41 @@ async function startTrackerSetup() {
 window.startTrackerSetup = startTrackerSetup;
 
 async function openTrackerSettings() {
-  // TODO: Tracker 설정 모달 열기
-  alert('트래커 설정 준비 중입니다');
+  // 트래커 설정(상태 보기) 모달 — 현재 상태 표시 + 재설치 + 닫기
+  const old = document.getElementById('tracker-settings-modal');
+  if (old) old.remove();
+  const esc = (v) => String(v == null ? '-' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const modal = document.createElement('div');
+  modal.id = 'tracker-settings-modal';
+  modal.style.cssText = 'position:fixed;inset:0;z-index:100000;background:rgba(0,0,0,0.6);display:flex;align-items:center;justify-content:center';
+  modal.innerHTML = '<div style="background:#0f172a;border:1px solid #334155;border-radius:12px;padding:20px;width:min(420px,92vw);color:#e2e8f0">'
+    + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px"><b>PC 작업 추적 설정</b>'
+    + '<button id="tracker-settings-close" style="background:none;border:none;color:#94a3b8;font-size:18px;cursor:pointer">✕</button></div>'
+    + '<div id="tracker-settings-body" style="font-size:13px;line-height:1.7;color:#94a3b8">불러오는 중...</div>'
+    + '<div style="margin-top:14px;display:flex;gap:8px;justify-content:flex-end">'
+    + '<button id="tracker-settings-reinstall" style="background:#334155;border:1px solid #475569;color:#fff;padding:6px 12px;border-radius:6px;cursor:pointer">다시 설치</button>'
+    + '<button id="tracker-settings-ok" style="background:#2563eb;border:none;color:#fff;padding:6px 14px;border-radius:6px;cursor:pointer">닫기</button></div></div>';
+  document.body.appendChild(modal);
+  const close = () => modal.remove();
+  modal.addEventListener('click', (e) => { if (e.target === modal) close(); });
+  modal.querySelector('#tracker-settings-close').onclick = close;
+  modal.querySelector('#tracker-settings-ok').onclick = close;
+  modal.querySelector('#tracker-settings-reinstall').onclick = () => { close(); window.startTrackerSetup(); };
+  const body = modal.querySelector('#tracker-settings-body');
+  try {
+    const token = localStorage.getItem('orbit_token');
+    if (!token) { body.textContent = '로그인이 필요합니다'; return; }
+    const st = await (await fetch('/api/tracker/status', { headers: { 'Authorization': `Bearer ${token}` } })).json();
+    if (st.error) { body.textContent = '상태 조회 실패: ' + st.error; return; }
+    const on = st.installed || st.online;
+    const seen = st.lastSeen ? new Date(st.lastSeen).toLocaleString('ko-KR') : '-';
+    body.innerHTML = '상태: <b style="color:' + (on ? '#4ade80' : '#f87171') + '">' + (on ? '연결됨' : '설치 필요') + '</b><br>'
+      + '마지막 신호: ' + esc(seen) + '<br>'
+      + (st.hostname ? 'PC: ' + esc(st.hostname) + '<br>' : '')
+      + '수집 항목 세부 설정은 준비 중입니다.';
+  } catch (e) {
+    body.textContent = '상태 조회 실패: ' + e.message;
+  }
 }
 window.openTrackerSettings = openTrackerSettings;
 

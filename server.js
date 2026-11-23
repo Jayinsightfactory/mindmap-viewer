@@ -466,6 +466,10 @@ app.use('/api/', (req, res, next) => {
 
 // Stripe Webhook은 서명 검증을 위해 원본 바디(Buffer)가 필요 — JSON 파싱 전에 처리
 app.use('/api/payment/webhook', express.raw({ type: 'application/json' }));
+// [2026-11-13] 화면 스풀 업로드만 8MB 허용. 데몬은 PNG 5MB 이하를 올리는데(base64 ≈ 6.7MB) 전역 2MB 한도에 걸려
+// 1.5MB 넘는 화면이 PayloadTooLargeError 로 거절되고 3분마다 재전송만 반복됐다(실측 83초에 26건).
+// 스풀은 디스크에 바로 쓰므로(메모리 큐 아님) 이 경로만 올린다. /api/hook 2MB 사전 차단은 그대로.
+app.post('/api/vision/spool', express.json({ limit: '8mb' }));
 app.use(express.json({ limit: '2mb' }));
 app.use(require('./src/hidden-users').middleware); // [2026-10-05] /my-work 목록 숨김(config/hidden-users.json)
 // 프로덕션: 압축된 JS 우선 사용
@@ -2642,6 +2646,41 @@ app.get('/api/daemon/version', (req, res) => {
   });
 });
 
+// [2026-11-20] GitHub Private 전환 대비 — 직원 PC 무토큰(GitHub 무접속) 데몬 릴리즈 서빙
+// 번들은 os.tmpdir() 디스크 캐시에 1회 생성 후 fs.createReadStream 스트리밍(서버 RAM +0MB).
+const daemonRelease = require('./src/daemon-release');
+app.get('/api/daemon/release-meta', async (req, res) => {
+  try {
+    const { verifyTokenAsync } = require('./src/auth');
+    const authUser = await daemonRelease.authenticateDaemonRequest(req, { verifyTokenAsync, isAdminReqAsync });
+    const { meta } = await daemonRelease.ensureReleaseBundle({
+      rootDir: __dirname,
+      version: _serverVersion || 'unknown',
+    });
+    res.json({ ...meta, authenticated: !!authUser });
+  } catch (e) {
+    console.error('[daemon-release] release-meta 오류:', e.message);
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+app.get('/api/daemon/release-bundle', async (req, res) => {
+  try {
+    const { verifyTokenAsync } = require('./src/auth');
+    const authUser = await daemonRelease.authenticateDaemonRequest(req, { verifyTokenAsync, isAdminReqAsync });
+    if (!authUser) {
+      return res.status(401).json({ ok: false, error: 'daemon authentication required' });
+    }
+    await daemonRelease.streamReleaseBundle(res, {
+      rootDir: __dirname,
+      version: _serverVersion || 'unknown',
+    });
+  } catch (e) {
+    console.error('[daemon-release] release-bundle 오류:', e.message);
+    if (!res.headersSent) res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
 // Phase 0: 위험 명령 차단 + safe-cmd 매핑
 const FORBIDDEN_DAEMON_ACTIONS = new Set(['reinstall']);
 const RESTART_TO_SAFE = { restart: 'gitpull-worker' };
@@ -3736,7 +3775,14 @@ app.post('/api/daemon/register', async (req, res) => {
     // 3) 매칭된 userId가 있으면 토큰 자동 발급
     if (matchedUserId) {
       try {
-        matchedToken = await issueApiTokenAsync(matchedUserId);
+        // [2026-11-10] 토큰 누수 차단: 재등록(401>10)마다 새 토큰을 찍어 PC당 22만 행 누적 → 최신 유효 토큰 재사용, 없을 때만 발급.
+        if (_pool?.query) {
+          try {
+            const r = await _pool.query(`SELECT token FROM orbit_auth_tokens WHERE user_id=$1 AND (expires_at IS NULL OR expires_at > NOW()) ORDER BY created_at DESC NULLS LAST LIMIT 1`, [matchedUserId]);
+            matchedToken = r.rows[0]?.token || null;
+          } catch {}
+        }
+        if (!matchedToken) matchedToken = await issueApiTokenAsync(matchedUserId);
         console.log(`[daemon/register] ${hostname} → auto-matched userId=${matchedUserId} token=${matchedToken?.slice(0,12)}...`);
       } catch (e) {
         console.warn(`[daemon/register] token issue failed for ${matchedUserId}:`, e.message);
@@ -3749,10 +3795,11 @@ app.post('/api/daemon/register', async (req, res) => {
     // 4) 등록 이벤트 기록
     if (_pool) {
       _pool.query(
-        `INSERT INTO events (id, type, user_id, data_json, timestamp) VALUES ($1, $2, $3, $4, NOW())`,
-        [`register-${hostname}-${Date.now()}`, 'daemon.register', matchedUserId || `pc_${hostname}`,
-         JSON.stringify({ hostname, platform, nodeVersion, matchedUserId, autoToken: !!matchedToken })]
-      ).catch(() => {});
+        // session_id NOT NULL·timestamp(TEXT ISO) 계약 준수 — 예전엔 session_id 누락으로 매번 INSERT 실패(catch 로 묻힘)
+        `INSERT INTO events (id, type, source, session_id, user_id, data_json, timestamp) VALUES ($1, $2, 'daemon', $3, $4, $5, $6)`,
+        [`register-${hostname}-${Date.now()}`, 'daemon.register', `daemon-${hostname}`, matchedUserId || `pc_${hostname}`,
+         JSON.stringify({ hostname, platform, nodeVersion, matchedUserId, autoToken: !!matchedToken }), new Date().toISOString()]
+      ).catch((e) => console.warn('[daemon/register] 이벤트 기록 실패:', e.message));
     }
 
     res.json({
@@ -4380,13 +4427,18 @@ app.post('/api/hook', async (req, res) => {
       // PC-유저 충돌 감지: 같은 hostname이 다른 userId로 이미 등록된 경우 경고
       if (hookHostname) {
         try {
-          const _pool = dbModule.getDb();
-          if (_pool?.query) {
-            const { rows: existingPing } = await _pool.query(
-              `SELECT user_id FROM tracker_pings WHERE hostname = $1 AND user_id != $2 AND user_id != 'local' LIMIT 1`,
-              [hookHostname, hookUserId]
-            );
+          // hostname 이 있는 tracker_pings 는 SQLite authDb(아래 upsert 대상)뿐 — PG tracker_pings 는 (user_id,last_ping)만 있어
+          // 예전 PG 조회는 hook 마다 "column hostname does not exist" 에러(초당 수 건)였다. 같은 PC 충돌 기록은 6시간에 1번만.
+          const _authDbPing = require('./src/auth').getDb();
+          if (!global._pcConflictSeen) global._pcConflictSeen = new Map();
+          const _lastConflict = global._pcConflictSeen.get(hookHostname) || 0;
+          if (_authDbPing?.prepare && Date.now() - _lastConflict > 6 * 60 * 60 * 1000) {
+            const _prevPing = _authDbPing.prepare(
+              `SELECT userId AS user_id FROM tracker_pings WHERE hostname = ? AND userId != ? AND userId != 'local' LIMIT 1`
+            ).get(hookHostname, hookUserId);
+            const existingPing = _prevPing ? [_prevPing] : [];
             if (existingPing.length > 0) {
+              global._pcConflictSeen.set(hookHostname, Date.now());
               console.warn(`[hook] PC conflict: hostname=${hookHostname} was userId=${existingPing[0].user_id}, now userId=${hookUserId}`);
               // 관리자에게 알림 이벤트 기록
               try {
@@ -4806,7 +4858,7 @@ app.post('/api/vision/spool', async (req, res) => {
 app.get('/api/vision/spool/list', (req, res) => {
   const token = (req.headers.authorization || '').replace('Bearer ', '').trim();
   if (!token.startsWith('orbit_')) return res.status(401).json({ error: 'orbit token required' });
-  const n = Math.min(parseInt(req.query.n) || 30, 60);
+  const n = Math.min(parseInt(req.query.n) || 30, 100);
   try {
     const users = fs.readdirSync(VISION_SPOOL_DIR).filter(u => { try { return fs.statSync(path.join(VISION_SPOOL_DIR, u)).isDirectory(); } catch { return false; } });
     const perUser = {}; let total = 0;
@@ -7712,11 +7764,12 @@ async function _runDailyMaintenance(trigger = 'auto') {
       summary.steps.learning = { ok: true, pcs: results.length };
     } catch (e) { summary.steps.learning = { ok: false, error: e.message }; }
 
-    // Step 2: events 30일 이상 삭제
+    // Step 2: events 30일 이상 삭제 (하드 가드: archive_log.drive_file IS NOT NULL 백업 검증 행만 삭제)
     try {
       const cutoff = new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString();
-      const { rowCount } = await pool.query('DELETE FROM events WHERE timestamp < $1', [cutoff]);
-      summary.steps.events_purge = { ok: true, deleted: rowCount, cutoff };
+      const { deleteVerifiedArchivedEvents } = require('./src/event-archiver');
+      const guardRes = await deleteVerifiedArchivedEvents(pool, cutoff, { tag: 'daily-maint' });
+      summary.steps.events_purge = { ok: true, deleted: guardRes.deleted, skipped: guardRes.skipped, reason: guardRes.reason || null, cutoff };
     } catch (e) { summary.steps.events_purge = { ok: false, error: e.message }; }
 
     // Step 2B: DB pressure purge.
@@ -7762,6 +7815,29 @@ async function _runDailyMaintenance(trigger = 'auto') {
         "DELETE FROM orbit_diagnostics WHERE created_at < NOW() - INTERVAL '90 days'");
       summary.steps.diagnostics_purge = { ok: true, deleted: rowCount };
     } catch (e) { summary.steps.diagnostics_purge = { ok: false, error: e.message }; }
+
+    // Step: orbit_auth_tokens 누수 정리 — 오래된 미사용 session 토큰 배치 삭제(2026-11-10, docs/TOKEN_BLOAT_CLEANUP_DESIGN.md).
+    //   삭제 조건: type='session' AND last_used_at IS NULL AND created_at < 30일 전.
+    //   안전성 실측(2026-11-10): 활성 데몬 11명의 live 토큰은 전부 0~1일 전 발급 → 30일 조건에 안 걸려 삭제 제외.
+    //   api 토큰·사용흔적 토큰·최근 30일 토큰 보존. 전체 full-scan 정렬(기존 keep CTE)을 없애 인덱스(created_at)만 사용 → 새벽 DB 부하 최소.
+    try {
+      let totalDeleted = 0;
+      const MAX_BATCHES = parseInt(process.env.TOKEN_CLEANUP_MAX_BATCHES || '10', 10); // 하루 최대 10*50k=500k(약 2주면 707만 소진)
+      for (let b = 0; b < MAX_BATCHES; b++) {
+        const { rowCount } = await pool.query(`
+          DELETE FROM orbit_auth_tokens
+          WHERE ctid IN (
+            SELECT ctid FROM orbit_auth_tokens
+            WHERE type = 'session' AND last_used_at IS NULL
+              AND created_at < NOW() - INTERVAL '30 days'
+            LIMIT 50000
+          )`);
+        totalDeleted += rowCount;
+        if (rowCount < 50000) break; // 더 지울 게 없음
+      }
+      summary.steps.auth_token_cleanup = { ok: true, deleted: totalDeleted };
+    } catch (e) { summary.steps.auth_token_cleanup = { ok: false, error: e.message }; }
+
 
     summary.endedAt = new Date().toISOString();
     summary.databaseAfter = await _getPgUsage(pool);
@@ -8409,7 +8485,7 @@ app.use('/api', createSecurityRouter({
   db: dbDeps,
   shadowAiDetector: { detectShadowAI, getApprovedSources, addApprovedSource, removeApprovedSource },
   auditLog: { queryAuditLog, verifyIntegrity, renderAuditHtml },
-  getEventsForUser, resolveUserId,
+  getEventsForUser, resolveUserId, optionalAuth: require('./src/auth').optionalAuth, isAdminReq: isAdminReqAsync,
 }));
 
 app.use('/api', createReportsRouter({
@@ -8441,10 +8517,11 @@ app.use('/api/tracker', createTrackerOAuthRouter({
 // Tracker Files (파일 변경 감지)
 const syncScheduler = getSyncScheduler({
   getValidGoogleToken: () => {
-    // 구현 예시: DB에서 사용자의 Google Drive 토큰 조회
-    // const token = db.prepare('SELECT googleDriveToken FROM users_google_tokens WHERE userId = ?').get(userId);
-    // return token?.googleDriveToken;
-    return null;  // TODO: 실제 토큰 조회 로직 구현
+    // 의도적 비활성(null): 이 스케줄러는 사용자 없이(시스템 단위) 도는데, 파일·메시지 활동을
+    // 특정 사용자 Google Drive로 올리게 되므로 개인정보 게이트 결정 없이 켜지 않는다.
+    // 켜려면: ① 대상 사용자·동의 정책 확정 ② auth.getValidGoogleToken(userId)는 async 이므로
+    // sync-scheduler.js 쪽도 await 처리 필요. (현재는 로컬 저장만 수행)
+    return null;
   },
   getUserId: () => 'tracker-system',
   getDb: () => db,
@@ -8464,10 +8541,9 @@ app.use('/api/tracker', createTrackerFilesRouter({
 app.use('/api/tracker', createTrackerMessagesRouter({
   verifyToken,
   getValidGoogleTokenForService: (service) => {
-    // 구현 예시: DB에서 각 서비스별 토큰 조회
-    // const tokens = db.prepare('SELECT * FROM message_service_tokens WHERE userId = ?').get(userId);
-    // return tokens?.[service];
-    return null;  // TODO: 실제 토큰 조회 로직 구현
+    // 의도적 비활성(null): 서비스별 토큰 저장 테이블(message_service_tokens)이 아직 없고,
+    // routes/tracker-messages.js 도 이 콜백을 호출하지 않는다(미사용 주입). 연동 시 테이블부터 설계.
+    return null;
   },
 }));
 
@@ -8603,7 +8679,13 @@ app.use('/api', createRegionalInsightRouter({ getAllEvents }));
 app.use('/api', createPointsRouter({ getAllEvents, getSessions, optionalAuth, getEventsForUser, getSessionsForUser, resolveUserId }));
 
 // ─── Orbit Certificate & Score ───────────────────────────────────────────────
-app.use('/api', createCertificateRouter({ getAllEvents, getSessions, optionalAuth, getEventsForUser, getSessionsForUser, resolveUserId }));
+// 직원별 인증서·점수 = 본인(req.user.id) 또는 관리자만. userId=null이면 관리자 전용 판정.
+async function canAccessCertUser(req, userId) {
+  if (await isAdminReqAsync(req)) return true;
+  const me = req.user && req.user.id;
+  return !!(userId && me && me !== 'local' && me === userId);
+}
+app.use('/api', createCertificateRouter({ getAllEvents, getSessions, optionalAuth, getEventsForUser, getSessionsForUser, resolveUserId, canAccessUser: canAccessCertUser }));
 
 // ─── MCP 서버 (Claude Desktop 연동) ─────────────────────────────────────────
 app.use('/api', createMcpRouter({
@@ -8908,6 +8990,9 @@ app.use('/api/mining', require('./routes/process-mining')({ getDb: dbModule.getD
 // [2026-09-29 보안] 카톡 원문 조회는 관리자 토큰만(워커는 owner 토큰 사용). /import 등 쓰기는 라우터 자체 토큰 검사 유지
 app.get('/api/kakao/messages', async (req, res, next) => { const code = await _visionThumbAdminOk(req); if (code) return res.status(code).json({ error: code === 401 ? 'unauthorized' : 'admin only' }); next(); });
 app.use('/api/kakao', require('./routes/kakao-decrypt')({ getDb: dbModule.getDb }));
+// 해외 메신저(위챗·왓츠앱) 대화방 글 수신 — 카톡 표와 따로 둔다(2026-11-23). 조회 2종은 관리자만, 수신은 수신 토큰.
+app.get(['/api/messenger/messages', '/api/messenger/rooms'], async (req, res, next) => { const code = await _visionThumbAdminOk(req); if (code) return res.status(code).json({ error: code === 401 ? 'unauthorized' : 'admin only' }); next(); });
+app.use('/api/messenger', require('./routes/messenger-intake')({ getDb: dbModule.getDb }));
 
 // ─── PAD 커넥터 (nenova ERP 자동화) ─────────────────────────────────────────
 app.use('/api/pad', require('./routes/pad-connector')({ getDb: dbModule.getDb }));
@@ -10062,13 +10147,19 @@ async function startServer() {
       try {
         const pool = dbModule.getDb();
         if (!pool?.query) return;
-        // 30일 이상 된 이벤트 삭제
-        const { rowCount } = await pool.query(
-          `DELETE FROM events WHERE timestamp < NOW() - INTERVAL '30 days'`
-        );
+        // 보존 계약의 주인은 src/event-archiver.js(KEEP_DAYS 기본 30일: Drive 아카이브 → archive_log → 삭제, 매일 03:00 KST).
+        // 이 루프는 아카이버가 놓친 행만 치우는 백스톱: KEEP_DAYS+14일 지난 행을 2만 행씩 나눠 삭제(행 잠금만, 테이블 잠금·VACUUM FULL 없음).
+        // events.timestamp 는 TEXT(ISO) — 예전 `timestamp < NOW() - INTERVAL` 은 text<timestamptz 타입 오류로 매일 실패했다.
+        // ISO 문자열 컷오프와 비교하면 idx_events_timestamp 를 그대로 탄다.
+        // [2026-11-20 하드 가드] archive_log.drive_file IS NOT NULL 백업이 검증된 구간만 배치 삭제(미백업 원본은 30일+ 지나도 절대 삭제 금지)
+        const _keepDays = ((typeof eventArchiver !== 'undefined' && eventArchiver?.KEEP_DAYS) || 30) + 14;
+        const _cutoffIso = new Date(Date.now() - _keepDays * 24 * 60 * 60 * 1000).toISOString();
+        const _delFn = eventArchiver?.deleteVerifiedArchivedEvents || require('./src/event-archiver').deleteVerifiedArchivedEvents;
+        const _guardRes = await _delFn(pool, _cutoffIso, { batchSize: 20000, maxBatches: 50, pauseMs: 1000, tag: 'cleanup' });
+        const rowCount = _guardRes.deleted || 0;
         if (rowCount > 0) {
-          console.log(`[cleanup] 오래된 이벤트 ${rowCount}개 삭제`);
-          await pool.query('VACUUM events').catch(() => {});
+          console.log(`[cleanup] ${_keepDays}일 지난 Drive 백업 검증 이벤트 ${rowCount}개 삭제 (컷오프 ${_cutoffIso})`);
+          await pool.query('VACUUM (ANALYZE) events').catch(() => {});
         }
         // 테이블 크기 로깅
         const sizeRes = await pool.query(
@@ -10114,8 +10205,12 @@ async function startServer() {
         `SELECT DISTINCT ON (user_id) user_id, timestamp, data_json
          FROM events
          WHERE type = 'daemon.heartbeat'
+           AND timestamp > $1
            AND timestamp::timestamptz > NOW() - INTERVAL '2 hours'
-         ORDER BY user_id, timestamp::timestamptz DESC`
+         ORDER BY user_id, timestamp::timestamptz DESC`,
+        // TEXT 컬럼 캐스팅만으론 인덱스를 못 타 5분마다 events 풀스캔(실측 87,614블록·267ms) → ISO 문자열 사전필터(3시간, 상위집합)로
+        // idx_events_timestamp/idx_events_type 비트맵 스캔(실측 2,081블록·35ms). 정확 판정은 기존 캐스팅 조건이 그대로 한다.
+        [new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString()]
       );
       const now = Date.now();
       let kicked = 0, silent = 0, degraded = 0;

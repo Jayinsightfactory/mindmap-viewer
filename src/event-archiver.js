@@ -70,7 +70,13 @@ function _post(host, path, body, contentType = 'application/json') {
       let d = '';
       res.on('data', c => d += c);
       res.on('end', () => {
-        try { resolve(JSON.parse(d)); } catch { resolve(d); }
+        let parsed = d;
+        try { parsed = JSON.parse(d); } catch {}
+        if (res.statusCode >= 400 || (parsed && typeof parsed === 'object' && parsed.error)) {
+          const msg = parsed?.error_description || parsed?.error?.message || parsed?.error || d.slice(0, 200);
+          return reject(new Error(`HTTP ${res.statusCode}: ${msg}`));
+        }
+        resolve(parsed);
       });
     });
     req.on('error', reject);
@@ -87,7 +93,15 @@ function _get(host, path, token) {
     }, (res) => {
       let d = '';
       res.on('data', c => d += c);
-      res.on('end', () => { try { resolve(JSON.parse(d)); } catch { resolve(d); } });
+      res.on('end', () => {
+        let parsed = d;
+        try { parsed = JSON.parse(d); } catch {}
+        if (res.statusCode >= 400 || (parsed && typeof parsed === 'object' && parsed.error)) {
+          const msg = parsed?.error?.message || parsed?.error || d.slice(0, 200);
+          return reject(new Error(`Drive GET HTTP ${res.statusCode}: ${msg}`));
+        }
+        resolve(parsed);
+      });
     });
     req.on('error', reject);
     req.end();
@@ -110,6 +124,7 @@ async function _ensureFolder(name, parentId, token) {
   const meta = { name, mimeType: 'application/vnd.google-apps.folder' };
   if (parentId) meta.parents = [parentId];
   const created = await _postWithAuth('www.googleapis.com', '/drive/v3/files', JSON.stringify(meta), 'application/json', token);
+  if (!created?.id) throw new Error(`Drive 폴더 생성 응답에 id 없음 (${name}): ${JSON.stringify(created).slice(0, 200)}`);
   return created.id;
 }
 
@@ -122,7 +137,15 @@ function _postWithAuth(host, path, body, contentType, token) {
     }, (res) => {
       let d = '';
       res.on('data', c => d += c);
-      res.on('end', () => { try { resolve(JSON.parse(d)); } catch { resolve(d); } });
+      res.on('end', () => {
+        let parsed = d;
+        try { parsed = JSON.parse(d); } catch {}
+        if (res.statusCode >= 400 || (parsed && typeof parsed === 'object' && parsed.error)) {
+          const msg = parsed?.error?.message || parsed?.error || d.slice(0, 200);
+          return reject(new Error(`Drive POST HTTP ${res.statusCode}: ${msg}`));
+        }
+        resolve(parsed);
+      });
     });
     req.on('error', reject);
     req.write(buf);
@@ -158,7 +181,15 @@ async function _uploadJson(content, filename, folderId, token) {
     }, (res) => {
       let d = '';
       res.on('data', c => d += c);
-      res.on('end', () => { try { resolve(JSON.parse(d)); } catch { resolve(d); } });
+      res.on('end', () => {
+        let parsed = d;
+        try { parsed = JSON.parse(d); } catch {}
+        if (res.statusCode >= 400 || (parsed && typeof parsed === 'object' && parsed.error)) {
+          const msg = parsed?.error?.message || parsed?.error || d.slice(0, 200);
+          return reject(new Error(`Drive Upload HTTP ${res.statusCode}: ${msg}`));
+        }
+        resolve(parsed);
+      });
     });
     req.on('error', reject);
     req.write(bodyBuf);
@@ -295,35 +326,45 @@ async function _archiveUser(pool, userId, cutoffDate) {
     })),
   };
 
-  // Drive 업로드
+  // Drive 업로드 (하드 가드: 실제 Drive 업로드 완료(drive_file IS NOT NULL) 검증 전에는 절대 DELETE 금지)
   let driveFileId = null;
   const saEnabled = !!process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
+  const folderIdSet = !!process.env.GOOGLE_DRIVE_CAPTURES_FOLDER_ID;
   if (saEnabled) {
     try {
       const { token, monthFolderId } = await _getArchiveFolder(monthKey);
       const uploaded = await _uploadJson(archivePayload, filename, monthFolderId, token);
-      driveFileId = uploaded?.id || null;
-      console.log(`[archiver] Drive 업로드 완료: ${filename} (${uploaded?.id})`);
+      const candidateId = typeof uploaded?.id === 'string' ? uploaded.id.trim() : '';
+      if (!candidateId) {
+        throw new Error(`Drive 업로드 응답에 파일 id 없음: ${JSON.stringify(uploaded).slice(0, 200)}`);
+      }
+      driveFileId = candidateId;
+      console.log(`[archiver] Drive 업로드 완료: ${filename} (${driveFileId})`);
     } catch (e) {
       console.error(`[archiver] Drive 업로드 실패 (${userId}):`, e.message);
-      // Drive 실패해도 DB 삭제는 진행 (이미 rows를 메모리에 로드했으므로)
     }
   }
 
-  // DB 삭제
-  const ids = rows.map(r => r.id);
-  const { rowCount } = await pool.query(
-    `DELETE FROM events WHERE id = ANY($1)`,
-    [ids]
-  );
+  // [2026-11-20 하드 가드] Drive 백업(drive_file)이 검증되지 않으면 30일이 지나도 원본 events 절대 삭제 금지
+  if (!driveFileId) {
+    console.warn(`[archiver] ⚠️ Drive 백업 미확인(drive_file=null, saEnabled=${saEnabled}, folderIdSet=${folderIdSet}) — ${userId} ${rows.length}건 원본 보존(DELETE 차단)`);
+    return { userId, skipped: true, reason: 'drive_backup_missing', preservedRows: rows.length, driveFileId: null };
+  }
 
-  // 아카이브 로그 저장
+  // 아카이브 로그 먼저 기록 (drive_file 검증값 확정) 후 DB 삭제
   const fromDate = new Date(rows[0].timestamp);
   const toDate   = new Date(rows[rows.length - 1].timestamp);
   await pool.query(
     `INSERT INTO archive_log (user_id, from_date, to_date, row_count, drive_file, summary)
      VALUES ($1, $2, $3, $4, $5, $6)`,
-    [userId, fromDate, toDate, rowCount, driveFileId, JSON.stringify(summary)]
+    [userId, fromDate, toDate, rows.length, driveFileId, JSON.stringify(summary)]
+  );
+
+  // DB 삭제 (Drive 백업 + archive_log 기록 완료된 행만)
+  const ids = rows.map(r => r.id);
+  const { rowCount } = await pool.query(
+    `DELETE FROM events WHERE id = ANY($1)`,
+    [ids]
   );
 
   return { userId, rowCount, driveFileId, summary };
@@ -409,4 +450,50 @@ async function checkAndArchive(pool) {
   }
 }
 
-module.exports = { checkAndArchive, getTableStats, THRESHOLD, KEEP_DAYS };
+/**
+ * [2026-11-20 하드 가드] 백스톱/정기 정리용 안전 삭제 헬퍼.
+ * archive_log 에서 drive_file IS NOT NULL(실제 Google Drive 업로드 검증) 로 덮인
+ * (user_id, timestamp) 구간의 events 원본 행만 배치 삭제한다. 백업 기록이 없으면 0건 삭제(차단).
+ */
+async function deleteVerifiedArchivedEvents(pool, cutoffIso, { batchSize = 20000, maxBatches = 50, pauseMs = 1000, tag = 'cleanup' } = {}) {
+  if (!pool?.query) return { skipped: true, reason: 'no_pool', deleted: 0, verifiedBatches: 0 };
+  let verifiedBatches = 0;
+  try {
+    const check = await pool.query(
+      `SELECT COUNT(*)::int AS cnt FROM archive_log WHERE drive_file IS NOT NULL AND TRIM(drive_file) <> ''`
+    );
+    verifiedBatches = Number(check.rows[0]?.cnt || 0);
+  } catch (e) {
+    console.warn(`[${tag}] ⚠️ archive_log 검증 조회 실패(${e.message}) — events 원본 DELETE 차단`);
+    return { skipped: true, reason: 'archive_log_unavailable', deleted: 0, verifiedBatches: 0 };
+  }
+  if (verifiedBatches <= 0) {
+    console.warn(`[${tag}] ⚠️ archive_log에 drive_file IS NOT NULL 백업 기록 0건 — events 원본 DELETE 차단 (유실 방지 하드 가드)`);
+    return { skipped: true, reason: 'no_verified_drive_backup', deleted: 0, verifiedBatches: 0 };
+  }
+  let deleted = 0;
+  for (let i = 0; i < maxBatches; i++) {
+    const r = await pool.query(
+      `DELETE FROM events
+       WHERE id IN (
+         SELECT e.id FROM events e
+         WHERE e.timestamp < $1
+           AND EXISTS (
+             SELECT 1 FROM archive_log al
+             WHERE al.drive_file IS NOT NULL AND TRIM(al.drive_file) <> ''
+               AND al.user_id = e.user_id
+               AND e.timestamp::timestamptz >= al.from_date
+               AND e.timestamp::timestamptz <= al.to_date
+           )
+         LIMIT $2
+       )`,
+      [cutoffIso, batchSize]
+    );
+    deleted += r.rowCount || 0;
+    if ((r.rowCount || 0) < batchSize) break;
+    if (pauseMs > 0) await new Promise((res) => setTimeout(res, pauseMs));
+  }
+  return { skipped: false, deleted, verifiedBatches, cutoffIso };
+}
+
+module.exports = { checkAndArchive, getTableStats, deleteVerifiedArchivedEvents, _archiveUser, THRESHOLD, KEEP_DAYS };

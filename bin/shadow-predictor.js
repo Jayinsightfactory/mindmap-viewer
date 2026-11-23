@@ -211,12 +211,14 @@ async function runBatch() {
   try { const q = await require('../src/quota-guard').checkQuota(30); if (q.pause) { console.log('[shadow][quota]', q.reason); return 0; } } catch {}
   // 예측점 수집(직원별 리치세션의 cut 지점)
   const points = [];
-  const seen = loadSeen(); let skippedSeen = 0;
+  const seen = loadSeen(); let skippedSeen = 0; let failedUsers = 0;
   for (const uid of USERIDS) {
     const who = NAME[uid] || uid;
     // 40s 타임아웃 null 이면 그 직원이 조용히 0건이 됐다(실측 11-02: 설연주·박성수 동시 누락) → 2회 재시도 + 로그
-    let j = null; for (let t = 0; t < 3 && !j; t++) j = await apiGet(`/api/vision/task-sessions?userId=${uid}&hours=${HOURS}`);
-    if (!j) { console.warn(`[shadow] ${who} 세션 조회 실패(3회) — 이번 배치 제외`); continue; }
+    // [2026-11-12] 서버가 오류 JSON({error:..} 401/404/500 등)을 주면 j 는 null 이 아니라서 '세션 0개'로 조용히 통과했다.
+    //   → 11/12 02:10 배치가 '예측점 0 중 0' 으로 끝나 36h 채점 0건(watchdog shadow-users NG). ok:true 일 때만 성공으로 본다.
+    let j = null; for (let t = 0; t < 3 && !(j && j.ok); t++) { if (t) await new Promise(s => setTimeout(s, 3000)); j = await apiGet(`/api/vision/task-sessions?userId=${uid}&hours=${HOURS}`); }
+    if (!j || !j.ok) { console.warn(`[shadow] ${who} 세션 조회 실패(3회: ${j ? (j.error || 'ok 아님') : '응답 없음'}) — 이번 배치 제외`); failedUsers++; continue; }
     const sessions = (j && j.sessions || []).filter(s => s.stepCount >= 4);
     sessions.forEach((s, si) => {
       const N = s.steps.length;
@@ -228,6 +230,7 @@ async function runBatch() {
       });
     });
   }
+  if (failedUsers === USERIDS.length) { console.error(`[shadow] ★전원(${failedUsers}명) 세션 조회 실패 — 서버 인증/장애 확인 필요(ORBIT_TOKEN, ~/.orbit-config.json). 0건을 정상으로 오인하지 말 것`); process.exitCode = 2; return 0; }
   // 직원별 라운드로빈(각자 최신 세션 우선) + 배치 상한 — 한 사람이 상한을 독식하지 않게
   const byWho = new Map(); points.forEach(p => { if (!byWho.has(p.who)) byWho.set(p.who, []); byWho.get(p.who).push(p); });
   const batch = []; for (let i = 0; batch.length < MAX && [...byWho.values()].some(a => a.length > i); i++) for (const a of byWho.values()) if (a[i] && batch.length < MAX) batch.push(a[i]);
