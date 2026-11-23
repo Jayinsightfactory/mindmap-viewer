@@ -2464,3 +2464,11 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 - 검증: `tests/unit/work-data-inflow-boost.test.js` 5건 신규 포함 전체 Jest 테스트 통과 및 구문검사 통과.
 - 인계 5줄: ①저장소=`mindmap-viewer`(PR #106/#107/#108) ②수정=`src/screen-capture.js`, `daemon/personal-agent.js`, `src/file-change-watcher.js`, `bin/vision-worker.js`, `server.js`, `src/completeness.js`, `tests/unit/work-data-inflow-boost.test.js` ③PR #107/#108 추가 보완=`completeness.js` 48h 증분 스캔 + single-flight + `(type || '') = ANY($1)` / `CROSS JOIN LATERAL` 역방향 인덱스 스캔으로 2GB PG `BitmapAnd(idx_events_type)` 67~114s 병목 및 `[hook] insertEvent FAIL` 타임아웃 유실 차단 ④검증=Jest 32/32·CI·실서버 배포 `/api/completeness` 단축 실측 ⑤잠금 없음.
 - 검색어: 업무데이터 유입 부족 _spoolWorthUploading uploadPendingToSpool 중복캡처 file-change-watcher 하위폴더 네이버웍스드라이브 completeness 07시 오탐 BitmapAnd idx_events_type LATERAL g01 g19
+
+## 2026-11-23 해외 메신저(위챗·왓츠앱) 대화방 글 수신 통로 추가 (Claude)
+검색어: messenger-intake messenger_messages /api/messenger/import wechat whatsapp 위챗 왓츠앱 수입부 농장 대화방 수신
+1. 작업 위치: mindmap-viewer / 가지 feat/messenger-intake / 작업 폴더 mv-cld-messenger-intake.
+2. 완료: routes/messenger-intake.js 새로 만듦(POST /api/messenger/import · GET /messages · GET /rooms, 표 messenger_messages, 중복 제거 = channel + external_message_id). server.js 3줄(연결 + 조회 2종 관리자 잠금), routes/privacy.js 1줄(열람 기록 대상). 카톡 표·주소는 손대지 않음.
+3. 남은 일: 운영 PC 수집기(nenovakakao 수정안)가 승인·반영돼 첫 글이 들어오면 /api/messenger/rooms 로 건수 확인. 분석 쪽은 nenova-work-features 의 pull-messenger.js 가 읽는다.
+4. 검증: tests/unit/messenger-intake.test.js 9건 + 기존 kakao-import 2건 통과. 실제 운영 DB 에 표가 만들어지는지와 실제 글 수신은 미검증(첫 호출 때 표를 만든다).
+5. 주의: 수신 토큰은 카톡 수신과 같은 값을 쓴다(MESSENGER_IMPORT_TOKEN_SHA256 을 따로 주면 그 값). 되돌리기 = server.js 3줄·privacy.js 1줄·새 파일 2개 삭제(표는 남겨도 무해). 연결 목표: g01·g03 / 학습 반영: 있음
