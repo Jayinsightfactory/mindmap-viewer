@@ -72,18 +72,24 @@ function normalize(msg, channel) {
   };
 }
 
-function createMessengerIntakeRouter({ getDb, importTokenSha256 = IMPORT_TOKEN_SHA256 }) {
+function createMessengerIntakeRouter({ getDb, importTokenSha256 = IMPORT_TOKEN_SHA256, adminOk = null }) {
   const router = express.Router();
 
-  function requireImportToken(req, res, next) {
+  // 관리자 판정은 server.js 가 넘겨 준 함수(_visionThumbAdminOk: 마스터·관리자 토큰만 0)를 쓴다. 접두사 검사가 아니다.
+  async function isAdmin(req) {
+    if (typeof adminOk !== 'function') return false;
+    try { return (await adminOk(req)) === 0; } catch { return false; }
+  }
+
+  // 수신 토큰(운영 PC 수집기) 또는 관리자 토큰(사장님 PC에서 내보내기 파일을 직접 올릴 때·시험)만 받는다.
+  async function requireImportToken(req, res, next) {
     const bearer = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '');
     const provided = bearer || String(req.headers['x-messenger-import-token'] || '');
     const providedBytes = crypto.createHash('sha256').update(provided).digest();
     const expectedBytes = Buffer.from(String(importTokenSha256 || ''), 'hex');
-    if (!provided || expectedBytes.length !== providedBytes.length || !crypto.timingSafeEqual(expectedBytes, providedBytes)) {
-      return res.status(401).json({ error: 'Unauthorized' });
-    }
-    next();
+    if (provided && expectedBytes.length === providedBytes.length && crypto.timingSafeEqual(expectedBytes, providedBytes)) return next();
+    if (bearer && await isAdmin(req)) return next();
+    return res.status(401).json({ error: 'Unauthorized' });
   }
 
   let ready = false;
@@ -191,6 +197,21 @@ function createMessengerIntakeRouter({ getDb, importTokenSha256 = IMPORT_TOKEN_S
       res.json({ ok: true, total: parseInt((count.rows[0] || {}).total, 10) || 0, limit: queryLimit, offset: queryOffset, messages: data.rows });
     } catch (err) {
       console.error('[MessengerIntake] messages error:', err.message);
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  });
+
+  // 시험 방 글 지우기 — 관리자만. 방 이름이 'TEST-' 로 시작하는 글만 지운다(조건이 코드에 박혀 있어 실제 방은 지울 수 없다).
+  router.delete('/test-rows', async (req, res) => {
+    try {
+      if (!(await isAdmin(req))) return res.status(401).json({ error: 'Unauthorized' });
+      const db = getDb();
+      if (!db || !db.query) return res.status(503).json({ error: 'DB not available' });
+      await ensureTables(db);
+      const result = await db.query("DELETE FROM messenger_messages WHERE chatroom LIKE 'TEST-%'");
+      res.json({ ok: true, deleted: result.rowCount || 0 });
+    } catch (err) {
+      console.error('[MessengerIntake] test-rows delete error:', err.message);
       res.status(500).json({ error: 'Internal server error' });
     }
   });
