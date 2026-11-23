@@ -2473,6 +2473,13 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 4. 검증: tests/unit/messenger-intake.test.js 9건 + 기존 kakao-import 2건 통과. 실제 운영 DB 에 표가 만들어지는지와 실제 글 수신은 미검증(첫 호출 때 표를 만든다).
 5. 주의: 수신 토큰은 카톡 수신과 같은 값을 쓴다(MESSENGER_IMPORT_TOKEN_SHA256 을 따로 주면 그 값). 되돌리기 = server.js 3줄·privacy.js 1줄·새 파일 2개 삭제(표는 남겨도 무해). 연결 목표: g01·g03 / 학습 반영: 있음
 
+## 2026-11-23 해외 메신저 수신: 관리자 토큰으로도 받기 + 시험 방 글 지우기 (Claude)
+검색어: messenger-intake adminOk test-rows TEST- 견본 시험 방 관리자 수신 끝에서 끝까지 시험
+1. 작업 위치: mindmap-viewer / 가지 feat/messenger-admin-import / 작업 폴더 mv-cld-messenger-admin-import.
+2. 완료: routes/messenger-intake.js — POST /api/messenger/import 가 수신 토큰 또는 관리자 토큰(server.js 의 _visionThumbAdminOk 판정)을 받는다. DELETE /api/messenger/test-rows(관리자만, 방 이름이 TEST- 로 시작하는 글만 삭제, 조건은 코드에 고정). server.js 1줄(adminOk 전달).
+3. 남은 일: 반영 뒤 견본 파일로 수집기 → 운영 주소 → 조회 → 분석 쪽 읽기까지 시험하고 시험 글 삭제.
+4. 검증: tests/unit/messenger-intake.test.js 11건 + kakao-import 2건 통과. 운영 주소 실제 시험은 반영 뒤.
+5. 주의: 수신 토큰이 운영 PC에만 있어 이 PC에서 운영 주소로 넣을 길이 없었던 것이 계기. 직원 데몬 토큰은 관리자 판정을 통과하지 못한다(검사 포함). 되돌리기 = 이 수정안 되돌림. 연결 목표: g01·g03 / 학습 반영: 있음
 ## 2026-11-23 조사: 수입부 새 직원 자리(손지윤 · DESKTOP-F3HGS86)가 PM실에 안 보임 — 읽기만, 수정 없음
 검색어: 손지윤 F3HGS86 PM실 안 보임 excluded-staff 제외 11-17 끊김 daemon.update 05VLRN1 L0C2IOT
 1. 작업 위치: mindmap-viewer(수정 없음). 조회만: daemon-health · capture-funnel?days=3 · learning/logs?allTypes=1, 보관소 nenova-archive.

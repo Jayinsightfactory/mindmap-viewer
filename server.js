@@ -9008,7 +9008,7 @@ app.get('/api/kakao/messages', async (req, res, next) => { const code = await _v
 app.use('/api/kakao', require('./routes/kakao-decrypt')({ getDb: dbModule.getDb }));
 // 해외 메신저(위챗·왓츠앱) 대화방 글 수신 — 카톡 표와 따로 둔다(2026-11-23). 조회 2종은 관리자만, 수신은 수신 토큰.
 app.get(['/api/messenger/messages', '/api/messenger/rooms'], async (req, res, next) => { const code = await _visionThumbAdminOk(req); if (code) return res.status(code).json({ error: code === 401 ? 'unauthorized' : 'admin only' }); next(); });
-app.use('/api/messenger', require('./routes/messenger-intake')({ getDb: dbModule.getDb }));
+app.use('/api/messenger', require('./routes/messenger-intake')({ getDb: dbModule.getDb, adminOk: _visionThumbAdminOk }));
 
 // ─── PAD 커넥터 (nenova ERP 자동화) ─────────────────────────────────────────
 app.use('/api/pad', require('./routes/pad-connector')({ getDb: dbModule.getDb }));

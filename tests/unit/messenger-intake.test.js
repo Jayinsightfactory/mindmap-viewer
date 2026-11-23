@@ -51,6 +51,7 @@ describe('Messenger intake (WeChat · WhatsApp)', () => {
     app.use('/api/messenger', createRouter({
       getDb: () => db,
       importTokenSha256: crypto.createHash('sha256').update('test-token').digest('hex'),
+      adminOk: async req => (String(req.headers.authorization || '') === 'Bearer admin-token' ? 0 : 403),
     }));
     server = app.listen(0);
     await new Promise(resolve => server.once('listening', resolve));
@@ -126,6 +127,24 @@ describe('Messenger intake (WeChat · WhatsApp)', () => {
     const row = inserts()[0][1];
     expect(row[6]).toBe('[첨부] practice-invoice.pdf');
     expect(row[7]).toBe('file');
+  });
+
+  test('an admin token may import, a non-admin token may not', async () => {
+    const admin = await call(server, { token: 'admin-token', body: { channel: 'whatsapp', messages: [good({ chatroom: 'TEST-practice' })] } });
+    expect(admin.status).toBe(200);
+    expect(admin.body.imported).toBe(1);
+    const staff = await call(server, { token: 'orbit_staff-token', body: { channel: 'whatsapp', messages: [good()] } });
+    expect(staff.status).toBe(401);
+  });
+
+  test('test-row cleanup is admin only and can only match rooms starting with TEST-', async () => {
+    const denied = await call(server, { method: 'DELETE', path: '/api/messenger/test-rows', token: 'test-token' });
+    expect(denied.status).toBe(401);
+    const ok = await call(server, { method: 'DELETE', path: '/api/messenger/test-rows', token: 'admin-token' });
+    expect(ok.status).toBe(200);
+    const del = db.query.mock.calls.find(([sql]) => sql.startsWith('DELETE FROM messenger_messages'));
+    expect(del[0]).toBe("DELETE FROM messenger_messages WHERE chatroom LIKE 'TEST-%'");
+    expect(del[1]).toBeUndefined();
   });
 
   test('the read endpoint validates channel and dates', async () => {
