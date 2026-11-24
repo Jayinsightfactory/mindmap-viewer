@@ -177,3 +177,101 @@ describe('server.js 배선', () => {
     expect(invalidations).toBeGreaterThanOrEqual(writes);
   });
 });
+
+describe('canAutoLink: 자동 경로는 이미 묶인 컴퓨터·숨김 번호를 건드리지 못한다', () => {
+  const { canAutoLink, AUTO_LINK_GUARD_SQL } = require('../../src/pc-link-cache');
+  const hidden = id => id === 'MNHIDDEN01';
+
+  test('묶음이 없거나 임시 번호로 묶인 컴퓨터는 진짜 번호로 묶을 수 있다', () => {
+    expect(canAutoLink(null, 'MNREAL01', hidden)).toEqual({ ok: true });
+    expect(canAutoLink('pc_DESKTOP-A', 'MNREAL01', hidden)).toEqual({ ok: true });
+    expect(canAutoLink('local', 'MNREAL01', hidden)).toEqual({ ok: true });
+  });
+  test('이미 진짜 번호에 묶인 컴퓨터는 다른 번호로 덮어쓰지 못한다(2026-11-23 CAA5TA1 사고)', () => {
+    expect(canAutoLink('MNREAL01', 'MNOTHER02', hidden)).toEqual({ ok: false, reason: 'already_linked' });
+  });
+  test('같은 번호로 다시 묶는 것은 허용(갱신)', () => {
+    expect(canAutoLink('MNREAL01', 'MNREAL01', hidden)).toEqual({ ok: true });
+  });
+  test('숨김 번호로는 묶지 못한다(2026-11-23 HGNEA1S 사고) — 묶음이 없어도', () => {
+    expect(canAutoLink(null, 'MNHIDDEN01', hidden)).toEqual({ ok: false, reason: 'hidden_target' });
+    expect(canAutoLink('pc_X', 'MNHIDDEN01', hidden)).toEqual({ ok: false, reason: 'hidden_target' });
+  });
+  test('임시 번호·local 로는 묶지 못한다', () => {
+    expect(canAutoLink(null, 'pc_DESKTOP-A', hidden).ok).toBe(false);
+    expect(canAutoLink(null, 'local', hidden).ok).toBe(false);
+  });
+  test('기본 숨김 판정은 config/hidden-users.json 의 번호를 쓴다', () => {
+    const ids = [...require('../../src/hidden-users').load().ids];
+    expect(ids.length).toBeGreaterThan(0);
+    expect(canAutoLink(null, ids[0])).toEqual({ ok: false, reason: 'hidden_target' });
+  });
+  test('SQL 가드는 임시 번호 줄만 덮어쓰게 한다', () => {
+    expect(AUTO_LINK_GUARD_SQL).toContain("left(orbit_pc_links.user_id, 3) = 'pc_'");
+    expect(AUTO_LINK_GUARD_SQL).not.toMatch(/TRUE|1\s*=\s*1/i);
+  });
+});
+
+describe('pc-user-resolver: 숨김 번호를 돌려주지 않는다', () => {
+  const resolver = require('../../src/pc-user-resolver');
+  const hiddenIds = [...require('../../src/hidden-users').load().ids];
+
+  test('같은 이름의 계정이 여럿이면 숨김이 아닌 번호를 고른다', async () => {
+    const host = Object.keys(resolver.PC_NAME_MAP)[0];
+    const pool = { query: jest.fn(async () => ({ rows: [{ id: hiddenIds[0] }, { id: 'MNREALNEW01' }] })) };
+    expect(await resolver.resolveByName(pool, host)).toBe('MNREALNEW01');
+  });
+  test('숨김 번호만 있으면 매칭 없음', async () => {
+    const host = Object.keys(resolver.PC_NAME_MAP)[0];
+    const pool = { query: jest.fn(async () => ({ rows: [{ id: hiddenIds[0] }] })) };
+    expect(await resolver.resolveByName(pool, host)).toBeNull();
+  });
+  test('직접 매핑 표에 DESKTOP-CAA5TA1 이 없다(잘못된 번호로 덮어쓴 원인 제거)', () => {
+    expect(resolver.PC_USER_MAP['DESKTOP-CAA5TA1']).toBeUndefined();
+    expect(resolver.resolveByDirect('DESKTOP-CAA5TA1')).toBeNull();
+  });
+  test('직접 매핑 값이 숨김 번호면 돌려주지 않는다', () => {
+    for (const [host, id] of Object.entries(resolver.PC_USER_MAP)) {
+      if (hiddenIds.includes(id)) expect(resolver.resolveByDirect(host)).toBeNull();
+      else expect(resolver.resolveByDirect(host)).toBe(id);
+    }
+  });
+});
+
+describe('planInlineThumbs: /api/learning/logs 썸네일 예산', () => {
+  const { planInlineThumbs } = require('../../src/pc-link-cache');
+  const rows = [{ id: 'a', thumb_len: 80000 }, { id: 'b', thumb_len: '0' }, { id: 'c', thumb_len: 70000 }];
+
+  test('원문 모드가 아니면 썸네일을 읽지 않는다', () => {
+    expect(planInlineThumbs(rows, { raw: false })).toEqual({ ids: [], omitted: 0 });
+  });
+  test('원문 모드 + 예산 안 → 예전처럼 싣는다', () => {
+    expect(planInlineThumbs(rows, { raw: true })).toEqual({ ids: ['a', 'c'], omitted: 0 });
+  });
+  test('원문 모드 + 예산 초과 → 한 장도 싣지 않는다(2,000줄 137MB 사고)', () => {
+    const big = Array.from({ length: 2000 }, (_, i) => ({ id: 'e' + i, thumb_len: 68000 }));
+    expect(planInlineThumbs(big, { raw: true })).toEqual({ ids: [], omitted: 2000 });
+  });
+  test('noThumb=1 이면 싣지 않는다', () => {
+    expect(planInlineThumbs(rows, { raw: true, noThumb: true })).toEqual({ ids: [], omitted: 2 });
+  });
+});
+
+describe('server.js 배선(묶음 덮어쓰기 가드 · 썸네일)', () => {
+  const src = fs.readFileSync(path.join(__dirname, '..', '..', 'server.js'), 'utf8');
+  test('자동 분류·link-pc·설치 이름 매칭의 덮어쓰기에 가드가 붙어 있다', () => {
+    const guarded = (src.match(/WHERE \$\{_AUTO_LINK_GUARD_SQL\}/g) || []).length;
+    expect(guarded).toBe(3);
+    const i = src.indexOf("app.post('/api/daemon/link-pc'");
+    expect(src.slice(i, i + 2500)).toContain('_canAutoLink(_exLink && _exLink.user_id, user.id)');
+    const h = src.indexOf("app.post('/api/hook'");
+    expect(src.slice(h, h + 6000)).toContain('_canAutoLink(_exLink && _exLink.user_id, r.userId)');
+  });
+  test('/api/learning/logs 는 썸네일을 본 조회에서 뺀다', () => {
+    const i = src.indexOf("app.get('/api/learning/logs'");
+    const body = src.slice(i, i + 6500);
+    expect(body).toContain("(data_json - 'thumbnail') AS data_json");
+    expect(body).toContain('_planInlineThumbs(finalRows');
+    expect(body).not.toContain('"SELECT id, type, user_id, timestamp, data_json FROM events');
+  });
+});

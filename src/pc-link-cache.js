@@ -165,4 +165,41 @@ function splitProvisionalDaemons(list, peek) {
   return { daemons, provisional };
 }
 
-module.exports = { createPcLinkCache, decideUserId, splitProvisionalDaemons, shared: createPcLinkCache() };
+/**
+ * 자동 경로(익명 자동 분류 · 토큰 주인 등록 · 설치 때 이름/이력 매칭)가 컴퓨터-번호 묶음을 써도 되는지(순수 함수).
+ * 규칙: ① 숨김 목록(config/hidden-users.json)의 번호·임시 번호(pc_)·local 로는 묶지 않는다.
+ *       ② 이미 진짜 번호에 묶인 컴퓨터는 다른 번호로 덮어쓰지 않는다 — 바꾸는 것은 관리자 주소(/api/admin/pc-link)와 새 설치(fresh)뿐.
+ * @param {string|null|undefined} existingUserId 지금 묶여 있는 번호(없으면 null)
+ * @param {string} newUserId 묶으려는 번호
+ * @param {(id:string)=>boolean} [isHidden] 기본: hidden-users.json 의 번호 목록
+ * @returns {{ok:boolean, reason?:string}}
+ */
+function _isTempId(id) { return !id || id === 'local' || /^pc_/.test(String(id)); }
+function _defaultIsHidden(id) {
+  try { return require('./hidden-users').load().ids.has(String(id)); } catch (_) { return false; }
+}
+function canAutoLink(existingUserId, newUserId, isHidden) {
+  const hidden = typeof isHidden === 'function' ? isHidden : _defaultIsHidden;
+  if (_isTempId(newUserId)) return { ok: false, reason: 'temp_target' };
+  if (hidden(newUserId)) return { ok: false, reason: 'hidden_target' };
+  if (!_isTempId(existingUserId) && existingUserId !== newUserId) return { ok: false, reason: 'already_linked' };
+  return { ok: true };
+}
+// 같은 규칙의 SQL 판(ON CONFLICT ... DO UPDATE ... WHERE 뒤에 붙임): 임시 번호로 묶인 줄만 덮어쓸 수 있다.
+const AUTO_LINK_GUARD_SQL = "(orbit_pc_links.user_id = 'local' OR orbit_pc_links.user_id = '' OR left(orbit_pc_links.user_id, 3) = 'pc_')";
+
+/**
+ * /api/learning/logs 원문(raw) 응답에 화면 썸네일(base64, 장당 40~95KB)을 실을지 정한다(순수 함수).
+ * 썸네일 합계가 예산을 넘으면 한 장도 싣지 않는다 — 2,000줄이면 137MB 가 되어 서버 힙(768MB)이 터졌다(2026-11-24 두 번).
+ * @param {Array<{id:string, thumb_len:number|string}>} rows
+ * @returns {{ids: string[], omitted: number}} ids = 썸네일을 따로 읽어 올 줄, omitted = 썸네일을 뺀 줄 수
+ */
+function planInlineThumbs(rows, { raw, noThumb, budgetBytes = 24 * 1024 * 1024 } = {}) {
+  const withThumb = (rows || []).filter(r => Number(r.thumb_len) > 0);
+  if (!raw) return { ids: [], omitted: 0 };
+  const total = withThumb.reduce((a, r) => a + Number(r.thumb_len), 0);
+  if (noThumb || total > budgetBytes) return { ids: [], omitted: withThumb.length };
+  return { ids: withThumb.map(r => r.id), omitted: 0 };
+}
+
+module.exports = { planInlineThumbs, createPcLinkCache, decideUserId, splitProvisionalDaemons, canAutoLink, AUTO_LINK_GUARD_SQL, shared: createPcLinkCache() };
