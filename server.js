@@ -1174,18 +1174,16 @@ app.get('/api/daemon/nenova-ingest-config', async (req, res) => {
 });
 
 app.get('/api/daemon/drive-config', (req, res) => {
+  // [2026-11-25] OOM 하드 가드: GDRIVE_SYNC_DISABLED=1|true 이면 무조건 enabled:false 반환해 직원 PC Drive 업로더 오작동 차단
   // [2026-06-17] Drive 전역 OFF — 서비스계정 quota 없어 403 무한재시도로 로그/자원 폭주.
   // 분석은 서버큐+CLI워커로 이전했으므로 Drive 업로드 불필요. enabled:false면 데몬이 uploader 미기동.
-  if (global._driveDisabled) return res.json({ enabled: false, disabledReason: 'drive_global_off' });
-  // 데몬/Vision 워커가 토큰 없이도 접근 가능 (서비스 계정 정보 제공)
-  const saJson = process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
-  // DB 오버라이드 우선 → env var 폴백 (Railway 대시보드 접근 없이 수정 가능)
-  const folderIdOverride = global._driveConfigOverride?.folderId;
-  const folderId = folderIdOverride || process.env.GOOGLE_DRIVE_CAPTURES_FOLDER_ID;
-  if (!saJson || !folderId) {
-    return res.json({ enabled: false });
-  }
-  res.json({ enabled: true, credentialsJson: saJson, folderId });
+  const { resolveDaemonDriveConfig } = require('./src/daemon-release');
+  const result = resolveDaemonDriveConfig({
+    env: process.env,
+    driveDisabled: !!global._driveDisabled,
+    folderIdOverride: global._driveConfigOverride?.folderId || null,
+  });
+  return res.json(result);
 });
 
 // [2026-06-17] Drive 업로드 전역 ON/OFF (403 폭주 차단) — orbit_ 토큰, PG 영속
@@ -2723,6 +2721,23 @@ app.get('/api/daemon/release-bundle', async (req, res) => {
   } catch (e) {
     console.error('[daemon-release] release-bundle 오류:', e.message);
     if (!res.headersSent) res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+// [2026-11-25] Phase 3: Rust 수집기(.exe) 원격 배포 메타데이터 (데몬/관리자 인증 필수)
+app.get('/api/daemon/rust-collector-meta', async (req, res) => {
+  try {
+    const { verifyTokenAsync } = require('./src/auth');
+    const authUser = await daemonRelease.authenticateDaemonRequest(req, { verifyTokenAsync, isAdminReqAsync });
+    if (!authUser) {
+      return res.status(401).json({ ok: false, error: 'daemon authentication required' });
+    }
+    const meta = daemonRelease.getRustCollectorMeta(process.env);
+    res.setHeader('Cache-Control', 'private, max-age=300');
+    res.json({ ...meta, authenticated: true });
+  } catch (e) {
+    console.error('[daemon-release] rust-collector-meta 오류:', e.message);
+    res.status(500).json({ ok: false, error: e.message });
   }
 });
 
@@ -10255,11 +10270,11 @@ async function startServer() {
       }
     } catch {}
   }
-  // 서버 시작 5분 후 첫 실행 + 이후 1시간마다 (GDRIVE_SYNC_DISABLED=1 이면 스킵)
-  if (process.env.GDRIVE_SYNC_DISABLED !== '1') {
+  // 서버 시작 5분 후 첫 실행 + 이후 1시간마다 (GDRIVE_SYNC_DISABLED=1|true 이면 스킵)
+  if (!daemonRelease.isGdriveSyncDisabled(process.env)) {
     setTimeout(_autoGdriveSync, 5 * 60 * 1000);
     setInterval(_autoGdriveSync, 1 * 60 * 60 * 1000);
-  } else { console.log('[startup] autoGdriveSync 비활성화 (GDRIVE_SYNC_DISABLED=1)'); }
+  } else { console.log('[startup] autoGdriveSync 비활성화 (GDRIVE_SYNC_DISABLED)'); }
 
   console.log(`   회사 진단: http://localhost:${PORT}/api/company`);
   console.log(`   컨설턴트: http://localhost:${PORT}/consultant.html`);

@@ -1,0 +1,59 @@
+name: Build Rust Collector
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'rust-collector/**'
+      - '.github/workflows/build-rust-collector.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'rust-collector/**'
+      - '.github/workflows/build-rust-collector.yml'
+  workflow_dispatch:
+
+jobs:
+  build-windows:
+    name: Test & Build Rust Collector (Windows x64)
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Rust stable toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Run cargo test
+        working-directory: rust-collector
+        run: cargo test --locked
+
+      - name: Build release binary
+        working-directory: rust-collector
+        run: cargo build --release --locked
+
+      - name: Generate SHA256SUMS.txt and verify artifact
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $bin = 'rust-collector\target\release\orbit-collector-rs.exe'
+          if (-not (Test-Path $bin)) {
+            throw "Built binary not found: $bin"
+          }
+          $item = Get-Item $bin
+          $hash = (Get-FileHash $bin -Algorithm SHA256).Hash.ToLowerInvariant()
+          New-Item -ItemType Directory -Force -Path dist-rust | Out-Null
+          Copy-Item $bin 'dist-rust\orbit-collector-rs.exe' -Force
+          "$hash  orbit-collector-rs.exe" | Set-Content -Path 'dist-rust\SHA256SUMS.txt' -Encoding ascii -NoNewline
+          "`n" | Add-Content -Path 'dist-rust\SHA256SUMS.txt' -Encoding ascii -NoNewline
+          Write-Host "Built orbit-collector-rs.exe: $($item.Length) bytes, sha256=$hash"
+
+      - name: Upload Rust collector artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: orbit-collector-rs-windows-x64
+          path: |
+            dist-rust/orbit-collector-rs.exe
+            dist-rust/SHA256SUMS.txt
+          retention-days: 14

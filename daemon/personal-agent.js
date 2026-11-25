@@ -920,8 +920,10 @@ async function main() {
     _reportError('resource-governor', err.message, err.stack);
   }
 
-  // ②-c' Rust 수집기 카나리 1대 Opt-in (100% DEFAULT OFF — 미설정/바이너리 없음 시 기존 Node 경로 무변형)
+  // ②-c' Rust 수집기 카나리/원격 Opt-in (100% DEFAULT OFF — 미설정/바이너리 없음 시 기존 Node 경로 무변형)
   let _rustSidecarActive = false;
+  let _rustConfigWatchTimer = null;
+  let _rustConfigBootTimer = null;
   const _startNodeScreenCapture = () => {
     try {
       _stage('screen-capture');
@@ -933,26 +935,65 @@ async function main() {
       console.error('[personal-agent] 스크린 캡처 시작 실패:', err.message);
     }
   };
+  const _makeRustStartOpts = (cfgObj) => ({
+    serverUrl: (cfgObj && cfgObj.serverUrl) || REMOTE_URL,
+    token: (cfgObj && cfgObj.token) || REMOTE_TOKEN,
+    userId: (cfgObj && cfgObj.userId) || _orbitConfig.userId || os.hostname(),
+    reportEvent: _reportEvent,
+    onFallback: (info) => {
+      console.warn(`[personal-agent] Rust 수집기 서킷브레이커 폴백(${info?.reason || 'crash'}) — Node screen-capture/local-buffer 즉시 기동`);
+      _rustSidecarActive = false;
+      _startNodeScreenCapture();
+      try { if (_localBuffer) _localBuffer.start(_sendHookPayload, 60 * 1000); } catch {}
+    },
+  });
   try {
     const _rcMod = require(path.join(ROOT, 'src/rust-collector-sidecar'));
+    rustCollectorSidecar = _rcMod;
     if (_rcMod.isOptedIn(_orbitConfig, process.env)) {
       _stage('rust-collector-sidecar');
-      rustCollectorSidecar = _rcMod;
       const rcRes = rustCollectorSidecar.start({
         config: _orbitConfig,
         env: process.env,
-        serverUrl: REMOTE_URL,
-        token: REMOTE_TOKEN,
-        userId: _orbitConfig.userId || os.hostname(),
-        reportEvent: _reportEvent,
-        onFallback: (info) => {
-          console.warn(`[personal-agent] Rust 수집기 서킷브레이커 폴백(${info?.reason || 'crash'}) — Node screen-capture/local-buffer 즉시 기동`);
-          _rustSidecarActive = false;
-          _startNodeScreenCapture();
-          try { if (_localBuffer) _localBuffer.start(_sendHookPayload, 60 * 1000); } catch {}
-        },
+        ..._makeRustStartOpts(_orbitConfig),
       });
       _rustSidecarActive = !!(rcRes && rcRes.active);
+    }
+    // ③ Guardian(watchdog.ps1) 우회 대응 60초 감시기:
+    //    watchdog이 config 명령을 먼저 소비해 ~/.orbit-config.json에 rustCollector:true를 써도
+    //    60초 내 자동 다운로드 + SHA-256 검증 + 사이드카 동적 기동(실패 시 Node 유지)
+    if (typeof _rcMod.createConfigWatcher === 'function') {
+      const _rustWatcher = _rcMod.createConfigWatcher({
+        configPath: path.join(os.homedir(), '.orbit-config.json'),
+        env: process.env,
+        sidecar: _rcMod,
+        syncBinaryFn: async ({ config: freshCfg, env: envObj, sidecar: sc }) => {
+          if (!daemonUpdater || typeof daemonUpdater.syncRustCollectorBinary !== 'function') {
+            return { ok: false, reason: 'updater_unavailable', fallback: 'node' };
+          }
+          return daemonUpdater.syncRustCollectorBinary({
+            serverUrl: (freshCfg && freshCfg.serverUrl) || REMOTE_URL,
+            token: (freshCfg && freshCfg.token) || REMOTE_TOKEN,
+            config: freshCfg,
+            env: envObj,
+            sidecar: sc,
+          });
+        },
+        getStartOpts: (freshCfg) => _makeRustStartOpts(freshCfg),
+        onActivated: (res) => {
+          _rustSidecarActive = true;
+          console.log(`[personal-agent] Rust 수집기 동적 기동 완료 (pid=${res?.pid || '?'}) — Node screen-capture 일시 중지`);
+          try { screenCapture?.stop?.(); } catch {}
+        },
+        onDeactivated: () => {
+          _rustSidecarActive = false;
+          console.log('[personal-agent] Rust 수집기 opt-out 감지 — Node screen-capture 복귀');
+          _startNodeScreenCapture();
+        },
+      });
+      const _runRustWatchTick = () => { _rustWatcher.tick().catch(() => {}); };
+      _rustConfigBootTimer = setTimeout(_runRustWatchTick, 5000);
+      _rustConfigWatchTimer = setInterval(_runRustWatchTick, 60 * 1000);
     }
   } catch (err) {
     console.warn('[personal-agent] Rust 수집기 사이드카 로드 실패 — Node 경로 유지:', err.message);
@@ -1359,6 +1400,8 @@ async function main() {
     try { resourceGovernor?.stop?.(); } catch {}
     try { workActionRecorder?.stop?.(); } catch {}
     try { perfSelfCheck?.stop?.(); } catch {}
+    if (_rustConfigBootTimer) clearTimeout(_rustConfigBootTimer);
+    if (_rustConfigWatchTimer) clearInterval(_rustConfigWatchTimer);
     try { rustCollectorSidecar?.stop?.(); } catch {}
     if (_isKstWorkHours()) {
       try {
