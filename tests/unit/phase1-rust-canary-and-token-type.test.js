@@ -242,11 +242,13 @@ describe('Phase 1 — orbit_auth_tokens type PG 백업 버그 회귀 방지', ()
     auth._setPgPoolForTest(null);
   });
 
-  test("(d) _pgBackupToken이 type='api'를 명시 컬럼으로 upsert하며 기존 session 오분류를 교정함", async () => {
+  test("(d) _pgBackupToken이 UNIQUE 제약 없는 레거시 PG에서도 UPDATE-first→INSERT로 type='api'를 보존함", async () => {
     const queries = [];
     const mockPool = {
       query: jest.fn(async (sql, params) => {
         queries.push({ sql: String(sql), params: params || [] });
+        // 신규 토큰 시뮬레이션: UPDATE rowCount=0 → INSERT 실행
+        if (String(sql).includes('UPDATE orbit_auth_tokens')) return { rows: [], rowCount: 0 };
         return { rows: [], rowCount: 1 };
       }),
     };
@@ -254,14 +256,30 @@ describe('Phase 1 — orbit_auth_tokens type PG 백업 버그 회귀 방지', ()
 
     await auth.pgBackupToken('orbit_test_api_token_1', 'U-DAEMON-1', null, 'api');
 
+    const updCall = queries.find((q) => q.sql.includes('UPDATE orbit_auth_tokens'));
+    expect(updCall).toBeTruthy();
+    expect(updCall.sql).toContain("WHEN $2 = 'api' THEN 'api'");
+    expect(updCall.params[0]).toBe('orbit_test_api_token_1');
+    expect(updCall.params[1]).toBe('api');
+
     const insertCall = queries.find((q) => q.sql.includes('INSERT INTO orbit_auth_tokens'));
     expect(insertCall).toBeTruthy();
     expect(insertCall.sql).toContain('(token, user_id, type, expires_at)');
-    expect(insertCall.sql).toContain("WHEN EXCLUDED.type = 'api' THEN 'api'");
+    expect(insertCall.sql).not.toMatch(/ON CONFLICT\s*\(token\)/i);
     expect(insertCall.params[0]).toBe('orbit_test_api_token_1');
     expect(insertCall.params[1]).toBe('U-DAEMON-1');
     expect(insertCall.params[2]).toBe('api');
     expect(insertCall.params[3]).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
+
+    // 기존 토큰이 이미 PG에 있는 경우(UPDATE rowCount=1)에는 중복 INSERT를 수행하지 않음
+    queries.length = 0;
+    mockPool.query.mockImplementation(async (sql, params) => {
+      queries.push({ sql: String(sql), params: params || [] });
+      return { rows: [], rowCount: 1 };
+    });
+    await auth.pgBackupToken('orbit_existing_token', 'U-DAEMON-1', null, 'api');
+    expect(queries.some((q) => q.sql.includes('UPDATE orbit_auth_tokens'))).toBe(true);
+    expect(queries.some((q) => q.sql.includes('INSERT INTO orbit_auth_tokens'))).toBe(false);
   });
 
   test("issueApiTokenAsync 및 3인자 레거시 호출도 SQLite type='api'를 보존함", async () => {
@@ -269,6 +287,7 @@ describe('Phase 1 — orbit_auth_tokens type PG 백업 버그 회귀 방지', ()
     const mockPool = {
       query: jest.fn(async (sql, params) => {
         queries.push({ sql: String(sql), params: params || [] });
+        if (String(sql).includes('UPDATE orbit_auth_tokens')) return { rows: [], rowCount: 0 };
         return { rows: [], rowCount: 1 };
       }),
     };
@@ -313,8 +332,9 @@ describe('Phase 1 — orbit_auth_tokens type PG 백업 버그 회귀 방지', ()
   test('server.js startup/push-token 및 rust-collector 소스 정적 가드 검증', () => {
     const root = path.join(__dirname, '..', '..');
     const serverSrc = fs.readFileSync(path.join(root, 'server.js'), 'utf8');
-    expect(serverSrc).toContain("INSERT INTO orbit_auth_tokens (user_id, token, type, created_at) VALUES ($1,$2,'api',NOW())");
+    expect(serverSrc).toContain("INSERT INTO orbit_auth_tokens (user_id, token, type, created_at) VALUES ($1,$2,'api',NOW()) ON CONFLICT DO NOTHING");
     expect(serverSrc).not.toContain('INSERT INTO orbit_auth_tokens (user_id, token, created_at) VALUES ($1,$2,NOW())');
+    expect(serverSrc).not.toMatch(/ON CONFLICT\s*\(token\)/i);
 
     const rustMain = fs.readFileSync(path.join(root, 'rust-collector', 'src', 'main.rs'), 'utf8');
     expect(rustMain).not.toContain('fn kb_data');

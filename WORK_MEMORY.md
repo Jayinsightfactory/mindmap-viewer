@@ -2554,3 +2554,12 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 3. 남은 할 일: PR(Reviewer: Codex) CI 통과 후 squash 머지 → 라이브 https://mindmap-viewer-production-adb2.up.railway.app/health HTTP 200 확인 → worktree 정리. 카나리 1대 PC 수동 opt-in(ORBIT_RUST_COLLECTOR=1)은 별도 승인 후 진행(전 직원 원격배포 금지).
 4. 검증 상태: cargo test 13/13 PASS(0 warnings), cargo build --release PASS(474.0KB), --self-test --probe-health Railway HTTPS 200 PASS, Jest 37 suites / 377 tests PASS, node --check PASS, pstack-verify.cjs PASS. 미검증: 카나리 1대 실PC 장기 상주(24h) 실측.
 5. 주의/잠금: 기본값 100% OFF로 기존 전 직원 PC Node 경로 무변형. Codex PR #102(work-drive-onedrive.js/work-file-uploader.js/ci.yml) 미수정. 연결 목표: g12, g14, g18 / 학습 반영: 없음
+
+
+## 2026-11-25 Phase 1 후속 핫픽스 — 레거시 PG orbit_auth_tokens UNIQUE 제약 미존재 대응 (UPDATE-first, reviewer: Codex)
+검색어: orbit_auth_tokens 42P10 ON CONFLICT UPDATE-first _pgBackupToken type api Railway startup g12 g14 g18
+1. 작업 위치: mindmap-viewer / 브랜치 fix/orbit-auth-tokens-update-first / worktree C:/Users/USER/mv-agy-phase1-token-upsert-fix (PR #138 직후 라이브 로그 실측 반영, reviewer: Codex).
+2. 완료된 것: 운영 Railway PG의 orbit_auth_tokens.token 컬럼에 UNIQUE/PK 제약이 없어 ON CONFLICT (token) DO UPDATE가 PG 42P10 오류를 일으키는 실측을 확인하고, src/auth.js(_pgBackupToken) 및 server.js(startup/push-token)를 UPDATE-first → 0행 시 INSERT ... ON CONFLICT DO NOTHING 방식으로 전환 + tests/unit/phase1-rust-canary-and-token-type.test.js 회귀 테스트 보강.
+3. 남은 할 일: CI 통과 후 즉시 squash 머지 → 라이브 Railway /health HTTP 200 및 로그 42P10 오류 0건 확인 → worktree 정리.
+4. 검증 상태: phase1-rust-canary-and-token-type.test.js 7/7 PASS, node --check PASS, pstack-verify.cjs PASS.
+5. 주의/잠금: 레거시 PG 테이블에 ON CONFLICT (token) 재사용 금지(항상 UPDATE-first 사용). 연결 목표: g12, g14, g18 / 학습 반영: 없음

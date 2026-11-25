@@ -10033,11 +10033,18 @@ async function startServer() {
         if (rows.length > 0) { tokenCache[userId] = rows[0].token; return rows[0].token; }
         const { issueApiToken } = require('./src/auth');
         const newToken = issueApiToken(userId);
-        await _pool.query(
-          `INSERT INTO orbit_auth_tokens (user_id, token, type, created_at) VALUES ($1,$2,'api',NOW())
-           ON CONFLICT (token) DO UPDATE SET type = CASE WHEN EXCLUDED.type = 'api' THEN 'api' ELSE COALESCE(orbit_auth_tokens.type, EXCLUDED.type) END`,
-          [userId, newToken]
-        ).catch(() => {});
+        try {
+          const updTok = await _pool.query(
+            `UPDATE orbit_auth_tokens SET type = 'api' WHERE token = $1`,
+            [newToken]
+          );
+          if (!updTok || !updTok.rowCount) {
+            await _pool.query(
+              `INSERT INTO orbit_auth_tokens (user_id, token, type, created_at) VALUES ($1,$2,'api',NOW()) ON CONFLICT DO NOTHING`,
+              [userId, newToken]
+            );
+          }
+        } catch {}
         tokenCache[userId] = newToken;
         return newToken;
       };
