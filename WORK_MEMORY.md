@@ -2545,3 +2545,12 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 3. 남은 할 일: PR CI 통과 후 squash 머지 및 라이브 /health HTTP 200 확인, 필요 시 운영 PG에 scripts/pg-diet-inspect.js --dry-run 진단 후 단계적 --apply 실행.
 4. 검증 상태: Jest 36개 스위트 370/370 통과, node --check 전 파일 통과, pstack-verify PASS, git diff origin/main 기준 직원 PC 데몬 파일 0건.
 5. 주의/잠금: main push 시 Railway 자동배포 및 직원 PC 데몬 동기화가 발생하므로 서버 전용 diff 및 /health 200 즉시 확인 필수. VACUUM FULL 미사용. 연결 목표: g15, g18 / 학습 반영: 반영(Drive 미설정 30일 삭제 데드락·TEXT timestamp 캐스팅 오류·migrate.js .down.sql 실행 방지·CONCURRENTLY 비잠금 인덱스)
+
+
+## 2026-11-25 Phase 1 Rust 수집기 카나리 1대 Opt-in + orbit_auth_tokens type PG 백업 버그 수정 (reviewer: Codex)
+검색어: orbit_auth_tokens _pgBackupToken type api rust-collector WinHTTP TLS RFC3339 JsonlRingBuffer privacy-gate rust-collector-sidecar ORBIT_RUST_COLLECTOR circuit-breaker g12 g14 g18
+1. 작업 위치: mindmap-viewer / 브랜치 feat/phase1-rust-canary-and-token-type / worktree C:/Users/USER/mv-agy-phase1-rust-canary (Codex PR #102 파일 미접촉, reviewer: Codex).
+2. 완료된 것: ① src/auth.js(_pgBackupToken type 컬럼 명시 + SQLite 자동추론 + api 우선 ON CONFLICT upsert), src/auth-oauth.js, server.js(5903/5940/7450/7507/10037행 type='api' 보존) 수정. ② rust-collector/ 프로덕션 강화 소스 이관(외부 크레이트 0, Windows WinHTTP FFI 네이티브 HTTPS/TLS, RFC3339 UTC now_iso, 가짜 kb/mouse 합성 스텁 제거, 정직한 스풀 릴레이·유한 JSONL 링버퍼·내장 금융/보안창 privacy-gate, --dry-run/--self-test/--probe-health, 바이너리/target .gitignore). ③ src/rust-collector-sidecar.js(100% DEFAULT OFF, opt-in + 바이너리 실존 시만 스폰, 5분 3회 크래시 서킷브레이커 → Node screen-capture/local-buffer 즉시 폴백) + daemon/personal-agent.js 최소 훅. ④ tests/unit/phase1-rust-canary-and-token-type.test.js 7건 및 rust-collector/README.md 카나리 1대 적용 커맨드·실측 벤치마크(474.0KB, 유휴 RAM 3.96MB vs 빈 Node 55.63MB, --self-test 126.3ms, Railway HTTPS /health 200, 스풀 50장 1192ms/41.9 files/s) 기록.
+3. 남은 할 일: PR(Reviewer: Codex) CI 통과 후 squash 머지 → 라이브 https://mindmap-viewer-production-adb2.up.railway.app/health HTTP 200 확인 → worktree 정리. 카나리 1대 PC 수동 opt-in(ORBIT_RUST_COLLECTOR=1)은 별도 승인 후 진행(전 직원 원격배포 금지).
+4. 검증 상태: cargo test 13/13 PASS(0 warnings), cargo build --release PASS(474.0KB), --self-test --probe-health Railway HTTPS 200 PASS, Jest 37 suites / 377 tests PASS, node --check PASS, pstack-verify.cjs PASS. 미검증: 카나리 1대 실PC 장기 상주(24h) 실측.
+5. 주의/잠금: 기본값 100% OFF로 기존 전 직원 PC Node 경로 무변형. Codex PR #102(work-drive-onedrive.js/work-file-uploader.js/ci.yml) 미수정. 연결 목표: g12, g14, g18 / 학습 반영: 없음

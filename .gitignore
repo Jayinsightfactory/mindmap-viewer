@@ -47,3 +47,8 @@ Dockerfile.bak
 recorder/screenshots/
 data/*.db
 data/*.sqlite3
+
+# Rust collector build artifacts & binaries (source only in git)
+rust-collector/target/
+rust-collector/**/*.exe
+rust-collector/**/*.pdb

@@ -5900,7 +5900,7 @@ app.post('/api/admin/reissue-token', async (req, res) => {
   const newToken = issueApiToken(user.id);
   // PG에 즉시 동기화
   try { await pgBackupUser(user, ''); } catch {}
-  try { await pgBackupToken(newToken, user.id, null); } catch {}
+  try { await pgBackupToken(newToken, user.id, null, 'api'); } catch {}
   const serverUrl = (process.env.SERVER_URL || 'https://mindmap-viewer-production-adb2.up.railway.app');
   const installCmd = `$env:ORBIT_TOKEN='${newToken}'; $env:ORBIT_USER_ID='${user.id}'; irm '${serverUrl}/setup/install.ps1' | iex`;
   res.json({ ok: true, userId: user.id, name: user.name, email: user.email, token: newToken, installCmd });
@@ -5937,7 +5937,7 @@ app.post('/api/admin/install-code', async (req, res) => {
   }
   if (!user) return res.status(404).json({ error: 'user not found' });
   const newToken = issueApiToken(user.id);
-  try { await pgBackupToken(newToken, user.id, null); } catch {}
+  try { await pgBackupToken(newToken, user.id, null, 'api'); } catch {}
   const serverUrl = process.env.SERVER_URL || 'https://mindmap-viewer-production-adb2.up.railway.app';
   const installCmd = `$env:ORBIT_TOKEN='${newToken}'; $env:ORBIT_USER_ID='${user.id}'; irm '${serverUrl}/setup/install.ps1' | iex`;
   res.json({ ok: true, userId: user.id, name: user.name, email: user.email, token: newToken, installCmd });
@@ -7447,7 +7447,7 @@ app.post('/api/setup/register-name', async (req, res) => {
 
   const token = issueApiToken(userId);
   try { await pgBackupUser({ id: userId, email, name, provider: 'pc_token', plan: 'free' }, ''); } catch {}
-  try { await pgBackupToken(token, userId, null); } catch {}
+  try { await pgBackupToken(token, userId, null, 'api'); } catch {}
   if (pool) {
     try {
       await pool.query(`CREATE TABLE IF NOT EXISTS pc_install_codes (
@@ -7504,7 +7504,7 @@ app.post('/api/admin/create-pc-tokens', async (req, res) => {
     }
     const token = issueApiToken(userId);
     try { await pgBackupUser({ id: userId, email, name: label, provider: 'pc_token', plan: 'free' }, ''); } catch {}
-    try { await pgBackupToken(token, userId, null); } catch {}
+    try { await pgBackupToken(token, userId, null, 'api'); } catch {}
     if (pool) {
       try {
         await pool.query(
@@ -10034,7 +10034,8 @@ async function startServer() {
         const { issueApiToken } = require('./src/auth');
         const newToken = issueApiToken(userId);
         await _pool.query(
-          `INSERT INTO orbit_auth_tokens (user_id, token, created_at) VALUES ($1,$2,NOW()) ON CONFLICT DO NOTHING`,
+          `INSERT INTO orbit_auth_tokens (user_id, token, type, created_at) VALUES ($1,$2,'api',NOW())
+           ON CONFLICT (token) DO UPDATE SET type = CASE WHEN EXCLUDED.type = 'api' THEN 'api' ELSE COALESCE(orbit_auth_tokens.type, EXCLUDED.type) END`,
           [userId, newToken]
         ).catch(() => {});
         tokenCache[userId] = newToken;

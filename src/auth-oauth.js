@@ -294,7 +294,7 @@ function createOAuthRouter({ passport, enabledProviders, insertToken, CLIENT_ORI
         try {
           const { pgBackupToken, pgBackupUser } = require('./auth');
           await pgBackupUser(req.user, '');
-          await pgBackupToken(token, req.user.id, null);
+          await pgBackupToken(token, req.user.id, null, 'api');
           console.log(`[OAuth/Google] PG 저장 완료: ${req.user.email} (${req.user.id})`);
         } catch (e) {
           console.error(`[OAuth/Google] PG 저장 실패: ${req.user.email} — ${e.message}`);

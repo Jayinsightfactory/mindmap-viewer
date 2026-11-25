@@ -1,0 +1,16 @@
+[package]
+name = "orbit-collector-rs"
+version = "0.2.0"
+edition = "2021"
+description = "Orbit Phase 1 hardened Rust collector sidecar (WinHTTP TLS, RFC3339 UTC, bounded JSONL ring buffer, built-in privacy gate)"
+
+[[bin]]
+name = "orbit-collector-rs"
+path = "src/main.rs"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
