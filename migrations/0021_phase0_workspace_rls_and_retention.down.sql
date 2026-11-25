@@ -32,6 +32,7 @@ DROP INDEX CONCURRENTLY IF EXISTS idx_events_workspace_timestamp;
 DROP INDEX CONCURRENTLY IF EXISTS idx_sessions_workspace_started_at;
 DROP INDEX CONCURRENTLY IF EXISTS idx_kakao_messages_workspace_created_at;
 DROP INDEX CONCURRENTLY IF EXISTS idx_messenger_messages_workspace_created_at;
+DROP INDEX CONCURRENTLY IF EXISTS idx_orbit_auth_tokens_created_at;
 
 -- 3) Remove workspace_id columns added by 0021
 DO $$ BEGIN

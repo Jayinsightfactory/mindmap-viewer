@@ -27,6 +27,8 @@ describe('Phase 0 — 0021 Migration Static Integrity & Runner Safety', () => {
     expect(sql).toContain('CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_sessions_workspace_started_at');
     expect(sql).toContain('CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_kakao_messages_workspace_created_at');
     expect(sql).toContain('CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_messenger_messages_workspace_created_at');
+    expect(sql).toContain('CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_orbit_auth_tokens_created_at');
+    expect(sql).toContain('ON orbit_auth_tokens (created_at DESC NULLS LAST)');
     expect(sql).not.toMatch(/VACUUM\s+FULL/i);
   });
 
@@ -43,6 +45,7 @@ describe('Phase 0 — 0021 Migration Static Integrity & Runner Safety', () => {
     expect(sql).toContain('DROP INDEX CONCURRENTLY IF EXISTS idx_sessions_workspace_started_at');
     expect(sql).toContain('DROP INDEX CONCURRENTLY IF EXISTS idx_kakao_messages_workspace_created_at');
     expect(sql).toContain('DROP INDEX CONCURRENTLY IF EXISTS idx_messenger_messages_workspace_created_at');
+    expect(sql).toContain('DROP INDEX CONCURRENTLY IF EXISTS idx_orbit_auth_tokens_created_at');
     expect(sql).toContain("DELETE FROM _migrations WHERE name = '0021_phase0_workspace_rls_and_retention.sql'");
   });
 
@@ -55,7 +58,7 @@ describe('Phase 0 — 0021 Migration Static Integrity & Runner Safety', () => {
     expect(stmts.some((s) => s.includes('DO $$') && s.includes('ENABLE ROW LEVEL SECURITY'))).toBe(true);
     const stripComments = (s) => s.replace(/--[^\n]*\n?/g, '').trim();
     const concurrentStmts = stmts.filter((s) => /^CREATE INDEX CONCURRENTLY/i.test(stripComments(s)));
-    expect(concurrentStmts.length).toBe(4);
+    expect(concurrentStmts.length).toBe(5);
     for (const cs of concurrentStmts) {
       expect(cs).not.toContain('DO $$');
     }
@@ -291,6 +294,28 @@ describe('Phase 0 — 30일 삭제 버그 수정 (Safe TEXT Timestamp & Retentio
     // Auto mode: Drive configured uses Drive archive primary
     expect(archiver.resolveRetentionPolicy({ sizeMB: 10900, driveConfigured: true, env: {} }))
       .toMatchObject({ requireDriveBackup: true, allowNoiseRetention: false, mode: 'drive_archive_primary' });
+
+    // Live Railway case: GOOGLE_SERVICE_ACCOUNT_JSON SET but GOOGLE_DRIVE_CAPTURES_FOLDER_ID UNSET + sizeMB >= 1500
+    expect(archiver.resolveRetentionPolicy({
+      sizeMB: 3193,
+      env: { GOOGLE_SERVICE_ACCOUNT_JSON: '{"client_email":"x"}', GOOGLE_DRIVE_CAPTURES_FOLDER_ID: '' },
+    })).toMatchObject({ driveConfigured: false, allowNoiseRetention: true, mode: 'pg_threshold_noise_retention' });
+
+    // Drive configured but 0 verified backups or Drive upload failed when PG >= threshold
+    expect(archiver.resolveRetentionPolicy({
+      sizeMB: 3193,
+      driveConfigured: true,
+      driveBackupFailed: true,
+      env: {},
+    })).toMatchObject({ allowNoiseRetention: true, mode: 'pg_threshold_noise_retention' });
+
+    // Verify daemon noise types included & business/domain types excluded
+    for (const noiseType of ['daemon.healed', 'daemon.diag', 'privacy.stats', 'daemon.crashmoment', 'daemon.crash', 'mouse.watcher.started', 'daemon.screendiag', 'install.selftest', 'idle']) {
+      expect(archiver.NOISE_TELEMETRY_TYPES).toContain(noiseType);
+    }
+    for (const bizType of ['order.detected', 'work.step', 'excel.activity', 'kakao.intel', 'screen.analyzed', 'file.change', 'excel.sheet', 'messenger.work']) {
+      expect(archiver.NOISE_TELEMETRY_TYPES).not.toContain(bizType);
+    }
   });
 
   test('pruneExpiredNoiseEvents deletes in LIMIT 5000 + pg_sleep(0.1) batches while preserving golden/audit/verified records', async () => {
@@ -429,6 +454,7 @@ describe('Phase 0 — scripts/pg-diet-inspect.js CLI (dry-run default & non-lock
         if (sql.includes('pg_stat_user_indexes')) {
           return { rows: [{ index_name: 'idx_events_timestamp', table_name: 'events', index_bytes: 1200 * 1024 * 1024, idx_scan: 1200 }] };
         }
+        if (sql.includes('pg_indexes')) return { rows: [] };
         if (sql.includes('to_regclass')) return { rows: [{ reg: 'events' }] };
         if (sql.includes('deletable_noise')) return { rows: [{ deletable_noise: 3100000, preserved_other: 45000 }] };
         return { rows: [{ cnt: 100 }] };
@@ -441,6 +467,9 @@ describe('Phase 0 — scripts/pg-diet-inspect.js CLI (dry-run default & non-lock
     expect(report.candidates.eventsExpiredNoise).toBe(3100000);
     expect(report.candidates.eventsExpiredProtected).toBe(45000);
     expect(executed.some((q) => /\bDELETE\b|\bVACUUM\b/i.test(q))).toBe(false);
+    // Must avoid unindexed full COUNT(*) on orbit_auth_tokens when created_at index is missing
+    expect(executed.some((q) => q.includes('FROM orbit_auth_tokens'))).toBe(false);
+    expect(report.candidates.unusedSessionTokensEstimated).toBe(true);
 
     const text = pgDiet.formatReport(report);
     expect(text).toContain('DRY-RUN');

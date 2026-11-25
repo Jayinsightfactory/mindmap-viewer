@@ -51,6 +51,16 @@ CREATE TABLE IF NOT EXISTS messenger_messages (
   imported_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- Ensure orbit_auth_tokens exists on fresh databases so CONCURRENTLY index creation succeeds
+CREATE TABLE IF NOT EXISTS orbit_auth_tokens (
+  token TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  type TEXT DEFAULT 'session',
+  expires_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  workspace_id TEXT NOT NULL DEFAULT 'WS-NENOVA-2026'
+);
+
 -- 1) Add workspace_id column (metadata-only backfill to 'WS-NENOVA-2026' on PG 11+)
 DO $$ BEGIN
   PERFORM set_config('lock_timeout', '5s', true);
@@ -167,3 +177,7 @@ CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_kakao_messages_workspace_created_at
 
 CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_messenger_messages_workspace_created_at
   ON messenger_messages (workspace_id, created_at);
+
+-- Prevent 580s boot seq-scan timeout in src/auth.js initFromPg() (ORDER BY created_at DESC NULLS LAST LIMIT 20000)
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_orbit_auth_tokens_created_at
+  ON orbit_auth_tokens (created_at DESC NULLS LAST);

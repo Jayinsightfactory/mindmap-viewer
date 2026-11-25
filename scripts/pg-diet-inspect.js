@@ -170,13 +170,27 @@ async function inspectDatabase(pool, { keepDays = KEEP_DAYS || 30 } = {}) {
   }
 
   if (await _tableExists(pool, 'orbit_auth_tokens')) {
-    const tokRes = await pool.query(`
-      SELECT COUNT(*)::bigint AS cnt
-      FROM orbit_auth_tokens
-      WHERE type = 'session' AND last_used_at IS NULL
-        AND created_at < NOW() - INTERVAL '30 days'
-    `);
-    candidates.unusedSessionTokens30d = Number(tokRes.rows?.[0]?.cnt || 0);
+    // Avoid unindexed full seq-scan on bloated orbit_auth_tokens heap (use index check + safe fallback to pg_stat_user_tables)
+    const idxCheck = await pool.query(`
+      SELECT 1 FROM pg_indexes
+      WHERE schemaname = 'public' AND tablename = 'orbit_auth_tokens'
+        AND indexdef ILIKE '%created_at%'
+      LIMIT 1
+    `).catch(() => ({ rows: [] }));
+    if ((idxCheck.rows || []).length > 0) {
+      const tokRes = await pool.query(`
+        SELECT COUNT(*)::bigint AS cnt
+        FROM orbit_auth_tokens
+        WHERE type = 'session' AND last_used_at IS NULL
+          AND created_at < NOW() - INTERVAL '30 days'
+      `);
+      candidates.unusedSessionTokens30d = Number(tokRes.rows?.[0]?.cnt || 0);
+      candidates.unusedSessionTokensEstimated = false;
+    } else {
+      const tokStat = tables.find((t) => t.table === 'orbit_auth_tokens');
+      candidates.unusedSessionTokens30d = tokStat ? tokStat.deadTuples : 0;
+      candidates.unusedSessionTokensEstimated = true;
+    }
   }
 
   if (await _tableExists(pool, 'orbit_crashes')) {

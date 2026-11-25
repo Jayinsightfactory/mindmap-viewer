@@ -28,18 +28,28 @@ const PG_DIET_THRESHOLD_MB = parseInt(process.env.PG_DIET_THRESHOLD_MB || proces
 const ISO_TS_REGEX = '^[0-9]{4}-[0-9]{2}-[0-9]{2}[T ][0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]+)?(Z|[+-][0-9]{2}:?[0-9]{2})?$';
 
 // Drive 미구성/용량 임계 초과 시 만료(>KEEP_DAYS) 정리 대상인 raw 노이즈 텔레메트리 타입
+// (order.detected, work.step, excel.activity, kakao.intel, screen.analyzed, file.change, excel.sheet, messenger.work 등 업무 이벤트는 보존)
 const NOISE_TELEMETRY_TYPES = [
   'screen.capture',
   'mouse.chunk',
   'mouse_click',
+  'mouse.watcher.started',
   'keyboard.chunk',
   'clipboard.change',
   'daemon.update',
   'daemon.heartbeat',
   'daemon.log.snapshot',
   'daemon.perf.issue',
+  'daemon.healed',
+  'daemon.diag',
+  'daemon.crashmoment',
+  'daemon.crash',
+  'daemon.screendiag',
+  'privacy.stats',
+  'install.selftest',
   'window.focus',
   'app.switch',
+  'idle',
   'idle.start',
   'idle.end',
   'work.action',
@@ -106,29 +116,41 @@ function isProtectedEvent(row) {
  * 명시적 보존 정책 해석:
  *   ARCHIVE_REQUIRE_DRIVE_BACKUP=true|1|strict : Drive 백업 없으면 절대 삭제 금지
  *   ARCHIVE_REQUIRE_DRIVE_BACKUP=false|0|off   : Drive 미구성 시 만료 노이즈 텔레메트리 비잠금 배치 정리 허용
- *   미설정 / auto (기본)                        : Drive 구성 시 Drive 우선, Drive 미구성 & PG 임계치 초과 시 노이즈만 정리
+ *   미설정 / auto (기본)                        : GOOGLE_SERVICE_ACCOUNT_JSON + GOOGLE_DRIVE_CAPTURES_FOLDER_ID 모두 설정 시 Drive 우선,
+ *                                               Drive 미구성(폴더 ID 미설정 포함)이거나 PG 임계치 초과 상태에서 Drive 백업 실패/0건 시 노이즈만 정리
  */
+function isDriveArchiveConfigured(env = process.env) {
+  return Boolean(
+    env.GOOGLE_SERVICE_ACCOUNT_JSON && String(env.GOOGLE_SERVICE_ACCOUNT_JSON).trim() &&
+    env.GOOGLE_DRIVE_CAPTURES_FOLDER_ID && String(env.GOOGLE_DRIVE_CAPTURES_FOLDER_ID).trim()
+  );
+}
+
 function resolveRetentionPolicy({
   sizeMB = 0,
-  driveConfigured = !!process.env.GOOGLE_SERVICE_ACCOUNT_JSON,
+  driveConfigured = undefined,
+  driveBackupFailed = false,
+  verifiedBatches = null,
   env = process.env,
 } = {}) {
+  const isDriveReady = driveConfigured !== undefined ? Boolean(driveConfigured) : isDriveArchiveConfigured(env);
   const raw = String(env.ARCHIVE_REQUIRE_DRIVE_BACKUP ?? 'auto').trim().toLowerCase();
   const pgThresholdMB = parseInt(env.PG_DIET_THRESHOLD_MB || env.ARCHIVE_PG_THRESHOLD_MB || String(PG_DIET_THRESHOLD_MB), 10) || PG_DIET_THRESHOLD_MB;
 
   if (raw === 'true' || raw === '1' || raw === 'strict') {
-    return { requireDriveBackup: true, allowNoiseRetention: false, mode: 'strict_drive_required', pgThresholdMB, driveConfigured };
+    return { requireDriveBackup: true, allowNoiseRetention: false, mode: 'strict_drive_required', pgThresholdMB, driveConfigured: isDriveReady };
   }
   if (raw === 'false' || raw === '0' || raw === 'off') {
-    return { requireDriveBackup: false, allowNoiseRetention: true, mode: 'retention_without_drive', pgThresholdMB, driveConfigured };
+    return { requireDriveBackup: false, allowNoiseRetention: true, mode: 'retention_without_drive', pgThresholdMB, driveConfigured: isDriveReady };
   }
-  if (!driveConfigured && Number(sizeMB) >= pgThresholdMB) {
-    return { requireDriveBackup: false, allowNoiseRetention: true, mode: 'pg_threshold_noise_retention', pgThresholdMB, driveConfigured };
+  const overThreshold = Number(sizeMB) >= pgThresholdMB;
+  if (overThreshold && (!isDriveReady || driveBackupFailed || verifiedBatches === 0)) {
+    return { requireDriveBackup: false, allowNoiseRetention: true, mode: 'pg_threshold_noise_retention', pgThresholdMB, driveConfigured: isDriveReady };
   }
-  if (driveConfigured) {
-    return { requireDriveBackup: true, allowNoiseRetention: false, mode: 'drive_archive_primary', pgThresholdMB, driveConfigured };
+  if (isDriveReady) {
+    return { requireDriveBackup: true, allowNoiseRetention: false, mode: 'drive_archive_primary', pgThresholdMB, driveConfigured: isDriveReady };
   }
-  return { requireDriveBackup: true, allowNoiseRetention: false, mode: 'drive_unconfigured_below_threshold', pgThresholdMB, driveConfigured };
+  return { requireDriveBackup: true, allowNoiseRetention: false, mode: 'drive_unconfigured_below_threshold', pgThresholdMB, driveConfigured: isDriveReady };
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -456,7 +478,11 @@ async function _archiveUser(pool, userId, cutoffDate, opts = {}) {
 
   // Drive 백업 미확인 시 명시적 보존 정책(ARCHIVE_REQUIRE_DRIVE_BACKUP) 평가
   if (!driveFileId) {
-    const policy = resolveRetentionPolicy({ sizeMB: opts.sizeMB || 0, driveConfigured: saEnabled });
+    const policy = resolveRetentionPolicy({
+      sizeMB: opts.sizeMB || 0,
+      driveConfigured: isDriveArchiveConfigured(),
+      driveBackupFailed: saEnabled,
+    });
     if (opts.allowNoiseRetention === true || policy.allowNoiseRetention) {
       const deletable = rows.filter((r) => NOISE_TELEMETRY_TYPES.includes(r.type) && !isProtectedEvent(r));
       const preservedRows = rows.length - deletable.length;
@@ -567,7 +593,8 @@ async function checkAndArchive(pool, opts = {}) {
     console.log(`[archiver] events 테이블: ${stats.rows.toLocaleString()}행 (${stats.sizePretty})`);
 
     const sizeMB = Math.round(stats.sizeBytes / 1024 / 1024);
-    const policy = resolveRetentionPolicy({ sizeMB, driveConfigured: !!process.env.GOOGLE_SERVICE_ACCOUNT_JSON });
+    const driveReady = isDriveArchiveConfigured();
+    const policy = resolveRetentionPolicy({ sizeMB, driveConfigured: driveReady });
     if (stats.rows < THRESHOLD && sizeMB < policy.pgThresholdMB) {
       console.log(`[archiver] 임계값 미만 — 스킵 (현재: ${stats.rows}행, ${sizeMB}MB)`);
       return { skipped: true, rows: stats.rows, sizeMB, threshold: THRESHOLD, policyMode: policy.mode };
@@ -609,7 +636,13 @@ async function checkAndArchive(pool, opts = {}) {
     }
 
     // Drive 미구성이거나 Drive 아카이브 0건이고 정책상 노이즈 정리가 허용된 경우 비잠금 배치 정리 실행
-    if ((!policy.driveConfigured || totalArchived === 0) && policy.allowNoiseRetention) {
+    const fallbackPolicy = resolveRetentionPolicy({
+      sizeMB,
+      driveConfigured: policy.driveConfigured,
+      driveBackupFailed: policy.driveConfigured && totalArchived === 0,
+      verifiedBatches: totalArchived === 0 ? 0 : null,
+    });
+    if ((!policy.driveConfigured || totalArchived === 0) && (policy.allowNoiseRetention || fallbackPolicy.allowNoiseRetention)) {
       const pruneRes = await pruneExpiredNoiseEvents(pool, cutoffIso, {
         batchSize: opts.batchSize || BATCH_SIZE,
         maxBatches: opts.maxBatches || 20,
@@ -666,7 +699,11 @@ async function deleteVerifiedArchivedEvents(pool, cutoffIso, {
 } = {}) {
   if (!pool?.query) return { skipped: true, reason: 'no_pool', deleted: 0, verifiedBatches: 0 };
   const safeCutoffIso = normalizeCutoffIso(cutoffIso);
-  const policy = resolveRetentionPolicy({ sizeMB, driveConfigured: !!process.env.GOOGLE_SERVICE_ACCOUNT_JSON });
+  const policy = resolveRetentionPolicy({
+    sizeMB,
+    driveConfigured: isDriveArchiveConfigured(),
+    verifiedBatches: 0,
+  });
   const canNoiseFallback = allowNoiseFallback === true || policy.allowNoiseRetention;
 
   let verifiedBatches = 0;
@@ -753,6 +790,7 @@ module.exports = {
   deleteVerifiedArchivedEvents,
   pruneExpiredNoiseEvents,
   resolveRetentionPolicy,
+  isDriveArchiveConfigured,
   buildSafeCutoffClause,
   safeTextTimestampExpr,
   normalizeCutoffIso,
