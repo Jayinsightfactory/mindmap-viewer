@@ -4,7 +4,9 @@
  * 인터페이스는 db.js 와 동일 (drop-in replacement)
  */
 const { Pool } = require('pg');
+const crypto = require('crypto');
 const { ulid } = require('ulid');
+const DEFAULT_LEGACY_WORKSPACE_ID = 'WS-NENOVA-2026';
 const { createPgOps } = require('./db-user-ops');
 const { sharedAsyncCache } = require('./shared-async-cache');
 
@@ -51,6 +53,203 @@ async function waitForTables() {
   if (_tablesReady) await _tablesReady;
 }
 
+// ─── PG RLS 트랜잭션 로컬 테넌트 헬퍼 (풀 누수 방지) ────────────────────────
+// 주의: pool.query('SET app.tenant_id = ...') 세션 레벨 설정은 커넥션 풀 누수 위험이 있으므로 절대 금지.
+// 반드시 전용 client 체크아웃 → BEGIN → set_config(..., true) → COMMIT/ROLLBACK → release() 패턴만 사용.
+async function withTenant(workspaceId, fn, customPool = null) {
+  const wsId = typeof workspaceId === 'string' ? workspaceId.trim() : '';
+  if (!wsId) {
+    throw new Error('withTenant requires a non-empty workspaceId');
+  }
+  if (typeof fn !== 'function') {
+    throw new Error('withTenant requires a callback function');
+  }
+  const activePool = customPool || pool;
+  if (!activePool || typeof activePool.connect !== 'function') {
+    throw new Error('PostgreSQL pool is not initialized');
+  }
+  const client = await activePool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query("SELECT set_config('app.rls_bypass', 'off', true)");
+    await client.query("SELECT set_config('app.tenant_id', $1, true)", [wsId]);
+    const result = await fn(client);
+    await client.query('COMMIT');
+    return result;
+  } catch (err) {
+    try { await client.query('ROLLBACK'); } catch {}
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+async function withSystemBypass(fn, customPool = null) {
+  if (typeof fn !== 'function') {
+    throw new Error('withSystemBypass requires a callback function');
+  }
+  const activePool = customPool || pool;
+  if (!activePool || typeof activePool.connect !== 'function') {
+    throw new Error('PostgreSQL pool is not initialized');
+  }
+  const client = await activePool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query("SELECT set_config('app.rls_bypass', 'on', true)");
+    await client.query("SELECT set_config('app.tenant_id', '', true)");
+    const result = await fn(client);
+    await client.query('COMMIT');
+    return result;
+  } catch (err) {
+    try { await client.query('ROLLBACK'); } catch {}
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+const _workspaceCache = new Map();
+const _WORKSPACE_CACHE_TTL_MS = 60 * 1000;
+const _WORKSPACE_CACHE_MAX = 2000;
+
+function clearWorkspaceCache() {
+  _workspaceCache.clear();
+}
+
+function _cacheWorkspace(key, value) {
+  if (!key || !value) return;
+  if (!_workspaceCache.has(key) && _workspaceCache.size >= _WORKSPACE_CACHE_MAX) {
+    _workspaceCache.delete(_workspaceCache.keys().next().value);
+  }
+  _workspaceCache.set(key, { value, at: Date.now() });
+}
+
+function _readCachedWorkspace(key) {
+  if (!key) return null;
+  const hit = _workspaceCache.get(key);
+  if (!hit) return null;
+  if (Date.now() - hit.at >= _WORKSPACE_CACHE_TTL_MS) {
+    _workspaceCache.delete(key);
+    return null;
+  }
+  return hit.value;
+}
+
+function _hashTokenKey(token) {
+  return 't:' + crypto.createHash('sha256').update(String(token)).digest('hex').slice(0, 24);
+}
+
+function _isLegacyNenovaDevice({ hostname, token, userId, requestedWorkspaceId }) {
+  // Explicit non-legacy workspace header/body without DB mapping should NOT silently inherit Nenova fallback
+  if (requestedWorkspaceId && String(requestedWorkspaceId).trim() && String(requestedWorkspaceId).trim() !== DEFAULT_LEGACY_WORKSPACE_ID) {
+    return false;
+  }
+  // Existing Nenova employee PC daemons identify via hostname, token, pc_*/local userId, or default hook call
+  return Boolean(hostname || token || userId || !requestedWorkspaceId);
+}
+
+/**
+ * RLS/insert 전 장치·토큰·사용자 기준 workspace_id 선결정.
+ * 우선순위: orbit_pc_links(hostname) → orbit_auth_tokens(token) → workspace_members(userId)
+ * → 기존 레거시 네노바 장치만 DEFAULT_LEGACY_WORKSPACE_ID('WS-NENOVA-2026') 폴백.
+ */
+async function resolveWorkspaceId({
+  pool: customPool = null,
+  hostname = '',
+  token = '',
+  userId = '',
+  requestedWorkspaceId = '',
+  legacyFallback = true,
+  useCache = true,
+} = {}) {
+  const host = typeof hostname === 'string' ? hostname.trim() : '';
+  const tok = typeof token === 'string' ? token.trim() : '';
+  const uid = typeof userId === 'string' ? userId.trim() : '';
+  const reqWs = typeof requestedWorkspaceId === 'string' ? requestedWorkspaceId.trim() : '';
+
+  const hostKey = host ? 'h:' + host.toLowerCase() : '';
+  const tokKey = tok ? _hashTokenKey(tok) : '';
+  const uidKey = uid && uid !== 'local' && !uid.startsWith('pc_') ? 'u:' + uid : '';
+
+  if (useCache) {
+    const cached = _readCachedWorkspace(hostKey) || _readCachedWorkspace(tokKey) || _readCachedWorkspace(uidKey);
+    if (cached) return { workspaceId: cached.workspaceId, source: cached.source + ':cache' };
+  }
+
+  const activePool = customPool || pool;
+  const runLookup = async (executor) => {
+    if (host) {
+      try {
+        const r = await executor.query(
+          "SELECT workspace_id FROM orbit_pc_links WHERE hostname = $1 AND workspace_id IS NOT NULL AND TRIM(workspace_id) <> '' LIMIT 1",
+          [host]
+        );
+        const ws = r?.rows?.[0]?.workspace_id?.trim();
+        if (ws) return { workspaceId: ws, source: 'orbit_pc_links' };
+      } catch (_) {
+        // orbit_pc_links 또는 workspace_id 컬럼 미적용 시 다음 단계로 안전 진행
+      }
+    }
+
+    if (tok) {
+      try {
+        const r = await executor.query(
+          "SELECT workspace_id FROM orbit_auth_tokens WHERE token = $1 AND workspace_id IS NOT NULL AND TRIM(workspace_id) <> '' LIMIT 1",
+          [tok]
+        );
+        const ws = r?.rows?.[0]?.workspace_id?.trim();
+        if (ws) return { workspaceId: ws, source: 'orbit_auth_tokens' };
+      } catch (_) {
+        // orbit_auth_tokens 또는 workspace_id 컬럼 미적용 시 다음 단계로 안전 진행
+      }
+    }
+
+    if (uid && uid !== 'local' && !uid.startsWith('pc_')) {
+      try {
+        const r = await executor.query(
+          "SELECT workspace_id FROM workspace_members WHERE user_id = $1 AND (status IS NULL OR status = 'active') ORDER BY joined_at ASC LIMIT 1",
+          [uid]
+        );
+        const ws = r?.rows?.[0]?.workspace_id?.trim();
+        if (ws) return { workspaceId: ws, source: 'workspace_members' };
+      } catch (_) {
+        // workspace_members 조회 불가 시 다음 단계로
+      }
+    }
+
+    return null;
+  };
+
+  let resolved = null;
+  if (activePool) {
+    try {
+      if (typeof activePool.connect === 'function') {
+        resolved = await withSystemBypass(runLookup, activePool);
+      } else if (typeof activePool.query === 'function') {
+        resolved = await runLookup(activePool);
+      }
+    } catch (_) {
+      // fail-open for legacy Nenova devices below
+    }
+  }
+
+  if (resolved && resolved.workspaceId) {
+    if (useCache) {
+      if (hostKey) _cacheWorkspace(hostKey, resolved);
+      if (tokKey) _cacheWorkspace(tokKey, resolved);
+      if (uidKey) _cacheWorkspace(uidKey, resolved);
+    }
+    return resolved;
+  }
+
+  if (legacyFallback !== false && _isLegacyNenovaDevice({ hostname: host, token: tok, userId: uid, requestedWorkspaceId: reqWs })) {
+    return { workspaceId: DEFAULT_LEGACY_WORKSPACE_ID, source: 'legacy_nenova_fallback' };
+  }
+
+  return { workspaceId: null, source: 'unmapped' };
+}
+
+
 // [2026-11-20 무중단 락 보호] 배포 교체 시 구 컨테이너의 잔여 SELECT 때문에 DDL이 ACCESS EXCLUSIVE 락을
 // 무한 대기하며 부팅(waitForTables)이 600초 고착되던 장애(#62) 재발 방지: 전용 세션에 lock_timeout='5s' 적용.
 async function _queryWithLockTimeout(sql, lockTimeout = '5s') {
@@ -86,6 +285,7 @@ async function createTables() {
       timestamp TEXT NOT NULL,
       data_json JSONB NOT NULL DEFAULT '{}',
       metadata_json JSONB DEFAULT '{}',
+      workspace_id TEXT NOT NULL DEFAULT 'WS-NENOVA-2026',
       created_at TIMESTAMPTZ DEFAULT NOW()
     );
 
@@ -131,7 +331,8 @@ async function createTables() {
       project_dir TEXT,
       event_count INTEGER DEFAULT 0,
       status TEXT DEFAULT 'active',
-      title TEXT
+      title TEXT,
+      workspace_id TEXT NOT NULL DEFAULT 'WS-NENOVA-2026'
     );
 
     DO $$ BEGIN
@@ -460,12 +661,13 @@ function _jsonbSafe(v) {
   return JSON.stringify(v, (k, x) => (typeof x === 'string' && x.includes('\u0000')) ? x.replace(/\u0000/g, '') : x);
 }
 
-async function insertEvent(event) {
+async function insertEvent(event, opts = {}) {
   // session_id NOT NULL 대응: 트래커 이벤트에 session_id 없을 수 있음
   const sessionId = event.sessionId || `auto-${Date.now()}`;
   // NOT NULL 컬럼 방어: source, type, timestamp가 없으면 기본값
   const source = event.source || 'daemon';
   const type = event.type || 'unknown';
+  const workspaceId = (event.workspaceId || event.workspace_id || opts.workspaceId || DEFAULT_LEGACY_WORKSPACE_ID);
   // 클라이언트(PC) 시계 손상 방어 — 실측: DESKTOP-L0C2IOT가 시스템 시계 손상으로 timestamp=9024년을
   // 그대로 보내 last_seen/정렬/신선도 판단을 전부 왜곡. 서버 수신시각 기준 상식 범위를 벗어나면 대체.
   const _rawTs = event.timestamp ? new Date(event.timestamp).getTime() : NaN;
@@ -475,51 +677,102 @@ async function insertEvent(event) {
     : new Date(_now).toISOString();
   const dataJson = typeof event.data === 'string' ? JSON.parse(event.data) : (event.data || {});
   const metaJson = typeof event.metadata === 'string' ? JSON.parse(event.metadata) : (event.metadata || {});
-  // ON CONFLICT 대신 EXISTS 체크 (PK 없는 테이블 호환)
-  const { rowCount } = await pool.query(
-    `INSERT INTO events (id, type, source, session_id, user_id, channel_id, parent_event_id, timestamp, data_json, metadata_json)
-     SELECT $1,$2,$3,$4,$5,$6,$7,$8,$9,$10
-     WHERE NOT EXISTS (SELECT 1 FROM events WHERE id = $1)`,
-    [
-    event.id, type, source,
-    sessionId, event.userId || 'local', event.channelId || 'default',
-    event.parentEventId || null, timestamp,
-    _jsonbSafe(dataJson), _jsonbSafe(metaJson),
-  ]);
-  // sessionId를 이벤트에 반영 (upsertSession에서 사용)
   event.sessionId = sessionId;
+  event.workspaceId = workspaceId;
 
-  await upsertSession(event);
+  const execInsert = async (executor, includeWorkspaceCol) => {
+    if (includeWorkspaceCol) {
+      await executor.query(
+        `INSERT INTO events (id, type, source, session_id, user_id, channel_id, parent_event_id, timestamp, data_json, metadata_json, workspace_id)
+         SELECT $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11
+         WHERE NOT EXISTS (SELECT 1 FROM events WHERE id = $1)`,
+        [
+          event.id, type, source,
+          sessionId, event.userId || 'local', event.channelId || 'default',
+          event.parentEventId || null, timestamp,
+          _jsonbSafe(dataJson), _jsonbSafe(metaJson), workspaceId,
+        ]
+      );
+    } else {
+      await executor.query(
+        `INSERT INTO events (id, type, source, session_id, user_id, channel_id, parent_event_id, timestamp, data_json, metadata_json)
+         SELECT $1,$2,$3,$4,$5,$6,$7,$8,$9,$10
+         WHERE NOT EXISTS (SELECT 1 FROM events WHERE id = $1)`,
+        [
+          event.id, type, source,
+          sessionId, event.userId || 'local', event.channelId || 'default',
+          event.parentEventId || null, timestamp,
+          _jsonbSafe(dataJson), _jsonbSafe(metaJson),
+        ]
+      );
+    }
 
-  if (event.data?.filePath) {
-    await upsertFile(event.data.filePath, event.data.fileName, event.data.language, event.timestamp);
-  }
-  if (event.data?.files) {
-    for (const f of event.data.files) {
-      if (f && !f.startsWith('[')) {
-        const name = f.replace(/\\/g, '/').split('/').pop();
-        await upsertFile(f, name, null, event.timestamp);
+    await upsertSession(event, executor, includeWorkspaceCol);
+
+    if (event.data?.filePath) {
+      await upsertFile(event.data.filePath, event.data.fileName, event.data.language, event.timestamp, executor);
+    }
+    if (event.data?.files) {
+      for (const f of event.data.files) {
+        if (f && !f.startsWith('[')) {
+          const name = f.replace(/\\/g, '/').split('/').pop();
+          await upsertFile(f, name, null, event.timestamp, executor);
+        }
       }
+    }
+  };
+
+  const runWithOptionalTenant = async (includeWorkspaceCol) => {
+    if (pool && typeof pool.connect === 'function') {
+      return withTenant(workspaceId, (client) => execInsert(client, includeWorkspaceCol));
+    }
+    return execInsert(pool, includeWorkspaceCol);
+  };
+
+  try {
+    await runWithOptionalTenant(true);
+  } catch (e) {
+    if (e && e.code === '42703') {
+      // 0021 마이그레이션 적용 직전 무중단 폴백
+      await runWithOptionalTenant(false);
+    } else {
+      throw e;
     }
   }
 }
 
-async function upsertSession(event) {
+async function upsertSession(event, executor = null, includeWorkspaceCol = true) {
+  const dbExec = executor || pool;
+  const workspaceId = event.workspaceId || event.workspace_id || DEFAULT_LEGACY_WORKSPACE_ID;
   if (event.type === 'session.start') {
-    await pool.query(`
-      INSERT INTO sessions (id, user_id, channel_id, started_at, source, model_id, project_dir, event_count, status)
-      VALUES ($1,$2,$3,$4,$5,$6,$7,1,'active')
-      ON CONFLICT (id) DO UPDATE SET status='active'
-    `, [event.sessionId, event.userId || 'local', event.channelId || 'default', event.timestamp,
-        event.data.source || null, event.data.modelId || null, event.data.projectDir || null]);
-  } else if (event.type === 'session.end') {
-    await pool.query(`UPDATE sessions SET ended_at=$1, status='ended' WHERE id=$2`, [event.timestamp, event.sessionId]);
-  } else {
-    const { rows } = await pool.query('SELECT id FROM sessions WHERE id=$1', [event.sessionId]);
-    if (rows.length > 0) {
-      await pool.query('UPDATE sessions SET event_count=event_count+1 WHERE id=$1', [event.sessionId]);
+    if (includeWorkspaceCol) {
+      await dbExec.query(`
+        INSERT INTO sessions (id, user_id, channel_id, started_at, source, model_id, project_dir, event_count, status, workspace_id)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,1,'active',$8)
+        ON CONFLICT (id) DO UPDATE SET status='active'
+      `, [event.sessionId, event.userId || 'local', event.channelId || 'default', event.timestamp,
+          event.data?.source || null, event.data?.modelId || null, event.data?.projectDir || null, workspaceId]);
     } else {
-      await pool.query(`
+      await dbExec.query(`
+        INSERT INTO sessions (id, user_id, channel_id, started_at, source, model_id, project_dir, event_count, status)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,1,'active')
+        ON CONFLICT (id) DO UPDATE SET status='active'
+      `, [event.sessionId, event.userId || 'local', event.channelId || 'default', event.timestamp,
+          event.data?.source || null, event.data?.modelId || null, event.data?.projectDir || null]);
+    }
+  } else if (event.type === 'session.end') {
+    await dbExec.query(`UPDATE sessions SET ended_at=$1, status='ended' WHERE id=$2`, [event.timestamp, event.sessionId]);
+  } else {
+    const { rows } = await dbExec.query('SELECT id FROM sessions WHERE id=$1', [event.sessionId]);
+    if (rows.length > 0) {
+      await dbExec.query('UPDATE sessions SET event_count=event_count+1 WHERE id=$1', [event.sessionId]);
+    } else if (includeWorkspaceCol) {
+      await dbExec.query(`
+        INSERT INTO sessions (id, user_id, channel_id, started_at, event_count, status, workspace_id)
+        VALUES ($1,$2,$3,$4,1,'active',$5)
+      `, [event.sessionId, event.userId || 'local', event.channelId || 'default', event.timestamp, workspaceId]);
+    } else {
+      await dbExec.query(`
         INSERT INTO sessions (id, user_id, channel_id, started_at, event_count, status)
         VALUES ($1,$2,$3,$4,1,'active')
       `, [event.sessionId, event.userId || 'local', event.channelId || 'default', event.timestamp]);
@@ -527,8 +780,9 @@ async function upsertSession(event) {
   }
 }
 
-async function upsertFile(filePath, fileName, language, timestamp) {
-  await pool.query(`
+async function upsertFile(filePath, fileName, language, timestamp, executor = null) {
+  const dbExec = executor || pool;
+  await dbExec.query(`
     INSERT INTO files (path, name, language, first_seen_at, last_accessed_at)
     VALUES ($1,$2,$3,$4,$4)
     ON CONFLICT (path) DO UPDATE SET last_accessed_at=$4, access_count=files.access_count+1
@@ -757,6 +1011,7 @@ function deserializeEvent(row) {
     id: row.id, type: row.type, source: row.source,
     sessionId: row.session_id, userId: row.user_id, channelId: row.channel_id,
     parentEventId: row.parent_event_id, timestamp: row.timestamp,
+    ...(row.workspace_id !== undefined ? { workspaceId: row.workspace_id } : {}),
     data, metadata, aiSource,
   };
 }
@@ -1036,6 +1291,7 @@ async function updateWorkspaceActivityStrength(workspaceId, userId1, userId2, st
 
 module.exports = {
   initDatabase, getDb, waitForTables,
+  DEFAULT_LEGACY_WORKSPACE_ID, withTenant, withSystemBypass, resolveWorkspaceId, clearWorkspaceCache,
   insertEvent, getAllEvents, getEventsBySession, getEventsByChannel, getEventsByType, searchEvents,
   getSessions, getFiles, getAnnotations, insertAnnotation, deleteAnnotation,
   rollbackToEvent, clearAll, getStats, upsertFile,

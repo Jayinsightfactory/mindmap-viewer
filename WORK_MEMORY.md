@@ -2536,3 +2536,12 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 3. 남은 일: ① 잘못 묶인 두 줄 바로잡기 = 관리자 주소로 CAA5TA1·HGNEA1S 를 맞는 번호에 다시 묶기(운영 DB 쓰기 — 사장님 승인 뒤). 그 전까지 두 자리 기록은 계속 다른 번호로 쌓인다. ② 잘못 쌓인 기록(CAA5TA1→MNMR8568 1,641건, HGNEA1S→MNMR52II 9,964건, 11-23~11-24 15:02 KST 기준) 옮기기는 따로 승인. ③ #113 합치기 전에는 analyze-routines2.js 같은 원문 대량 조회가 서버를 다시 죽일 수 있음(묶음 쪽은 주 단위 조회로 바꿈).
 4. 검증: 전체 jest 352 통과/2 실패(이 PC tar 문제, 원본 main 동일), node --check, pstack-verify PASS. 미검증: 운영에서 썸네일 뺀 조회의 실제 크기·시간, work-daylog 화면이 24MB 초과 날에 그림 없이 뜨는지, link-pc 409 가 웹 화면에서 어떻게 보이는지.
 5. 주의: 근거 — Railway 로그 11-23 22:05:14Z·11-24 05:53:41Z `FATAL ERROR: Reached heap limit`, 직전 /api/learning/logs 응답 137MB(tx=137196128). 자동 분류 로그 11-23 07:49:37Z `auto-classify DESKTOP-HGNEA1S → MNMR52II…(name_map)`, 08:57:07Z `DESKTOP-CAA5TA1 → MNMR8568…(direct_map)`. 원격 명령·운영 DB 쓰기 없음. 연결 목표: g01 / 학습 반영: 없음
+
+
+## 2026-11-25 Phase 0 서버 전용 PG RLS · 30일 삭제 데드락 해소 · PG 다이어트 CLI
+검색어: 0021 RLS workspace_id WS-NENOVA-2026 withTenant withSystemBypass resolveWorkspaceId event-archiver ARCHIVE_REQUIRE_DRIVE_BACKUP pg-diet-inspect CONCURRENTLY
+1. 작업 위치: mindmap-viewer / 브랜치 fix/phase0-rls-and-retention-diet / worktree C:/Users/USER/mv-agy-phase0-rls (직원 PC 데몬 파일 0건 수정).
+2. 완료된 것: ① migrations/0021_phase0_workspace_rls_and_retention.sql 및 .down.sql 추가(events·sessions·kakao_messages·messenger_messages에 workspace_id NOT NULL DEFAULT 'WS-NENOVA-2026', PG RLS 정책, 비잠금 CONCURRENTLY 복합 인덱스) 및 src/migrate.js(.down.sql 제외 + CONCURRENTLY 문장 분리 실행). ② src/db-pg.js에 풀 누수 없는 트랜잭션 로컬 withTenant/withSystemBypass·resolveWorkspaceId 추가 및 server.js /api/hook·/api/daemon/* 워크스페이스 선결정 연동(레거시 네노바 PC 자동 WS-NENOVA-2026 폴백). ③ src/event-archiver.js + server.js 30일 삭제 버그 수정(안전한 ISO/정규식 TEXT→TIMESTAMPTZ 캐스팅, ARCHIVE_REQUIRE_DRIVE_BACKUP 정책 및 PG 임계치 초과 시 골든/감사/검증 보존 + 만료 노이즈 LIMIT 5000 + pg_sleep(0.1) 비잠금 정리). ④ scripts/pg-diet-inspect.js CLI(--dry-run 기본 진단, --apply 비잠금 배치 + VACUUM ANALYZE) 및 tests/unit/phase0-rls-and-retention.test.js 추가.
+3. 남은 할 일: PR CI 통과 후 squash 머지 및 라이브 /health HTTP 200 확인, 필요 시 운영 PG에 scripts/pg-diet-inspect.js --dry-run 진단 후 단계적 --apply 실행.
+4. 검증 상태: Jest 36개 스위트 370/370 통과, node --check 전 파일 통과, pstack-verify PASS, git diff origin/main 기준 직원 PC 데몬 파일 0건.
+5. 주의/잠금: main push 시 Railway 자동배포 및 직원 PC 데몬 동기화가 발생하므로 서버 전용 diff 및 /health 200 즉시 확인 필수. VACUUM FULL 미사용. 연결 목표: g15, g18 / 학습 반영: 반영(Drive 미설정 30일 삭제 데드락·TEXT timestamp 캐스팅 오류·migrate.js .down.sql 실행 방지·CONCURRENTLY 비잠금 인덱스)

@@ -106,6 +106,32 @@ const {
   touchTrackerPing, getTrackerPing,
 } = dbModule;
 
+// ─── 워크스페이스 선결정 & RLS 실행 헬퍼 (Phase 0) ─────────────────────────
+const DEFAULT_LEGACY_WORKSPACE_ID = dbModule.DEFAULT_LEGACY_WORKSPACE_ID || 'WS-NENOVA-2026';
+async function _resolveRequestWorkspaceId(req, { pool = null, hostname = '', token = '', userId = '' } = {}) {
+  const requestedWorkspaceId = (req?.headers?.['x-workspace-id'] || req?.body?.workspaceId || req?.query?.workspaceId || '').toString().trim();
+  if (typeof dbModule.resolveWorkspaceId === 'function' && process.env.DATABASE_URL) {
+    try {
+      const r = await dbModule.resolveWorkspaceId({
+        pool: pool || (dbModule.getDb ? dbModule.getDb() : null),
+        hostname,
+        token,
+        userId,
+        requestedWorkspaceId,
+      });
+      if (r && r.workspaceId) return r.workspaceId;
+    } catch (_) {}
+  }
+  return DEFAULT_LEGACY_WORKSPACE_ID;
+}
+async function _runTenantQuery(workspaceId, fn, fallbackPool = null) {
+  const activePool = fallbackPool || (dbModule.getDb ? dbModule.getDb() : null);
+  if (process.env.DATABASE_URL && typeof dbModule.withTenant === 'function' && activePool && typeof activePool.connect === 'function') {
+    return dbModule.withTenant(workspaceId || DEFAULT_LEGACY_WORKSPACE_ID, fn, activePool);
+  }
+  return fn(activePool);
+}
+
 // ─── 사용자별 데이터 격리 헬퍼 ──────────────────────────────────────────────
 // 로그인 유저 → 본인 이벤트만, 비로그인/로컬 → 개발모드만 전체
 const MAX_EVENTS_LOAD = env.MAX_EVENTS_LOAD;
@@ -2578,13 +2604,14 @@ app.post('/api/daemon/excel-ingest', async (req, res) => {
     let ingUser = null;
     try { ingUser = token ? await require('./src/auth').verifyTokenAsync(token) : null; } catch {}
     let userId = ingUser ? ingUser.id : (deviceId ? `pc_${deviceId}` : 'local');
+    const _excelPool = dbModule.getDb ? dbModule.getDb() : null;
     try {
-      const _pool = dbModule.getDb ? dbModule.getDb() : null;
-      if (_pool && process.env.DATABASE_URL && deviceId) {
-        const _pl = await _pcLinkCache.resolve(_pool, deviceId); // /api/hook 과 같은 캐시(조회 실패 시 마지막 성공값)
+      if (_excelPool && process.env.DATABASE_URL && deviceId) {
+        const _pl = await _pcLinkCache.resolve(_excelPool, deviceId); // /api/hook 과 같은 캐시(조회 실패 시 마지막 성공값)
         if (_pl.userId) userId = _pl.userId;
       }
     } catch {}
+    const excelWorkspaceId = await _resolveRequestWorkspaceId(req, { pool: _excelPool, hostname: deviceId, token, userId });
 
     // ── 파싱 (xlsx: 기존 의존성) ─────────────────────────────────────────────
     const buf = Buffer.from(fileBase64, 'base64');
@@ -2629,6 +2656,7 @@ app.post('/api/daemon/excel-ingest', async (req, res) => {
         source: 'excel-collector',
         sessionId: `excel-${deviceId || 'unknown'}`,
         userId,
+        workspaceId: excelWorkspaceId,
         timestamp: ts,
         data: {
           file: filename,
@@ -2774,12 +2802,15 @@ app.get('/api/daemon/events', async (req, res) => {
     const limit = Math.min(parseInt(req.query.limit) || 50, 500);
     let rows = [];
     if (process.env.DATABASE_URL) {
-      // PostgreSQL
+      // PostgreSQL (workspace RLS 테넌트 컨텍스트)
       const pool = dbModule.getDb();
-      const result = await pool.query(
+      const _dTok = (req.headers.authorization || '').replace('Bearer ', '').trim() || req.headers['x-api-token'] || '';
+      const _dHost = decodeURIComponent(req.headers['x-device-id'] || '') || req.query.hostname || '';
+      const _dWs = await _resolveRequestWorkspaceId(req, { pool, hostname: _dHost, token: _dTok });
+      const result = await _runTenantQuery(_dWs, (c) => c.query(
         "SELECT id, type, user_id, timestamp, data_json FROM events WHERE type LIKE 'daemon.%' OR type LIKE 'install.%' OR type LIKE 'bank.%' ORDER BY timestamp DESC LIMIT $1",
         [limit]
-      );
+      ), pool);
       rows = result.rows;
     } else {
       // SQLite fallback
@@ -2946,32 +2977,36 @@ app.get('/api/daemon/verify-install', async (req, res) => {
     const _pool = dbModule.getDb ? dbModule.getDb() : null;
     if (!_pool) return res.status(500).json({ error: 'db not available' });
 
-    // 1) hostname으로 user_id 조회 (orbit_pc_links 또는 최근 event)
+    // 1) hostname으로 user_id 및 workspace_id 선결정 (orbit_pc_links 또는 최근 event)
     let userId = null;
     try {
       const pl = await _pool.query('SELECT user_id FROM orbit_pc_links WHERE hostname = $1 LIMIT 1', [hostname]);
       if (pl.rows.length) userId = pl.rows[0].user_id;
     } catch {}
+    const _viTok = (req.headers.authorization || '').replace('Bearer ', '').trim() || '';
+    const _viWs = await _resolveRequestWorkspaceId(req, { pool: _pool, hostname, token: _viTok, userId: userId || '' });
+    const { safeTextTimestampExpr } = require('./src/event-archiver');
+    const _safeTs = safeTextTimestampExpr('timestamp');
     if (!userId) {
-      const ev = await _pool.query(
+      const ev = await _runTenantQuery(_viWs, (c) => c.query(
         `SELECT user_id FROM events
          WHERE data_json->>'hostname' = $1 AND user_id NOT LIKE 'pc_%'
-         ORDER BY timestamp::timestamptz DESC LIMIT 1`,
+         ORDER BY ${_safeTs} DESC NULLS LAST LIMIT 1`,
         [hostname]
-      );
+      ), _pool);
       if (ev.rows.length) userId = ev.rows[0].user_id;
     }
 
     // 2) 해당 user의 최근 daemon.heartbeat 1건
     let heartbeat = null;
     if (userId) {
-      const hb = await _pool.query(
+      const hb = await _runTenantQuery(_viWs, (c) => c.query(
         `SELECT timestamp, data_json FROM events
          WHERE user_id = $1 AND type = 'daemon.heartbeat'
-           AND timestamp::timestamptz > NOW() - INTERVAL '5 minutes'
-         ORDER BY timestamp::timestamptz DESC LIMIT 1`,
+           AND ${_safeTs} > NOW() - INTERVAL '5 minutes'
+         ORDER BY ${_safeTs} DESC NULLS LAST LIMIT 1`,
         [userId]
-      );
+      ), _pool);
       if (hb.rows.length) {
         heartbeat = {
           ts: hb.rows[0].timestamp,
@@ -2984,13 +3019,13 @@ app.get('/api/daemon/verify-install', async (req, res) => {
     const recentCounts = {};
     const types = ['daemon.update', 'daemon.heartbeat', 'mouse.watcher.started', 'mouse.chunk', 'screen.capture', 'keyboard.chunk', 'install.selftest'];
     if (userId) {
-      const cnt = await _pool.query(
+      const cnt = await _runTenantQuery(_viWs, (c) => c.query(
         `SELECT type, COUNT(*) as cnt, MAX(timestamp) as last_ts FROM events
          WHERE user_id = $1 AND type = ANY($2)
-           AND timestamp::timestamptz > NOW() - INTERVAL '10 minutes'
+           AND ${_safeTs} > NOW() - INTERVAL '10 minutes'
          GROUP BY type`,
         [userId, types]
-      );
+      ), _pool);
       for (const r of cnt.rows) recentCounts[r.type] = { count: parseInt(r.cnt), lastTs: r.last_ts };
     }
     for (const t of types) if (!recentCounts[t]) recentCounts[t] = { count: 0, lastTs: null };
@@ -3815,14 +3850,26 @@ app.post('/api/daemon/register', async (req, res) => {
       console.log(`[daemon/register] ${hostname} → no match, will use pc_${hostname}`);
     }
 
-    // 4) 등록 이벤트 기록
+    // 4) 등록 이벤트 기록 (workspace_id 선결정 + RLS 테넌트 컨텍스트)
+    const regWorkspaceId = await _resolveRequestWorkspaceId(req, { pool: _pool, hostname, token: matchedToken || '', userId: matchedUserId || '' });
     if (_pool) {
-      _pool.query(
-        // session_id NOT NULL·timestamp(TEXT ISO) 계약 준수 — 예전엔 session_id 누락으로 매번 INSERT 실패(catch 로 묻힘)
-        `INSERT INTO events (id, type, source, session_id, user_id, data_json, timestamp) VALUES ($1, $2, 'daemon', $3, $4, $5, $6)`,
-        [`register-${hostname}-${Date.now()}`, 'daemon.register', `daemon-${hostname}`, matchedUserId || `pc_${hostname}`,
-         JSON.stringify({ hostname, platform, nodeVersion, matchedUserId, autoToken: !!matchedToken }), new Date().toISOString()]
-      ).catch((e) => console.warn('[daemon/register] 이벤트 기록 실패:', e.message));
+      const _regId = `register-${hostname}-${Date.now()}`;
+      const _regUid = matchedUserId || `pc_${hostname}`;
+      const _regData = JSON.stringify({ hostname, platform, nodeVersion, matchedUserId, autoToken: !!matchedToken, workspaceId: regWorkspaceId });
+      const _regTs = new Date().toISOString();
+      _runTenantQuery(regWorkspaceId, (c) => c.query(
+        // session_id NOT NULL·timestamp(TEXT ISO)·workspace_id 계약 준수
+        `INSERT INTO events (id, type, source, session_id, user_id, data_json, timestamp, workspace_id) VALUES ($1, $2, 'daemon', $3, $4, $5, $6, $7)`,
+        [_regId, 'daemon.register', `daemon-${hostname}`, _regUid, _regData, _regTs, regWorkspaceId]
+      ), _pool).catch((e) => {
+        if (e && e.code === '42703') {
+          return _pool.query(
+            `INSERT INTO events (id, type, source, session_id, user_id, data_json, timestamp) VALUES ($1, $2, 'daemon', $3, $4, $5, $6)`,
+            [_regId, 'daemon.register', `daemon-${hostname}`, _regUid, _regData, _regTs]
+          );
+        }
+        console.warn('[daemon/register] 이벤트 기록 실패:', e.message);
+      });
     }
 
     res.json({
@@ -3878,11 +3925,12 @@ app.post('/api/daemon/link-pc', async (req, res) => {
     );
     _pcLinkCache.invalidate(hostname);
 
-    // 2) 기존 pc_hostname 이벤트를 실제 userId로 재매핑
-    await _pool.query(
+    // 2) 기존 pc_hostname 이벤트를 실제 userId로 재매핑 (workspace RLS 컨텍스트)
+    const _linkWs = await _resolveRequestWorkspaceId(req, { pool: _pool, hostname, token, userId: user.id });
+    await _runTenantQuery(_linkWs, (c) => c.query(
       `UPDATE events SET user_id = $1 WHERE user_id = $2`,
       [user.id, `pc_${hostname}`]
-    ).catch(() => {});
+    ), _pool).catch(() => {});
 
     // 3) 데몬에 토큰 push (기존 push-token 로직)
     const newToken = await issueApiTokenAsync(user.id);
@@ -3915,7 +3963,8 @@ app.get('/api/daemon/unlinked-pcs', async (req, res) => {
     const _pool = dbModule.getDb ? dbModule.getDb() : null;
     if (!_pool) return res.json({ pcs: [] });
 
-    const { rows } = await _pool.query(
+    const _unlinkedWs = await _resolveRequestWorkspaceId(req, { pool: _pool, token, userId: user.id });
+    const { rows } = await _runTenantQuery(_unlinkedWs, (c) => c.query(
       `SELECT DISTINCT data_json->>'hostname' AS hostname,
               MAX(timestamp) AS last_seen,
               COUNT(*) AS event_count
@@ -3925,7 +3974,7 @@ app.get('/api/daemon/unlinked-pcs', async (req, res) => {
        GROUP BY data_json->>'hostname'
        ORDER BY last_seen DESC
        LIMIT 20`
-    );
+    ), _pool);
     res.json({ pcs: rows });
   } catch (e) {
     res.json({ pcs: [] });
@@ -4110,6 +4159,16 @@ app.post('/api/hook', async (req, res) => {
       }
     } catch (_) {}
 
+    // RLS/insert 전 orbit_pc_links / orbit_auth_tokens / workspace_members 에서 workspace_id 선결정
+    // (기존 레거시 네노바 11대+ 직원 PC 데몬은 자동으로 'WS-NENOVA-2026' 폴백 — 401/RLS 차단 0건)
+    const _hookPgPool = dbModule.getDb ? dbModule.getDb() : null;
+    const hookWorkspaceId = await _resolveRequestWorkspaceId(req, {
+      pool: _hookPgPool,
+      hostname: deviceId,
+      token: hookToken,
+      userId: hookUserId,
+    });
+
     // DB 저장 (중복 방지) + JSONL 비동기 쓰기
     // imageBase64는 Vision 큐용으로 별도 보관, DB에는 저장하지 않음
     const _imageCache = new Map(); // eventId → imageBase64
@@ -4122,6 +4181,7 @@ app.post('/api/hook', async (req, res) => {
         && _analyzedUserByHost.has(String(event.data.hostname).toLowerCase()))
         ? _analyzedUserByHost.get(String(event.data.hostname).toLowerCase())
         : hookUserId;
+      event.workspaceId = hookWorkspaceId;
       // screen.capture의 imageBase64를 DB 저장 전에 분리 (DB 용량 폭증 방지)
       if (event.type === 'screen.capture' && event.data?.imageBase64) {
         _imageCache.set(event.id, event.data.imageBase64);
@@ -7777,28 +7837,55 @@ async function _getPgUsage(pool) {
   }
 }
 
-async function _purgeTableByTimestamp(pool, tableName, timestampColumn, cutoff, typeColumn, types) {
+async function _purgeTableByTimestamp(pool, tableName, timestampColumn, cutoff, typeColumn, types, { batchSize = 5000, maxBatches = 20, sleepSeconds = 0.1 } = {}) {
   const allowed = {
-    events: { timestamp: 'timestamp', type: 'type' },
-    unified_events: { timestamp: 'timestamp', type: 'type' },
+    events: { timestamp: 'timestamp', type: 'type', isTextColumn: true },
+    unified_events: { timestamp: 'timestamp', type: 'type', isTextColumn: false },
   };
-  if (allowed[tableName]?.timestamp !== timestampColumn || allowed[tableName]?.type !== typeColumn) {
+  const meta = allowed[tableName];
+  if (meta?.timestamp !== timestampColumn || meta?.type !== typeColumn) {
     return { ok: false, skipped: true, reason: 'table or column not allowed', table: tableName };
   }
   if (!(await _tableExists(pool, tableName))) {
     return { ok: true, skipped: true, reason: 'table missing', table: tableName };
   }
+  const { buildSafeCutoffClause, normalizeCutoffIso, PROTECTED_EVENT_TYPES } = require('./src/event-archiver');
+  const cutoffIso = normalizeCutoffIso(cutoff);
+  const whereTs = buildSafeCutoffClause(timestampColumn, '$1', { isTextColumn: meta.isTextColumn });
+  const protectClause = tableName === 'events'
+    ? `AND NOT (${typeColumn} = ANY($3)) AND COALESCE(metadata_json->>'golden', '') <> 'true' AND COALESCE(metadata_json->>'audit', '') <> 'true' AND COALESCE(metadata_json->>'verified', '') <> 'true' AND COALESCE(metadata_json->>'preserve', '') <> 'true'`
+    : '';
+  const countParams = tableName === 'events' ? [cutoffIso, types, PROTECTED_EVENT_TYPES] : [cutoffIso, types];
   const before = await pool.query(
-    `SELECT COUNT(*)::int AS count FROM ${tableName}
-     WHERE ${timestampColumn} < $1 AND ${typeColumn} = ANY($2)`,
-    [cutoff, types]
+    `SELECT COUNT(*)::int AS count FROM ${tableName} WHERE ${whereTs} AND ${typeColumn} = ANY($2) ${protectClause}`,
+    countParams
   );
-  const { rowCount } = await pool.query(
-    `DELETE FROM ${tableName}
-     WHERE ${timestampColumn} < $1 AND ${typeColumn} = ANY($2)`,
-    [cutoff, types]
-  );
-  return { ok: true, table: tableName, cutoff, candidates: before.rows[0]?.count || 0, deleted: rowCount };
+  let deleted = 0;
+  let batchesRun = 0;
+  const safeBatch = Math.min(Math.max(parseInt(batchSize, 10) || 5000, 100), 20000);
+  const safeMax = Math.min(Math.max(parseInt(maxBatches, 10) || 20, 1), 200);
+  for (let i = 0; i < safeMax; i++) {
+    const delParams = tableName === 'events'
+      ? [cutoffIso, types, PROTECTED_EVENT_TYPES, safeBatch]
+      : [cutoffIso, types, safeBatch];
+    const limitRef = tableName === 'events' ? '$4' : '$3';
+    const { rowCount } = await pool.query(
+      `DELETE FROM ${tableName} WHERE ctid IN (
+         SELECT ctid FROM ${tableName}
+         WHERE ${whereTs} AND ${typeColumn} = ANY($2) ${protectClause}
+         LIMIT ${limitRef}
+       )`,
+      delParams
+    );
+    const n = rowCount || 0;
+    deleted += n;
+    batchesRun++;
+    if (n < safeBatch) break;
+    if (sleepSeconds > 0 && i + 1 < safeMax) {
+      await pool.query('SELECT pg_sleep($1)', [sleepSeconds]).catch(() => {});
+    }
+  }
+  return { ok: true, table: tableName, cutoff: cutoffIso, candidates: before.rows[0]?.count || 0, deleted, batchesRun };
 }
 
 async function _runDailyMaintenance(trigger = 'auto') {
@@ -7819,12 +7906,28 @@ async function _runDailyMaintenance(trigger = 'auto') {
       summary.steps.learning = { ok: true, pcs: results.length };
     } catch (e) { summary.steps.learning = { ok: false, error: e.message }; }
 
-    // Step 2: events 30일 이상 삭제 (하드 가드: archive_log.drive_file IS NOT NULL 백업 검증 행만 삭제)
+    // Step 2: events 30일 이상 삭제 (Drive 검증 백업 우선, Drive 미구성/PG 임계치 초과 시 명시적 보존정책에 따라 노이즈만 비잠금 배치 정리)
     try {
-      const cutoff = new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString();
-      const { deleteVerifiedArchivedEvents } = require('./src/event-archiver');
-      const guardRes = await deleteVerifiedArchivedEvents(pool, cutoff, { tag: 'daily-maint' });
-      summary.steps.events_purge = { ok: true, deleted: guardRes.deleted, skipped: guardRes.skipped, reason: guardRes.reason || null, cutoff };
+      const { deleteVerifiedArchivedEvents, KEEP_DAYS, PG_DIET_THRESHOLD_MB } = require('./src/event-archiver');
+      const cutoff = new Date(Date.now() - (KEEP_DAYS || 30) * 24 * 3600 * 1000).toISOString();
+      const sizeMB = Number(summary.databaseBefore?.sizeMB || 0);
+      const allowNoiseFallback = sizeMB >= PG_DIET_THRESHOLD_MB || process.env.ARCHIVE_REQUIRE_DRIVE_BACKUP === 'false';
+      const guardRes = await deleteVerifiedArchivedEvents(pool, cutoff, {
+        tag: 'daily-maint',
+        batchSize: 5000,
+        maxBatches: 30,
+        sleepSeconds: 0.1,
+        sizeMB,
+        allowNoiseFallback,
+      });
+      summary.steps.events_purge = {
+        ok: true,
+        mode: guardRes.mode || null,
+        deleted: guardRes.deleted,
+        skipped: guardRes.skipped,
+        reason: guardRes.reason || null,
+        cutoff,
+      };
     } catch (e) { summary.steps.events_purge = { ok: false, error: e.message }; }
 
     // Step 2B: DB pressure purge.
@@ -10228,13 +10331,26 @@ async function startServer() {
         // events.timestamp 는 TEXT(ISO) — 예전 `timestamp < NOW() - INTERVAL` 은 text<timestamptz 타입 오류로 매일 실패했다.
         // ISO 문자열 컷오프와 비교하면 idx_events_timestamp 를 그대로 탄다.
         // [2026-11-20 하드 가드] archive_log.drive_file IS NOT NULL 백업이 검증된 구간만 배치 삭제(미백업 원본은 30일+ 지나도 절대 삭제 금지)
-        const _keepDays = ((typeof eventArchiver !== 'undefined' && eventArchiver?.KEEP_DAYS) || 30) + 14;
+        const _arch = eventArchiver || require('./src/event-archiver');
+        const _keepDays = (_arch?.KEEP_DAYS || 30);
         const _cutoffIso = new Date(Date.now() - _keepDays * 24 * 60 * 60 * 1000).toISOString();
-        const _delFn = eventArchiver?.deleteVerifiedArchivedEvents || require('./src/event-archiver').deleteVerifiedArchivedEvents;
-        const _guardRes = await _delFn(pool, _cutoffIso, { batchSize: 20000, maxBatches: 50, pauseMs: 1000, tag: 'cleanup' });
+        const _dbSizeRes = await pool.query(`SELECT pg_database_size(current_database()) AS bytes`).catch(() => ({ rows: [{ bytes: 0 }] }));
+        const _sizeMB = Math.round((Number(_dbSizeRes.rows[0]?.bytes || 0) / 1024 / 1024) * 10) / 10;
+        const _pgThresholdMB = _arch?.PG_DIET_THRESHOLD_MB || 1500;
+        const _allowNoiseFallback = _sizeMB >= _pgThresholdMB || process.env.ARCHIVE_REQUIRE_DRIVE_BACKUP === 'false';
+        const _delFn = _arch.deleteVerifiedArchivedEvents;
+        const _guardRes = await _delFn(pool, _cutoffIso, {
+          batchSize: 5000,
+          maxBatches: 20,
+          sleepSeconds: 0.1,
+          pauseMs: 100,
+          sizeMB: _sizeMB,
+          allowNoiseFallback: _allowNoiseFallback,
+          tag: 'cleanup',
+        });
         const rowCount = _guardRes.deleted || 0;
         if (rowCount > 0) {
-          console.log(`[cleanup] ${_keepDays}일 지난 Drive 백업 검증 이벤트 ${rowCount}개 삭제 (컷오프 ${_cutoffIso})`);
+          console.log(`[cleanup] ${_keepDays}일 지난 이벤트 ${rowCount}개 배치 삭제 (mode=${_guardRes.mode || 'unknown'}, 컷오프=${_cutoffIso}, db=${_sizeMB}MB)`);
           await pool.query('VACUUM (ANALYZE) events').catch(() => {});
         }
         // 테이블 크기 로깅
