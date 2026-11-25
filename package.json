@@ -68,7 +68,7 @@
     "winston": "^3.19.0",
     "ws": "^8.16.0",
     "xlsx": "^0.18.5",
-    "zod": "^3.25.76"
+    "zod": "^4.6.7"
   },
   "optionalDependencies": {
     "@anthropic-ai/sdk": "^0.39.0",
