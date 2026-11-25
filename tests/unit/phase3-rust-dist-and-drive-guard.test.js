@@ -47,6 +47,7 @@ describe('Phase 3 — Server rust-collector-meta 인증/페이로드 & env 오�
     const verifyTokenAsync = async (tok) => (tok === validToken ? { id: 'U-1', email: 'canary@nenova.co.kr' } : null);
 
     const server = http.createServer(async (req, res) => {
+      res.setHeader('Connection', 'close');
       if (req.url === '/api/daemon/rust-collector-meta') {
         const authUser = await daemonRelease.authenticateDaemonRequest(req, { verifyTokenAsync });
         if (!authUser) {
@@ -87,6 +88,7 @@ describe('Phase 3 — Server rust-collector-meta 인증/페이로드 & env 오�
       });
       expect(body.sha256).toMatch(/^[0-9a-f]{64}$/);
     } finally {
+      if (typeof server.closeAllConnections === 'function') server.closeAllConnections();
       await new Promise((resolve) => server.close(resolve));
     }
   });
@@ -151,7 +153,10 @@ describe('Phase 3 — syncRustCollectorBinary (302 리다이렉트, SHA-256 timi
   });
 
   afterAll(async () => {
-    if (server) await new Promise((resolve) => server.close(resolve));
+    if (server) {
+      if (typeof server.closeAllConnections === 'function') server.closeAllConnections();
+      await new Promise((resolve) => server.close(resolve));
+    }
     try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch {}
   });
 
