@@ -20,7 +20,8 @@ const PC_USER_MAP = {
   '이재만':            'MNH03H73690BB2CD82', // jaeyong lim (관리자)
   'DESKTOP-T09911T':  'MNMRX6SR07F5FF7C0C', // 강현우
   'Papi-Chulo-PC':    'MNMRVD11EDCCF6E7CE', // wbk (대소문자 변형)
-  'DESKTOP-CAA5TA1':  'MNMR8568CC8950F81D', // hoon J / 현욱 — 전용 PC
+  // [2026-11-24] DESKTOP-CAA5TA1 줄 삭제: 적혀 있던 번호가 그 자리 사람 번호가 아니어서 2026-11-23 자동 분류가 묶음을 잘못 덮어썼다.
+  //   이 자리는 orbit_pc_links(관리자 등록)만 따른다.
   'DESKTOP-L0C2IOT':  'MNMSAQJD78E544A631', // 강명훈
   'DESKTOP-4OM3URA':  'MNSKAQSQ649D9E5936', // Luke 전용 PC
 };
@@ -47,12 +48,16 @@ const KAKAO_TITLE_PATTERNS = [
  * 1단계: 직접 매핑 (PC_USER_MAP)
  * @returns {string|null} userId
  */
+function _isHiddenId(id) {
+  try { return require('./hidden-users').load().ids.has(String(id)); } catch (_) { return false; }
+}
+
 function resolveByDirect(hostname) {
   if (!hostname) return null;
-  if (PC_USER_MAP[hostname]) return PC_USER_MAP[hostname];
+  if (PC_USER_MAP[hostname]) return _isHiddenId(PC_USER_MAP[hostname]) ? null : PC_USER_MAP[hostname];
   // 대소문자 변형 (예: "neonva" vs "NEONVA")
   for (const [k, v] of Object.entries(PC_USER_MAP)) {
-    if (k.toLowerCase() === hostname.toLowerCase()) return v;
+    if (k.toLowerCase() === hostname.toLowerCase()) return _isHiddenId(v) ? null : v;
   }
   return null;
 }
@@ -72,10 +77,12 @@ async function resolveByName(pool, hostname) {
   if (!name) return null;
   try {
     const { rows } = await pool.query(
-      `SELECT id FROM orbit_auth_users WHERE name ILIKE $1 LIMIT 1`,
+      `SELECT id FROM orbit_auth_users WHERE name ILIKE $1 ORDER BY created_at ASC LIMIT 10`,
       [`%${name}%`]
     );
-    if (rows.length > 0) return rows[0].id;
+    // [2026-11-24] 같은 이름의 숨김(옛) 번호는 건너뛴다 — 2026-11-23 HGNEA1S 가 숨김 옛 번호로 묶인 사고
+    const usable = rows.filter(r => !_isHiddenId(r.id));
+    if (usable.length > 0) return usable[0].id;
   } catch {}
   return null;
 }
@@ -201,13 +208,13 @@ async function resolveHostnameToUser(pool, hostname) {
 
   // 3) 카톡 타이틀 (Q1B)
   const byKakao = await resolveByKakaoTitle(pool, hostname);
-  if (byKakao && byKakao.confidence >= 0.5) {
+  if (byKakao && byKakao.confidence >= 0.5 && !_isHiddenId(byKakao.userId)) {
     return { userId: byKakao.userId, source: 'kakao_title', confidence: byKakao.confidence, name: byKakao.name };
   }
 
   // 4) 클립보드 텍스트 (Q1B)
   const byClip = await resolveByClipboard(pool, hostname);
-  if (byClip && byClip.confidence >= 0.5) {
+  if (byClip && byClip.confidence >= 0.5 && !_isHiddenId(byClip.userId)) {
     return { userId: byClip.userId, source: 'clipboard_text', confidence: byClip.confidence, name: byClip.name };
   }
 

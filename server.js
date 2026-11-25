@@ -56,6 +56,7 @@ const chokidar     = require('chokidar');
 const fs           = require('fs');
 const path         = require('path');
 const _eventValueJudge = require('./src/event-value-judge'); // /api/hook 저장 가치 판정(daemon.update 반복 컷)
+const { shared: _pcLinkCache, decideUserId: _decidePcUserId, splitProvisionalDaemons: _splitProvisionalDaemons, canAutoLink: _canAutoLink, planInlineThumbs: _planInlineThumbs, AUTO_LINK_GUARD_SQL: _AUTO_LINK_GUARD_SQL } = require('./src/pc-link-cache'); // [2026-11-23] hostname→번호 조회 캐시(PG 조회 실패 시 임시 번호 pc_ 누수 방지)
 const _daemonCmdQueue = require('./src/daemon-command-queue'); // [2026-10-21] 원격 명령 안전장치(만료·소비확인·중복억제·자동정리)
 // rate-limit: 인메모리 구현 (express-rate-limit v8 Railway 프록시 호환 문제 대체)
 const _rlStore = new Map();
@@ -1991,9 +1992,12 @@ app.get('/api/learning/logs', async (req, res) => {
 
     const allTypes = req.query.allTypes === '1';
     const params = [];
+    // [2026-11-24] 화면 썸네일(base64, 장당 40~95KB)은 본 조회에서 빼고 길이만 읽는다. 예전엔 2,000줄×썸네일 = 137MB 를 통째로
+    // 메모리에 올려 JSON 으로 만들다 힙 한도(768MB)를 넘어 서버가 죽었다(11-23 22:05Z, 11-24 05:53Z — FATAL ERROR: Reached heap limit).
+    const _logCols = "id, type, user_id, timestamp, (data_json - 'thumbnail') AS data_json, COALESCE(length(data_json->>'thumbnail'), 0) AS thumb_len";
     let query = allTypes
-      ? "SELECT id, type, user_id, timestamp, data_json FROM events WHERE user_id NOT IN ('local','system') AND user_id IS NOT NULL"
-      : "SELECT id, type, user_id, timestamp, data_json FROM events WHERE user_id NOT IN ('local','system') AND user_id IS NOT NULL AND type IN ('keyboard.chunk','screen.capture','screen.analyzed','idle')";
+      ? `SELECT ${_logCols} FROM events WHERE user_id NOT IN ('local','system') AND user_id IS NOT NULL`
+      : `SELECT ${_logCols} FROM events WHERE user_id NOT IN ('local','system') AND user_id IS NOT NULL AND type IN ('keyboard.chunk','screen.capture','screen.analyzed','idle')`;
     if (userId) { params.push(userId); query += ` AND user_id=$${params.length}`; }
     if (type)   { params.push(type);   query += ` AND type=$${params.length}`; }
     if (from)   { params.push(from);   query += ` AND timestamp >= $${params.length}`; }
@@ -2027,10 +2031,23 @@ app.get('/api/learning/logs', async (req, res) => {
     nameRows.rows.forEach(r => { names[r.id] = r.name || r.email?.split('@')[0] || r.id.substring(0, 10); });
 
     const rawMode = req.query.raw === '1';
+    // 원문(raw) 응답의 썸네일: 합계가 예산(기본 24MB) 안이면 예전처럼 data.thumbnail 로 싣고, 넘거나 ?noThumb=1 이면
+    // 싣지 않고 data.thumbnailUrl(/api/vision/thumbnail/<id>)·data.thumbnailBytes 만 준다.
+    const _thumbPlan = _planInlineThumbs(finalRows, { raw: rawMode, noThumb: req.query.noThumb === '1',
+      budgetBytes: (parseInt(process.env.LEARNING_LOGS_THUMB_BUDGET_MB) || 24) * 1024 * 1024 });
+    const _thumbs = new Map();
+    if (_thumbPlan.ids.length) {
+      const t = await pool.query(`SELECT id, data_json->>'thumbnail' AS th FROM events WHERE id = ANY($1)`, [_thumbPlan.ids]);
+      for (const x of t.rows) if (x.th) _thumbs.set(x.id, x.th);
+    }
 
     const logs = finalRows.map(r => {
       let data = {};
       try { data = typeof r.data_json === 'string' ? JSON.parse(r.data_json) : (r.data_json || {}); } catch {}
+      if (rawMode && Number(r.thumb_len) > 0) {
+        if (_thumbs.has(r.id)) data.thumbnail = _thumbs.get(r.id);
+        else { data.thumbnailUrl = '/api/vision/thumbnail/' + encodeURIComponent(r.id); data.thumbnailBytes = Number(r.thumb_len); }
+      }
       const ctx = data.appContext || {};
 
       if (rawMode) {
@@ -2066,7 +2083,7 @@ app.get('/api/learning/logs', async (req, res) => {
       };
     });
 
-    res.json({ logs, total: logs.length });
+    res.json(_thumbPlan.omitted ? { logs, total: logs.length, thumbnailsOmitted: _thumbPlan.omitted } : { logs, total: logs.length });
   } catch (e) {
     console.error('[learning/logs] error:', e.message);
     res.status(500).json({ error: 'Internal server error', logs: [] });
@@ -2564,8 +2581,8 @@ app.post('/api/daemon/excel-ingest', async (req, res) => {
     try {
       const _pool = dbModule.getDb ? dbModule.getDb() : null;
       if (_pool && process.env.DATABASE_URL && deviceId) {
-        const { rows } = await _pool.query(`SELECT user_id FROM orbit_pc_links WHERE hostname = $1 LIMIT 1`, [deviceId]);
-        if (rows[0] && rows[0].user_id) userId = rows[0].user_id;
+        const _pl = await _pcLinkCache.resolve(_pool, deviceId); // /api/hook 과 같은 캐시(조회 실패 시 마지막 성공값)
+        if (_pl.userId) userId = _pl.userId;
       }
     } catch {}
 
@@ -3028,8 +3045,12 @@ app.get('/api/admin/daemon-health', async (req, res) => {
       `SELECT DISTINCT ON (user_id) user_id, timestamp, data_json
        FROM events
        WHERE type = 'daemon.heartbeat'
+         AND timestamp > $1
          AND timestamp::timestamptz > NOW() - INTERVAL '1 hour'
-       ORDER BY user_id, timestamp::timestamptz DESC`
+       ORDER BY user_id, timestamp::timestamptz DESC`,
+      // [2026-11-23] 워치독(#103)과 같은 ISO 문자열 사전필터(2시간, 상위집합) — 캐스팅 조건만으론 인덱스를 못 타 events 를 통째로 읽었다
+      // (실측 32초, 그동안 PG 풀 12개가 막혀 /api/hook 저장이 5초 시간초과). 정확 판정은 기존 캐스팅 조건이 그대로 한다.
+      [new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString()]
     );
     // 사용자 이름 매핑
     let userNames = {};
@@ -3039,7 +3060,7 @@ app.get('/api/admin/daemon-health', async (req, res) => {
     } catch {}
 
     const now = Date.now();
-    const daemons = rows.map(r => {
+    const daemonsAll = rows.map(r => {
       const data = r.data_json || {};
       const hbTs = new Date(r.timestamp).getTime();
       const sinceHb = Math.round((now - hbTs) / 1000);
@@ -3068,13 +3089,16 @@ app.get('/api/admin/daemon-health', async (req, res) => {
         secondsSinceHeartbeat: sinceHb,
       };
     });
+    // [2026-11-23] 임시 번호(pc_<hostname>) 줄 분리 — 같은 PC 의 진짜 번호 줄이 이미 있거나 pc_links 에 등록된 PC 면
+    // provisional 로 옮겨, 한 컴퓨터가 두 줄(하나는 dead)로 세어지지 않게 한다. 등록 안 된 PC 의 pc_ 줄은 그대로 둔다.
+    const { daemons, provisional } = _splitProvisionalDaemons(daemonsAll, h => _pcLinkCache.peek(h));
     // 상태별 카운트
     const summary = { ok: 0, degraded: 0, silent: 0, dead: 0, unknown: 0 };
     for (const d of daemons) {
       if (summary[d.state] !== undefined) summary[d.state]++;
       else summary.unknown++;
     }
-    res.json({ ok: true, summary, total: daemons.length, daemons });
+    res.json({ ok: true, summary, total: daemons.length, daemons, provisional, pcLinkCache: _pcLinkCache.getStats() });
   } catch (e) {
     console.error('[admin/daemon-health] error:', e.message);
     res.status(500).json({ error: e.message });
@@ -3129,12 +3153,13 @@ app.get('/api/admin/pc-links-inspect', async (req, res) => {
     // orbit_auth_users + orbit_auth_tokens 카운트
     let tokenCount = 0, userCount = 0;
     try {
-      const r1 = await _pool.query('SELECT COUNT(*) as c FROM orbit_auth_tokens');
+      // [2026-11-23] COUNT(*) → 통계 추정치(reltuples). 토큰 표가 수백만 행이라 정확히 세면 40~60초 동안 PG 를 붙잡았다(실측 42초·60초 초과).
+      const r1 = await _pool.query(`SELECT GREATEST(reltuples, 0)::bigint AS c FROM pg_class WHERE relname = 'orbit_auth_tokens' AND relkind = 'r'`);
       tokenCount = parseInt(r1.rows[0].c);
       const r2 = await _pool.query('SELECT COUNT(*) as c FROM orbit_auth_users');
       userCount = parseInt(r2.rows[0].c);
     } catch {}
-    res.json({ ok: true, links, totals: { tokens: tokenCount, users: userCount } });
+    res.json({ ok: true, links, totals: { tokens: tokenCount, users: userCount, tokensEstimated: true } });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -3451,6 +3476,7 @@ app.post('/api/admin/repair-pc-mapping', async (req, res) => {
        ON CONFLICT (hostname) DO UPDATE SET user_id = $2, linked_at = NOW()`,
       [hostname, userId]
     );
+    _pcLinkCache.invalidate(hostname);
 
     let updatedEvents = 0;
     if (fixHistory) {
@@ -3734,11 +3760,8 @@ app.post('/api/daemon/register', async (req, res) => {
     //    A. orbit_pc_links 우선 (admin이 명시적으로 등록한 매핑이 가장 신뢰도 높음)
     if (_pool) {
       try {
-        const { rows } = await _pool.query(
-          `SELECT user_id FROM orbit_pc_links WHERE hostname = $1 LIMIT 1`,
-          [hostname]
-        );
-        if (rows.length > 0) matchedUserId = rows[0].user_id;
+        const _pl = await _pcLinkCache.resolve(_pool, hostname); // 조회 실패 시 마지막 성공값
+        if (_pl.userId) matchedUserId = _pl.userId;
       } catch {} // 테이블 없으면 무시
 
       //    B. PC_USER_MAP / PC_NAME_MAP / 카톡 / 클립보드 통합 resolver (Q1A+B)
@@ -3839,11 +3862,21 @@ app.post('/api/daemon/link-pc', async (req, res) => {
         linked_at TIMESTAMPTZ DEFAULT NOW()
       )`
     );
+    // [2026-11-24] 이미 다른 번호에 묶인 컴퓨터는 토큰 주인이 덮어쓰지 못한다(PC 에 남은 옛 토큰 방지). 숨김 번호도 불가.
+    {
+      const _exLink = (await _pool.query('SELECT user_id FROM orbit_pc_links WHERE hostname = $1', [hostname])).rows[0];
+      const _auto = _canAutoLink(_exLink && _exLink.user_id, user.id);
+      if (!_auto.ok) {
+        console.warn(`[daemon/link-pc] ${hostname} — 묶음 변경 거부 (${_auto.reason})`);
+        return res.status(409).json({ error: _auto.reason, hint: '관리자 주소 /api/admin/pc-link 또는 새 설치(fresh)로만 바꿀 수 있습니다' });
+      }
+    }
     await _pool.query(
       `INSERT INTO orbit_pc_links (hostname, user_id) VALUES ($1, $2)
-       ON CONFLICT (hostname) DO UPDATE SET user_id = $2, linked_at = NOW()`,
+       ON CONFLICT (hostname) DO UPDATE SET user_id = $2, linked_at = NOW() WHERE ${_AUTO_LINK_GUARD_SQL}`,
       [hostname, user.id]
     );
+    _pcLinkCache.invalidate(hostname);
 
     // 2) 기존 pc_hostname 이벤트를 실제 userId로 재매핑
     await _pool.query(
@@ -3966,21 +3999,24 @@ app.post('/api/hook', async (req, res) => {
     // ── orbit_pc_links 우선 매핑 ─────────────────────────────────────────
     // 토큰 ghosting 방지: PC에 다른 유저 토큰이 깔려있어도 hostname 매핑이 있으면
     // 공식 owner로 덮어씀. admin이 등록한 pc_links가 단일 source of truth.
+    // [2026-11-23] 조회를 src/pc-link-cache 로 — PG 풀이 막혀 조회가 실패해도 마지막 성공값(stale)으로 번호를 정한다.
+    // 예전엔 실패 시 그대로 넘어가 임시 번호 pc_<hostname>(또는 PC 에 남은 옛 토큰 번호)로 저장됐다.
     if (deviceId) {
       try {
         const _pgPool = dbModule.getDb ? dbModule.getDb() : null;
         if (_pgPool && process.env.DATABASE_URL) {
-          const { rows: _pcl } = await _pgPool.query(
-            `SELECT user_id FROM orbit_pc_links WHERE hostname = $1 LIMIT 1`,
-            [deviceId]
-          );
-          if (_pcl.length > 0 && _pcl[0].user_id && _pcl[0].user_id !== hookUserId) {
-            console.warn(`[hook] pc_link override: ${deviceId} token=${hookUserId} → ${_pcl[0].user_id}`);
-            hookUserId = _pcl[0].user_id;
+          const _pl = await _pcLinkCache.resolve(_pgPool, deviceId);
+          const _dec = _decidePcUserId(hookUser ? hookUser.id : null, deviceId, _pl);
+          if (_dec.overridden) {
+            console.warn(`[hook] pc_link override: ${deviceId} token=${hookUserId} → ${_dec.userId}${_pl.source === 'stale' ? ' (stale cache)' : ''}`);
+            hookUserId = _dec.userId;
+          } else if (_dec.degraded && _pcLinkCache.shouldLog(deviceId)) {
+            // 조회 실패 + 기억 없음 → 데이터는 버리지 않고 기존 번호로 받는다(데몬 일부 송신 경로가 5xx 재전송을 안 함)
+            console.warn(`[hook] pc_link lookup FAILED, no cache: ${deviceId} saved as ${hookUserId} (${_pl.error || 'unknown'})`);
           }
         }
       } catch (_plErr) {
-        // pc_links 테이블 없거나 쿼리 실패 → 기존 hookUserId 유지 (fail-open)
+        // 기존 hookUserId 유지 (fail-open)
       }
     }
 
@@ -3997,15 +4033,22 @@ app.post('/api/hook', async (req, res) => {
             const _pgPool = dbModule.getDb ? dbModule.getDb() : null;
             if (_pgPool) {
               const r = await resolver.resolveHostnameToUser(_pgPool, deviceId);
-              if (r && r.userId && !r.userId.startsWith('pc_')) {
+              // [2026-11-24] 이미 묶인 컴퓨터는 자동 분류가 덮어쓰지 못한다(관리자 주소·새 설치 fresh 만 변경). 숨김 번호로도 묶지 않는다.
+              // 2026-11-23 실사고: pc_ 임시 번호로 샌 기록 50건이 쌓이자 자동 분류가 HGNEA1S→숨김 옛 번호, CAA5TA1→다른 직원 번호로 덮어썼다.
+              const _exLink = (await _pgPool.query('SELECT user_id FROM orbit_pc_links WHERE hostname = $1', [deviceId]).catch(() => ({ rows: [] }))).rows[0];
+              const _auto = r && r.userId ? _canAutoLink(_exLink && _exLink.user_id, r.userId) : { ok: false, reason: 'no_match' };
+              if (r && r.userId && !_auto.ok) {
+                console.warn(`[hook] auto-classify ${deviceId} — 묶음 변경 안 함 (${_auto.reason})`);
+              } else if (r && r.userId && !r.userId.startsWith('pc_')) {
                 await _pgPool.query(`CREATE TABLE IF NOT EXISTS orbit_pc_links (
                   hostname TEXT PRIMARY KEY, user_id TEXT NOT NULL, linked_at TIMESTAMPTZ DEFAULT NOW()
                 )`);
                 await _pgPool.query(
                   `INSERT INTO orbit_pc_links (hostname, user_id) VALUES ($1, $2)
-                   ON CONFLICT (hostname) DO UPDATE SET user_id=$2, linked_at=NOW()`,
+                   ON CONFLICT (hostname) DO UPDATE SET user_id=$2, linked_at=NOW() WHERE ${_AUTO_LINK_GUARD_SQL}`,
                   [deviceId, r.userId]
                 );
+                _pcLinkCache.invalidate(deviceId);
                 console.log(`[hook] auto-classify ${deviceId} → ${r.userId} (${r.source}, conf=${r.confidence?.toFixed?.(2)})`);
               } else {
                 console.log(`[hook] auto-classify ${deviceId} — 매칭 실패 (Q3A: 익명 유지)`);
@@ -5911,6 +5954,7 @@ app.post('/api/setup/auto-register', async (req, res) => {
           [hostname, newId, clientIp, windowsUser || null, JSON.stringify({ fresh: true, consent: consent === true, consentAt: consentAt || null, ts: new Date().toISOString() })]
         );
       } catch (e) { console.warn('[auto-register] fresh pc_links:', e.message); }
+      _pcLinkCache.invalidate(hostname);
       const token = await issueApiTokenAsync(newId);
       await ensureVerifiable(token, newId, displayName);
       console.log(`[auto-register] ${hostname} (ip=${clientIp}) → FRESH 새 신원 ${newId.slice(0, 12)} (name="${displayName}")`);
@@ -5920,13 +5964,19 @@ app.post('/api/setup/auto-register', async (req, res) => {
     if (normalizedName) {
       try {
         // orbit_auth_users에서 정확히 일치하는 이름 검색 (case-insensitive, trim)
-        const { rows } = await pool.query(
+        const { rows: _nameRows } = await pool.query(
           `SELECT id, name FROM orbit_auth_users
            WHERE LOWER(TRIM(name)) = LOWER($1)
-           ORDER BY created_at ASC LIMIT 1`,
+           ORDER BY created_at ASC LIMIT 10`,
           [normalizedName]
         );
-        if (rows.length) {
+        // [2026-11-24] 같은 이름의 숨김(옛) 번호는 건너뛴다 — 가장 오래된 계정을 고르던 탓에 재설치가 옛 번호를 되살렸다.
+        const rows = _nameRows.filter(r => _canAutoLink(null, r.id).ok);
+        // 이미 다른 번호에 묶인 컴퓨터면 이름 매칭을 쓰지 않는다(아래 2단계가 기존 묶음을 그대로 쓴다).
+        const _exLink = rows.length ? (await pool.query('SELECT user_id FROM orbit_pc_links WHERE hostname = $1', [hostname]).catch(() => ({ rows: [] }))).rows[0] : null;
+        if (rows.length && !_canAutoLink(_exLink && _exLink.user_id, rows[0].id).ok) {
+          console.warn(`[auto-register] ${hostname} → 이름 "${normalizedName}" 매칭 무시 — 이미 묶인 컴퓨터(관리자·fresh 만 변경)`);
+        } else if (rows.length) {
           existingUserId = rows[0].id;
           existingName   = rows[0].name;
           matchedByName  = true;
@@ -5965,12 +6015,13 @@ app.post('/api/setup/auto-register', async (req, res) => {
     // 만들어 데이터가 갈라지던 재이슈(현욱 CAA5TA1가 MNMR8568로 새로 생긴 사례)를 근본 차단.
     if (!existingUserId && pool) {
       try {
-        const { rows } = await pool.query(
+        const { rows: _histRows } = await pool.query(
           `SELECT user_id, COUNT(*) c FROM events
              WHERE data_json->>'hostname' = $1 AND user_id NOT IN ('local','system') AND user_id IS NOT NULL
-             GROUP BY user_id ORDER BY c DESC LIMIT 1`,
+             GROUP BY user_id ORDER BY c DESC LIMIT 10`,
           [hostname]
         );
+        const rows = _histRows.filter(r => _canAutoLink(null, r.user_id).ok); // [2026-11-24] 숨김·임시(pc_) 번호는 재사용하지 않는다
         if (rows.length && Number(rows[0].c) >= 20) {  // 우연한 소량 유입은 제외(20건+)
           existingUserId = rows[0].user_id;
           try { const { rows: uRows } = await pool.query('SELECT name FROM orbit_auth_users WHERE id = $1', [existingUserId]); if (uRows.length) existingName = uRows[0].name; } catch {}
@@ -6012,7 +6063,8 @@ app.post('/api/setup/auto-register', async (req, res) => {
              VALUES ($1, $2, NOW(), $3, $4, $5)
              ON CONFLICT (hostname) DO UPDATE
              SET user_id = EXCLUDED.user_id, linked_at = NOW(),
-                 last_ip = EXCLUDED.last_ip, windows_user = EXCLUDED.windows_user, metadata = EXCLUDED.metadata`,
+                 last_ip = EXCLUDED.last_ip, windows_user = EXCLUDED.windows_user, metadata = EXCLUDED.metadata
+             WHERE ${_AUTO_LINK_GUARD_SQL} OR orbit_pc_links.user_id = EXCLUDED.user_id`,
             [hostname, existingUserId, clientIp, windowsUser || null, JSON.stringify(auditMeta)]
           );
         } else {
@@ -6022,6 +6074,7 @@ app.post('/api/setup/auto-register', async (req, res) => {
           );
         }
       } catch (e) { console.warn('[auto-register] pc_links upsert:', e.message); }
+      _pcLinkCache.invalidate(hostname);
       const token = (await latestTokenFor(existingUserId)) || await issueApiTokenAsync(existingUserId);
       await ensureVerifiable(token, existingUserId, existingName || normalizedName || hostname);
       console.log(`[auto-register] ${hostname} (ip=${clientIp}) → REUSED ${existingUserId.slice(0,12)} (matchedByName=${matchedByName})`);
@@ -6076,6 +6129,7 @@ app.post('/api/setup/auto-register', async (req, res) => {
         [hostname, user.id, clientIp, windowsUser || null, JSON.stringify(newAuditMeta)]
       );
     } catch (e) { console.warn('[auto-register] pc_links insert:', e.message); }
+    _pcLinkCache.invalidate(hostname);
 
     console.log(`[auto-register] ${hostname} (ip=${clientIp}) → NEW user ${user.id.slice(0,12)}`);
     res.json({ ok: true, userId: user.id, name: user.name, token, serverUrl, reused: false, clientIp });
@@ -7551,6 +7605,7 @@ app.post('/api/admin/pc-link', async (req, res) => {
       INSERT INTO orbit_pc_links (hostname, user_id) VALUES ($1, $2)
       ON CONFLICT (hostname) DO UPDATE SET user_id = $2, linked_at = NOW()
     `, [hostname, userId]);
+    _pcLinkCache.invalidate(hostname);
     const { rows } = await pool.query(
       `SELECT l.hostname, l.user_id, u.name, u.email
        FROM orbit_pc_links l LEFT JOIN orbit_auth_users u ON u.id = l.user_id
@@ -9562,6 +9617,10 @@ app.use('/api/v1', (req, res, next) => {
 console.log('[API] /api/v1/* → /api/* alias registered');
 
 // ─── 서버 시작 (PG auth 복원 후 listen) ────────────────────────────────────
+// [2026-11-23] 부팅 단계별 경과(초) 기록 — 배포마다 '몇 초 만에 응답을 시작했나'를 로그로 실측하기 위함(동작 영향 없음).
+const _bootT0 = Date.now();
+function _bootMark(label) { console.log(`[boot] +${((Date.now() - _bootT0) / 1000).toFixed(1)}s ${label}`); }
+
 async function startServer() {
   // Railway 환경에서는 heavy 백그라운드 엔진 기본 비활성화 (OOM → Bad Gateway 방지)
   // 개별 엔진을 살리려면 Railway 환경변수에서 해당 값을 '0'으로 설정하면 됩니다.
@@ -9580,6 +9639,18 @@ async function startServer() {
   if (process.env.DATABASE_URL && dbModule.waitForTables) {
     await dbModule.waitForTables().catch(e => console.warn('[startup] PG 테이블 대기 실패:', e.message));
   }
+  _bootMark('pg-tables');
+  // [2026-11-23] hostname→번호 캐시 예열(쿼리 1건, 기다리지 않음) — 부팅 직후 PG 가 느려 요청별 조회가 실패해도 번호를 정할 수 있게.
+  if (process.env.DATABASE_URL) {
+    (async () => {
+      for (let i = 0; i < 20; i++) {
+        const n = await _pcLinkCache.warm(dbModule.getDb ? dbModule.getDb() : null);
+        if (n >= 0) { console.log(`[startup] pc_links 캐시 예열: ${n}대`); return; }
+        await new Promise(r => setTimeout(r, 15000));
+      }
+      console.warn('[startup] pc_links 캐시 예열 실패(5분) — 요청별 조회로 계속');
+    })().catch(() => {});
+  }
   // 통합 이벤트 버스 초기화 (PG LISTEN 시작)
   if (process.env.DATABASE_URL) {
     const _ebPool = dbModule.getDb ? dbModule.getDb() : null;
@@ -9595,6 +9666,7 @@ async function startServer() {
     }
 
     if (_ebPool) await eventBus.init(_ebPool).catch(e => console.warn('[startup] EventBus 초기화 실패:', e.message));
+    _bootMark('migrations+eventbus');
 
     // ── Layer 2 entity-resolution scheduler — 부작용 없음, 항상 실행 ──
     // (publisher 게이트 밖에 둠: 시드/매처는 idempotent, 데이터 없으면 0건 반환)
@@ -9631,9 +9703,11 @@ async function startServer() {
   // 비동기 테이블 초기화 완료 대기 (chat, analytics)
   if (global._chatInitPromise) await global._chatInitPromise;
   if (global._analyticsInitPromise) await global._analyticsInitPromise;
+  _bootMark('chat+analytics-init');
   // Railway 재배포 후 SQLite가 비어있으면 PG에서 사용자/토큰 복원
   if (process.env.DATABASE_URL) {
     await authInitFromPg().catch(e => console.warn('[startup] auth PG 복원 실패:', e.message));
+    _bootMark('auth-init-from-pg');
     // 미소비 데몬 명령 PG → 메모리 복원 (재배포 후 PC 명령 유지)
     try {
       const _pool = dbModule.getDb ? dbModule.getDb() : null;
@@ -9892,7 +9966,9 @@ async function startServer() {
   } catch (e) { console.warn('[startup/push-token] 실패:', e.message); } }, 60 * 1000);
   // ─────────────────────────────────────────────────────────────────────────────
 
+  _bootMark('before-listen');
   server.listen(PORT, async () => {
+  _bootMark('listening');
   const stats = await Promise.resolve(getStats());
   logger.info(`Orbit AI v2.0.0 — http://localhost:${PORT}`, {
     events: stats?.eventCount ?? '?',

@@ -2489,3 +2489,50 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 3. 남은 일: 반영 뒤 견본 파일로 수집기 → 운영 주소 → 조회 → 분석 쪽 읽기까지 시험하고 시험 글 삭제.
 4. 검증: tests/unit/messenger-intake.test.js 11건 + kakao-import 2건 통과. 운영 주소 실제 시험은 반영 뒤.
 5. 주의: 수신 토큰이 운영 PC에만 있어 이 PC에서 운영 주소로 넣을 길이 없었던 것이 계기. 직원 데몬 토큰은 관리자 판정을 통과하지 못한다(검사 포함). 되돌리기 = 이 수정안 되돌림. 연결 목표: g01·g03 / 학습 반영: 있음
+## 2026-11-23 조사: 수입부 새 직원 자리(손지윤 · DESKTOP-F3HGS86)가 PM실에 안 보임 — 읽기만, 수정 없음
+검색어: 손지윤 F3HGS86 PM실 안 보임 excluded-staff 제외 11-17 끊김 daemon.update 05VLRN1 L0C2IOT
+1. 작업 위치: mindmap-viewer(수정 없음). 조회만: daemon-health · capture-funnel?days=3 · learning/logs?allTypes=1, 보관소 nenova-archive.
+2. 확인: ① F3HGS86(등록 이름 손지윤)은 10-09 사장님 결정으로 분석·PM실에서 빠져 있다 — nenova-work-features/excluded-staff.js, build-live-pipelines.js EXCLUDE, nenova-pm/office-feed.js 152행·DEPT. 그 뒤 10-06~11-16 기록 12,322건·화면 1,653건(발주·왓츠앱·인보이스 = 수입부 일). ② 그 자리 서버 기록은 11-17 아침 daemon.update 뒤로 0건(6일). ③ 05VLRN1(아드리아나=김지니)은 11-20 저녁이 마지막, 그날 17:07~17:09 멈춤 기록과 설치 진단 기록. ④ L0C2IOT(강명훈)는 11-23 09:07·09:14 멈춤 기록, 09:30 현재 켜진 목록에 없음.
+3. 남은 일: 사장님 확인 뒤 손지윤 제외 풀기(3곳 + 부서 지정). F3HGS86 11-17 끊김 원인(PC가 꺼져 있는지 데몬이 죽었는지)은 원격으로 가릴 수 없음 — 데몬이 붙으면 §13 순서. 05VLRN1 · L0C2IOT 는 오늘 오전 중 다시 조회.
+4. 검증: 위 수치는 응답 본문에서 직접 읽음. pc-list 는 100초 시간 초과로 못 읽음(미검증).
+5. 주의: 직원 PC 재설치·재부팅 요구하지 않음. 원격 명령 보낸 것 없음. 연결 목표: g03 / 학습 반영: 없음
+
+## 2026-11-23 (이어서) 사장님 확인: 손지윤 퇴사 → 「예슬」(성 미확인)이 같은 컴퓨터(DESKTOP-F3HGS86)를 11-17 주부터 사용
+검색어: 예슬 손지윤 퇴사 F3HGS86 같은 컴퓨터 새 직원 11-17 끊김 이름 이어받기 금지
+1. 작업 위치: mindmap-viewer(수정 없음, 조회만).
+2. 확인: 보관소에서 그 컴퓨터 이름이 든 기록은 11-16 43건이 마지막, 11-17~11-21 은 어떤 번호로도 0건. 즉 새 직원 기록은 한 건도 없다. 수집 프로그램이 그 컴퓨터에서 돌지 않는다.
+3. 남은 일: ① 예슬 님 성(이름 전체) 확인 ② 그 컴퓨터 한 대에 다시 시작 명령 1건(사장님 승인 뒤, LocalSystem 감시 서비스가 2분마다 받음) → 반응 없으면 컴퓨터가 꺼져 있거나 서비스가 없는 것 ③ 다시 붙으면 손지윤 번호와 섞이지 않게 새 번호·새 이름으로 등록(이름 자동 이어받기 금지 원칙) ④ PM실 부서표(nenova-pm/office-feed.js DEPT)와 분석 부서표에 수입부로 추가. 손지윤 제외는 그대로 둔다(퇴사).
+4. 검증: 날짜별 건수는 보관소 파일에서 직접 셈. 새 윈도우 계정으로 로그인해서 안 도는 것인지는 추정(미검증).
+5. 주의: 원격 명령 보낸 것 없음. 재설치·재부팅 요구하지 않음. 연결 목표: g03 / 학습 반영: 없음
+
+## 2026-11-23 점검: 업무 데이터 정확도에 걸리는 업데이트·미반영 — 읽기만, 수정 없음
+검색어: 정확도 업데이트 점검 판 뒤짐 송준호 92ea40d6 화면 0장 #45 충돌 강명훈 멈춤 반복 HGNEA1S 임시 번호 파일 근거 하락
+1. 작업 위치: mindmap-viewer(수정 없음). 조회: daemon-health, capture-funnel(1일·3일), learning/logs, origin/main 기록, 열린 수정안, nenova-work-features/observed/pipeline-health.json(11-23 07:59).
+2. 확인: 본편 최신 d937f27f(11-20 16:20). 켜진 11자리 중 10자리 최신, 송준호 자리(4OM3URA)만 92ea40d6(7판 뒤, 5,607분째 안 꺼짐) — 그 사이 #106(캡처 유실·중복·하위 폴더 감시 수리) 포함. 그 자리는 3일·오늘 화면 수집 0장. 조현욱(3,471분) 3일 40장·오늘 0장, 박성수 3일 21장·오늘 0장. 강명훈 자리 오늘 멈춤 8번·수집 0. HGNEA1S 에 이름 없는 임시 번호 1개 더(dead). 열린 수정안 #45(업무 파일 누락 규칙 보강, 11-09)는 충돌로 2주째 미반영.
+3. 남은 일: 송준호·조현욱 자리 한 대씩 다시 시작 명령(사장님 승인 뒤, 카나리 1대 먼저). #45 최신 본편에 맞춰 다시 올리기. 강명훈 자리 멈춤 원인. 파일 근거 하락 3자리(정재훈·설연주·김원빈)는 #106 반영 뒤 회복하는지 11-24 아침 진단에서 확인.
+4. 검증: 위 수치는 응답 본문·파일에서 직접 읽음. 화면 0장이 좀비 상태인지 자리 비움인지는 미검증.
+5. 주의: 원격 명령 보낸 것 없음. 본편 push 는 전 직원 PC 에 자동 전달되므로 #45 반영은 승인 뒤. 연결 목표: g01·g03 / 학습 반영: 없음
+
+## 2026-11-23 (오후) 두 자리 원인 확정 — 송준호 자리는 「숨김 목록」에 걸려 조회에서만 안 보였다 (읽기만, 본편 수정 없음)
+검색어: 송준호 hidden-users MNSKAQSQ649D9E5936 Luke 퇴사 숨김 showHidden pc_ 임시 번호 pc_links fail-open 강명훈 crashLog 오래된 글
+1. 작업 위치: mindmap-viewer(수정 없음). 전체 근거: side-session-notes `import-dept/seat-rootcause-1123.md`.
+2. 확인: ① 송준호 자리 번호가 config/hidden-users.json 에 "Luke — 퇴사(2026-09-28)"로 들어 있어 /api/learning 조회가 404 hidden_user(목록에서도 빠짐). 서버에는 쌓이고 있다(showHidden=1 로 하루 화면 40장). 오전에 "7일째 0건"이라 보고한 것은 404 를 빈 값으로 읽은 내 오류. 11-16 재설치 때 auto-register 가 그 컴퓨터의 옛 번호를 그대로 다시 써서 퇴사자 번호에 새 사람이 들어간 상태. ② `pc_<컴퓨터이름>` 임시 번호는 프로그램이 둘 뜬 것이 아니라 /api/hook(server.js 3962~3989)에서 토큰 확인·pc_links 조회가 실패할 때 서버가 임시로 붙이는 번호(추정, 기록이 72시간에 3~5건뿐). ③ 강명훈 자리 아침 멈춤 12번은 같은 옛 글(11-20 17:03)의 반복 — 그 시간엔 프로그램이 안 떠 있었고 11:38 로그온 뒤 시작(추정).
+3. 남은 일(사장님 결정 뒤): hidden-users.json 에서 그 번호 빼기(본편 push = 전 직원 PC 다시 시작). Luke 시절 기록과 가를지. /api/hook 임시 번호 저장을 막는 수정. 분석 쪽(nenova-work-features)이 showHidden 없이 불러 송준호가 11-16 이후 빠졌는지 확인.
+4. 검증: 숨김 목록 내용·코드 줄은 직접 읽음. 하루 화면 40장은 showHidden=1 조회 응답. ②③의 원인은 추정.
+5. 주의: 원격 명령 보낸 것 없음. 13:28~13:36 서버 502(새 판 655192f4 배포와 겹침). 연결 목표: g01·g03 / 학습 반영: 없음
+
+## 2026-11-23 임시 번호(pc_<컴퓨터이름>) 누수 수리 + 13:32 502 원인 + #45 충돌 해소 (Claude)
+검색어: pc_link cache pc-link-cache fail-open 임시 번호 pc_DESKTOP-HGNEA1S stale provisional daemon-health 사전필터 reltuples insertEvent FAIL timeout exceeded when trying to connect 502 볼륨 authInitFromPg boot 187초 #113 #45
+1. 작업 위치: mindmap-viewer / 가지 cld/pclink-cache / 작업 폴더 C:UsersUSERmv-cld-pclink-cache / PR #113(합치지 않음, 사장님 승인 대기). #45 는 가지 claude/drive-daemon-gap-1acb80 / 작업 폴더 C:UsersUSERmv-cld-pr45-merge.
+2. 완료: src/pc-link-cache.js 신규(조회 60초 캐시·실패 시 마지막 성공값·동시 조회 합침·부팅 예열), server.js(/api/hook·excel-ingest·daemon/register 가 캐시 사용, pc_links 쓰는 7곳 캐시 비움, daemon-health 임시 번호 줄 provisional 분리 + ISO 사전필터, pc-links-inspect 토큰 COUNT(*)→reltuples, [boot] 단계 로그), tests/unit/pc-link-cache.test.js 19건. #45 는 origin/main 을 merge 커밋(b058fb2)으로 합쳐 src/work-file-uploader.js 충돌 3곳 해소(#106 과 내용 중복 없음).
+3. 남은 일: ① 사장님 승인 뒤 #113·#45 합치기(전 직원 PC 다시 시작) ② 배포 뒤 로그에서 `(stale cache)`·`pc_link lookup FAILED`·`[boot] +Ns listening` 확인 ③ 이미 샌 기록(pc_DESKTOP-HGNEA1S 1,771 · CAA5TA1 148 · L0C2IOT 71 · 05VLRN1 68) 사람 번호로 묶기는 따로 승인 ④ /api/hook 이 저장 실패(insertEvent FAIL)에도 200 을 돌려 기록이 버려지는 문제(20분에 798건 실측) — 미수정 ⑤ 배포마다 3~4분 끊김: 볼륨 때문에 겹쳐 띄우기 불가 + 부팅 187초(토큰 복원 100초) — 미수정, 결정 필요.
+4. 검증: 새 테스트 19건 통과, 전체 jest 333 통과/2 실패(private-ready tar 번들 — 이 PC 의 Git Bash tar 문제, 원본 main 도 동일), node --check 통과, pstack-verify PASS, 로컬 기동 [boot] 로그 확인. 미검증: 운영에서 조회 실패 시 stale 값 저장 여부, daemon-health·pc-links-inspect 단축 시간, 로컬 HTTP 응답(원본 main 도 이 PC 에선 응답 없음).
+5. 주의: 합치면 전 직원 PC 수집 프로그램이 다시 뜬다. 관리자 조회(pc-list·pc-links-inspect·daemon-health·completeness)는 지금 판에서 한 번에 30~60초씩 PG 를 붙잡아 그동안 직원 기록 저장이 시간초과된다 — #113 반영 전에는 자주 부르지 말 것. 원격 명령·운영 DB 쓰기 없음. 연결 목표: g01 / 학습 반영: 없음
+
+## 2026-11-24 아침 분석 묶음 뒤 서버 502 두 번(힙 초과) 수리 + 컴퓨터-번호 묶음 덮어쓰기 차단 (Claude, #113 이어서)
+검색어: learning/logs thumbnail 137MB heap out of memory FATAL ERROR Reached heap limit analyze-routines2 fetch fail 502 planInlineThumbs noThumb thumbnailUrl auto-classify name_map direct_map canAutoLink AUTO_LINK_GUARD_SQL link-pc 409 already_linked hidden_target CAA5TA1 HGNEA1S
+1. 작업 위치: mindmap-viewer / 가지 cld/pclink-cache / 작업 폴더 C:UsersUSERmv-cld-pclink-cache / PR #113(합치지 않음).
+2. 완료: ① /api/learning/logs — 화면 썸네일(base64 장당 40~95KB)을 본 조회에서 빼고(data_json - thumbnail) 길이만 읽음. 원문(raw=1)은 썸네일 합계 24MB 이하일 때만 예전처럼 싣고, 넘거나 noThumb=1 이면 thumbnailUrl·thumbnailBytes 만 줌(응답에 thumbnailsOmitted). ② 묶음 가드 canAutoLink + SQL 가드: 익명 자동 분류(/api/hook)·/api/daemon/link-pc(409)·설치 때 이름/이력 매칭이 이미 진짜 번호에 묶인 컴퓨터를 덮어쓰지 못하고, 숨김 번호·임시 번호로는 묶지 못함. 바꿀 수 있는 곳은 /api/admin/pc-link 와 새 설치 fresh 뿐. ③ pc-user-resolver: 숨김 번호 제외, 직접 매핑 표에서 DESKTOP-CAA5TA1 줄 삭제. 테스트 19→38건.
+3. 남은 일: ① 잘못 묶인 두 줄 바로잡기 = 관리자 주소로 CAA5TA1·HGNEA1S 를 맞는 번호에 다시 묶기(운영 DB 쓰기 — 사장님 승인 뒤). 그 전까지 두 자리 기록은 계속 다른 번호로 쌓인다. ② 잘못 쌓인 기록(CAA5TA1→MNMR8568 1,641건, HGNEA1S→MNMR52II 9,964건, 11-23~11-24 15:02 KST 기준) 옮기기는 따로 승인. ③ #113 합치기 전에는 analyze-routines2.js 같은 원문 대량 조회가 서버를 다시 죽일 수 있음(묶음 쪽은 주 단위 조회로 바꿈).
+4. 검증: 전체 jest 352 통과/2 실패(이 PC tar 문제, 원본 main 동일), node --check, pstack-verify PASS. 미검증: 운영에서 썸네일 뺀 조회의 실제 크기·시간, work-daylog 화면이 24MB 초과 날에 그림 없이 뜨는지, link-pc 409 가 웹 화면에서 어떻게 보이는지.
+5. 주의: 근거 — Railway 로그 11-23 22:05:14Z·11-24 05:53:41Z `FATAL ERROR: Reached heap limit`, 직전 /api/learning/logs 응답 137MB(tx=137196128). 자동 분류 로그 11-23 07:49:37Z `auto-classify DESKTOP-HGNEA1S → MNMR52II…(name_map)`, 08:57:07Z `DESKTOP-CAA5TA1 → MNMR8568…(direct_map)`. 원격 명령·운영 DB 쓰기 없음. 연결 목표: g01 / 학습 반영: 없음
