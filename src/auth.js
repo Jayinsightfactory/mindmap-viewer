@@ -772,18 +772,26 @@ async function _pgBackupToken(token, userId, expiresAt, type) {
   for (let attempt = 1; attempt <= 3; attempt++) {
     try {
       await _pgInit();
-      await _pgPool.query(
-        `INSERT INTO orbit_auth_tokens (token, user_id, type, expires_at)
-         VALUES ($1, $2, $3, $4)
-         ON CONFLICT (token) DO UPDATE SET
-           type = CASE
-             WHEN EXCLUDED.type = 'api' THEN 'api'
-             ELSE COALESCE(orbit_auth_tokens.type, EXCLUDED.type)
-           END,
-           expires_at = COALESCE(orbit_auth_tokens.expires_at, EXCLUDED.expires_at)`,
-        // 2026-11-10 토큰 누수 수정 + 2026-11-25 type 보존 수정: 데몬 api 토큰이 'session'으로 오분류되지 않도록 type 명시 upsert
-        [token, userId, tokenType, effectiveExpiresAt]
+      // 운영 PG orbit_auth_tokens.token 에 UNIQUE/PK 제약이 없는 레거시 스키마 대응:
+      // ON CONFLICT (token) 대신 UPDATE-first → 0행이면 INSERT (ON CONFLICT DO NOTHING) 수행.
+      const upd = await _pgPool.query(
+        `UPDATE orbit_auth_tokens
+         SET type = CASE
+               WHEN $2 = 'api' THEN 'api'
+               ELSE COALESCE(type, $2)
+             END,
+             expires_at = COALESCE(expires_at, $3)
+         WHERE token = $1`,
+        [token, tokenType, effectiveExpiresAt]
       );
+      if (!upd || !upd.rowCount) {
+        await _pgPool.query(
+          `INSERT INTO orbit_auth_tokens (token, user_id, type, expires_at)
+           VALUES ($1, $2, $3, $4)
+           ON CONFLICT DO NOTHING`,
+          [token, userId, tokenType, effectiveExpiresAt]
+        );
+      }
       return; // 성공
     } catch (e) {
       console.warn(`[AUTH-PG] token backup attempt ${attempt}/3 failed:`, e.message);
