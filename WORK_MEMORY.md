@@ -2563,3 +2563,12 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 3. 남은 할 일: CI 통과 후 즉시 squash 머지 → 라이브 Railway /health HTTP 200 및 로그 42P10 오류 0건 확인 → worktree 정리.
 4. 검증 상태: phase1-rust-canary-and-token-type.test.js 7/7 PASS, node --check PASS, pstack-verify.cjs PASS.
 5. 주의/잠금: 레거시 PG 테이블에 ON CONFLICT (token) 재사용 금지(항상 UPDATE-first 사용). 연결 목표: g12, g14, g18 / 학습 반영: 없음
+
+
+## 2026-11-25 Phase 3 Rust 수집기 원격 배포 채널 + Drive OOM 가드 + Guardian 우회 감시기
+검색어: rust-collector-v0.2.0 rust-collector-meta syncRustCollectorBinary timingSafeEqual createConfigWatcher guardian-watchdog GDRIVE_SYNC_DISABLED GOOGLE_DRIVE_ARCHIVE_FOLDER_ID g12 g14 g18
+1. 작업 위치: mindmap-viewer / 브랜치 feat/phase3-rust-dist-and-drive-guard / worktree C:/Users/USER/mv-agy-phase3-rust-dist (Codex PR #102 파일 미접촉).
+2. 완료된 것: ① GitHub Release rust-collector-v0.2.0(orbit-collector-rs.exe 485,376 B, SHA-256 d39953ae…326e48a + SHA256SUMS.txt, 302→200 확인) 게시 및 .github/workflows/build-rust-collector.yml(windows-latest cargo test/build + SHA256SUMS.txt) 추가. ② src/daemon-release.js(getRustCollectorMeta + resolveDaemonDriveConfig/isGdriveSyncDisabled), server.js(authenticateDaemonRequest 보호 GET /api/daemon/rust-collector-meta + GET /api/daemon/drive-config GDRIVE_SYNC_DISABLED=1|true 하드 차단), src/event-archiver.js(서버 전용 GOOGLE_DRIVE_ARCHIVE_FOLDER_ID 우선 + GOOGLE_DRIVE_CAPTURES_FOLDER_ID 폴백 + supportsAllDrives=true) 구현. ③ src/daemon-updater.js(syncRustCollectorBinary: 100% opt-in 전용, 302 리다이렉트 추적, crypto.timingSafeEqual SHA-256 검증, .tmp.<pid> atomic renameSync, 오류/불일치 시 .tmp 즉시 삭제 + Node 폴백, case 'config' 및 _postUpdate 훅) + src/rust-collector-sidecar.js(createConfigWatcher) + daemon/personal-agent.js 60초 감시 루프(Guardian config 가로채기 대응) + tests/unit/phase3-rust-dist-and-drive-guard.test.js 11건 추가.
+3. 남은 할 일: PR CI 통과 및 @p3-verifier APPROVE 수령 후 squash 머지 → worktree 정리 → 라이브 /health & /api/daemon/rust-collector-meta 200 확인 → Wave 1 카나리 1호(DESKTOP-S4S2HMU) 라이브 검증 후 @p3-ops-s3-env에 Wave 2 확대 신호 전달.
+4. 검증 상태: 전체 Jest 38/38 스위트(388/388 테스트) 통과, node --check 전 파일 통과, pstack-verify.cjs PASS, GitHub Release HTTPS 302→200 확인.
+5. 주의/잠금: 기본값 100% OFF(rustCollector===true 또는 ORBIT_RUST_COLLECTOR=1 시만 동작), GDRIVE_SYNC_DISABLED=1|true 시 직원 PC Drive 업로더 영구 차단, Codex PR #102 파일 미수정. 연결 목표: g12, g14, g18 / 학습 반영: 없음

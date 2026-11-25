@@ -201,10 +201,79 @@ async function streamReleaseBundle(res, opts = {}) {
   });
 }
 
+const DEFAULT_RUST_COLLECTOR_META = Object.freeze({
+  version: '0.2.0',
+  tag: 'rust-collector-v0.2.0',
+  filename: 'orbit-collector-rs.exe',
+  url: 'https://github.com/Jayinsightfactory/mindmap-viewer/releases/download/rust-collector-v0.2.0/orbit-collector-rs.exe',
+  sha256: 'd39953ae39d688e226e86c0124bbc75276cd9d7d8cf4ae696ab4c0b81326e48a',
+  sizeBytes: 485376,
+  minDaemonVersion: '2.0.0',
+});
+
+/**
+ * Rust 수집기(.exe) 원격 배포 메타데이터 반환.
+ * 기본값은 GitHub Release rust-collector-v0.2.0이며, RUST_COLLECTOR_META_* 환경변수로 오버라이드 가능.
+ */
+function getRustCollectorMeta(env = process.env) {
+  const src = env || {};
+  const version = String(src.RUST_COLLECTOR_META_VERSION || DEFAULT_RUST_COLLECTOR_META.version).trim()
+    || DEFAULT_RUST_COLLECTOR_META.version;
+  const url = String(src.RUST_COLLECTOR_META_URL || DEFAULT_RUST_COLLECTOR_META.url).trim()
+    || DEFAULT_RUST_COLLECTOR_META.url;
+  const sha256 = String(src.RUST_COLLECTOR_META_SHA256 || DEFAULT_RUST_COLLECTOR_META.sha256).trim().toLowerCase()
+    || DEFAULT_RUST_COLLECTOR_META.sha256;
+  const parsedSize = parseInt(String(src.RUST_COLLECTOR_META_SIZE_BYTES || ''), 10);
+  const sizeBytes = Number.isFinite(parsedSize) && parsedSize > 0
+    ? parsedSize
+    : DEFAULT_RUST_COLLECTOR_META.sizeBytes;
+  const minDaemonVersion = String(src.RUST_COLLECTOR_META_MIN_DAEMON_VERSION || DEFAULT_RUST_COLLECTOR_META.minDaemonVersion).trim()
+    || DEFAULT_RUST_COLLECTOR_META.minDaemonVersion;
+  return {
+    ok: true,
+    version,
+    url,
+    sha256,
+    sizeBytes,
+    minDaemonVersion,
+    filename: DEFAULT_RUST_COLLECTOR_META.filename,
+  };
+}
+
+/**
+ * GDRIVE_SYNC_DISABLED 환경변수가 '1' 또는 'true'인지 판정한다.
+ */
+function isGdriveSyncDisabled(env = process.env) {
+  const raw = String((env && env.GDRIVE_SYNC_DISABLED) || '').trim().toLowerCase();
+  return raw === '1' || raw === 'true';
+}
+
+/**
+ * GET /api/daemon/drive-config 응답 생성 (직원 PC Drive 업로더 OOM 원천 차단 가드 포함).
+ */
+function resolveDaemonDriveConfig({ env = process.env, driveDisabled = false, folderIdOverride = null } = {}) {
+  if (isGdriveSyncDisabled(env)) {
+    return { enabled: false, disabledReason: 'gdrive_sync_disabled_env' };
+  }
+  if (driveDisabled) {
+    return { enabled: false, disabledReason: 'drive_global_off' };
+  }
+  const saJson = env && env.GOOGLE_SERVICE_ACCOUNT_JSON;
+  const folderId = folderIdOverride || (env && env.GOOGLE_DRIVE_CAPTURES_FOLDER_ID);
+  if (!saJson || !folderId) {
+    return { enabled: false };
+  }
+  return { enabled: true, credentialsJson: saJson, folderId };
+}
+
 module.exports = {
   RELEASE_ALLOWLIST,
   EXCLUDE_PATTERNS,
+  DEFAULT_RUST_COLLECTOR_META,
   ensureReleaseBundle,
   authenticateDaemonRequest,
   streamReleaseBundle,
+  getRustCollectorMeta,
+  isGdriveSyncDisabled,
+  resolveDaemonDriveConfig,
 };

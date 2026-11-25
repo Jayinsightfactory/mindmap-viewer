@@ -252,12 +252,95 @@ function createSidecar(deps = {}) {
   return { start, stop, getStatus };
 }
 
+function _readConfigSafe(configPath) {
+  try {
+    let raw = fs.readFileSync(configPath, 'utf8');
+    if (raw.charCodeAt(0) === 0xFEFF) raw = raw.slice(1);
+    const parsed = JSON.parse(raw.trim());
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+/**
+ * Guardian(watchdog.ps1) 우회 대응 동적 감시기:
+ * guardian-watchdog.ps1이 config 명령을 먼저 소비해 ~/.orbit-config.json에 rustCollector: true를
+ * 기록하더라도, 60초 루프에서 이를 감지해 바이너리 동기화 → 사이드카 동적 기동(또는 OFF 전환 시 Node 복귀)을 수행한다.
+ */
+function createConfigWatcher({
+  configPath = path.join(os.homedir(), '.orbit-config.json'),
+  env = process.env,
+  sidecar = _defaultSidecar,
+  syncBinaryFn = null,
+  getStartOpts = null,
+  onActivated = null,
+  onDeactivated = null,
+} = {}) {
+  let _busy = false;
+
+  async function tick() {
+    if (_busy) return { action: 'busy', active: !!(sidecar && sidecar.getStatus && sidecar.getStatus().active) };
+    _busy = true;
+    try {
+      const freshCfg = _readConfigSafe(configPath);
+      const optedIn = isOptedIn(freshCfg, env);
+      const status = sidecar && typeof sidecar.getStatus === 'function' ? sidecar.getStatus() : { active: false, circuitOpen: false };
+
+      if (!optedIn) {
+        if (status.active) {
+          try { sidecar.stop(); } catch {}
+          try { if (typeof onDeactivated === 'function') onDeactivated(freshCfg); } catch {}
+          return { action: 'stopped_opt_out', active: false };
+        }
+        return { action: 'disabled', active: false };
+      }
+
+      if (status.circuitOpen) {
+        return { action: 'circuit_open', active: false };
+      }
+      if (status.active) {
+        return { action: 'already_active', active: true };
+      }
+
+      let syncRes = null;
+      if (typeof syncBinaryFn === 'function') {
+        try {
+          syncRes = await syncBinaryFn({ config: freshCfg, env, sidecar });
+        } catch (err) {
+          syncRes = { ok: false, reason: 'sync_exception', error: err && err.message ? err.message : String(err), fallback: 'node' };
+        }
+      }
+
+      const extraOpts = typeof getStartOpts === 'function' ? (getStartOpts(freshCfg) || {}) : {};
+      const startRes = sidecar.start({
+        ...extraOpts,
+        config: freshCfg,
+        env,
+      });
+
+      if (startRes && startRes.active) {
+        try { if (typeof onActivated === 'function') onActivated(startRes, freshCfg); } catch {}
+        return { action: 'started', active: true, syncRes, startRes };
+      }
+      return { action: 'fallback_node', active: false, syncRes, startRes };
+    } catch (err) {
+      return { action: 'error_fallback_node', active: false, error: err && err.message ? err.message : String(err) };
+    } finally {
+      _busy = false;
+    }
+  }
+
+  return { tick };
+}
+
 const _defaultSidecar = createSidecar();
 
 module.exports = {
   isOptedIn,
   resolveBinaryPath,
   createSidecar,
+  createConfigWatcher,
   start: _defaultSidecar.start,
   stop: _defaultSidecar.stop,
   getStatus: _defaultSidecar.getStatus,

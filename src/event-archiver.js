@@ -11,7 +11,8 @@
  *
  * 환경변수:
  *   GOOGLE_SERVICE_ACCOUNT_JSON — 서비스 계정 JSON 문자열
- *   GOOGLE_DRIVE_CAPTURES_FOLDER_ID — 캡처 폴더 ID (아카이브 폴더의 부모)
+ *   GOOGLE_DRIVE_ARCHIVE_FOLDER_ID — 서버 전용 아카이브 폴더 ID (우선, 직원 PC Drive 업로더와 분리)
+ *   GOOGLE_DRIVE_CAPTURES_FOLDER_ID — 레거시 폴백 폴더 ID
  *   ARCHIVE_THRESHOLD — 행 수 임계값 (기본 50000)
  *   ARCHIVE_KEEP_DAYS — 보존 기간(일) (기본 30)
  */
@@ -119,10 +120,17 @@ function isProtectedEvent(row) {
  *   미설정 / auto (기본)                        : GOOGLE_SERVICE_ACCOUNT_JSON + GOOGLE_DRIVE_CAPTURES_FOLDER_ID 모두 설정 시 Drive 우선,
  *                                               Drive 미구성(폴더 ID 미설정 포함)이거나 PG 임계치 초과 상태에서 Drive 백업 실패/0건 시 노이즈만 정리
  */
+function getArchiveParentFolderId(env = process.env) {
+  const dedicated = env && env.GOOGLE_DRIVE_ARCHIVE_FOLDER_ID && String(env.GOOGLE_DRIVE_ARCHIVE_FOLDER_ID).trim();
+  if (dedicated) return dedicated;
+  const legacy = env && env.GOOGLE_DRIVE_CAPTURES_FOLDER_ID && String(env.GOOGLE_DRIVE_CAPTURES_FOLDER_ID).trim();
+  return legacy || null;
+}
+
 function isDriveArchiveConfigured(env = process.env) {
   return Boolean(
-    env.GOOGLE_SERVICE_ACCOUNT_JSON && String(env.GOOGLE_SERVICE_ACCOUNT_JSON).trim() &&
-    env.GOOGLE_DRIVE_CAPTURES_FOLDER_ID && String(env.GOOGLE_DRIVE_CAPTURES_FOLDER_ID).trim()
+    env && env.GOOGLE_SERVICE_ACCOUNT_JSON && String(env.GOOGLE_SERVICE_ACCOUNT_JSON).trim() &&
+    getArchiveParentFolderId(env)
   );
 }
 
@@ -159,6 +167,7 @@ function resolveRetentionPolicy({
 let _token = null;
 let _tokenExpiry = 0;
 let _archiveFolderId = null; // 캐시
+let _archiveFolderParentId = null; // 캐시 키(부모 폴더 변경 시 무효화)
 
 async function _getToken() {
   if (_token && Date.now() < _tokenExpiry) return _token;
@@ -247,13 +256,13 @@ async function _ensureFolder(name, parentId, token) {
     `name='${name}' and mimeType='application/vnd.google-apps.folder' and trashed=false`
     + (parentId ? ` and '${parentId}' in parents` : '')
   );
-  const search = await _get('www.googleapis.com', `/drive/v3/files?q=${q}&fields=files(id,name)`, token);
+  const search = await _get('www.googleapis.com', `/drive/v3/files?q=${q}&fields=files(id,name)&supportsAllDrives=true&includeItemsFromAllDrives=true`, token);
   if (search.files && search.files.length > 0) return search.files[0].id;
 
   // 없으면 생성
   const meta = { name, mimeType: 'application/vnd.google-apps.folder' };
   if (parentId) meta.parents = [parentId];
-  const created = await _postWithAuth('www.googleapis.com', '/drive/v3/files', JSON.stringify(meta), 'application/json', token);
+  const created = await _postWithAuth('www.googleapis.com', '/drive/v3/files?supportsAllDrives=true', JSON.stringify(meta), 'application/json', token);
   if (!created?.id) throw new Error(`Drive 폴더 생성 응답에 id 없음 (${name}): ${JSON.stringify(created).slice(0, 200)}`);
   return created.id;
 }
@@ -301,7 +310,7 @@ async function _uploadJson(content, filename, folderId, token) {
   return new Promise((resolve, reject) => {
     const req = https.request({
       hostname: 'www.googleapis.com',
-      path: '/upload/drive/v3/files?uploadType=multipart&fields=id,name',
+      path: '/upload/drive/v3/files?uploadType=multipart&fields=id,name&supportsAllDrives=true',
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${token}`,
@@ -329,11 +338,12 @@ async function _uploadJson(content, filename, folderId, token) {
 
 async function _getArchiveFolder(monthKey) {
   const token = await _getToken();
-  const parentId = process.env.GOOGLE_DRIVE_CAPTURES_FOLDER_ID || null;
+  const parentId = getArchiveParentFolderId(process.env);
 
   // orbit-archive 루트 폴더
-  if (!_archiveFolderId) {
+  if (!_archiveFolderId || _archiveFolderParentId !== parentId) {
     _archiveFolderId = await _ensureFolder('orbit-archive', parentId, token);
+    _archiveFolderParentId = parentId;
   }
   // 월별 하위 폴더
   const monthFolderId = await _ensureFolder(monthKey, _archiveFolderId, token);
@@ -460,7 +470,7 @@ async function _archiveUser(pool, userId, cutoffDate, opts = {}) {
   // Drive 업로드 (실제 Drive 업로드 완료(drive_file IS NOT NULL) 시 원본 전체 삭제)
   let driveFileId = null;
   const saEnabled = !!process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
-  const folderIdSet = !!process.env.GOOGLE_DRIVE_CAPTURES_FOLDER_ID;
+  const folderIdSet = Boolean(getArchiveParentFolderId(process.env));
   if (saEnabled) {
     try {
       const { token, monthFolderId } = await _getArchiveFolder(monthKey);
@@ -790,6 +800,7 @@ module.exports = {
   deleteVerifiedArchivedEvents,
   pruneExpiredNoiseEvents,
   resolveRetentionPolicy,
+  getArchiveParentFolderId,
   isDriveArchiveConfigured,
   buildSafeCutoffClause,
   safeTextTimestampExpr,

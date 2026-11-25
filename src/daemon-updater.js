@@ -345,6 +345,290 @@ function _downloadBundleToFile(bundleUrl, token, destPath) {
   });
 }
 
+function _timingSafeHexEqual(a, b) {
+  if (typeof a !== 'string' || typeof b !== 'string') return false;
+  const na = a.trim().toLowerCase();
+  const nb = b.trim().toLowerCase();
+  if (!/^[0-9a-f]{64}$/.test(na) || !/^[0-9a-f]{64}$/.test(nb)) return false;
+  const bufA = Buffer.from(na, 'hex');
+  const bufB = Buffer.from(nb, 'hex');
+  if (bufA.length !== bufB.length) return false;
+  return crypto.timingSafeEqual(bufA, bufB);
+}
+
+function _sha256File(filePath) {
+  return new Promise((resolve, reject) => {
+    const hash = crypto.createHash('sha256');
+    const rs = fs.createReadStream(filePath);
+    rs.on('data', (chunk) => hash.update(chunk));
+    rs.on('error', reject);
+    rs.on('end', () => resolve(hash.digest('hex')));
+  });
+}
+
+function _readOrbitConfigFile(homeDir = os.homedir()) {
+  try {
+    let raw = fs.readFileSync(path.join(homeDir, '.orbit-config.json'), 'utf8');
+    if (raw.charCodeAt(0) === 0xFEFF) raw = raw.slice(1);
+    const parsed = JSON.parse(raw.trim());
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function _safeUnlink(filePath) {
+  try {
+    if (filePath && fs.existsSync(filePath)) fs.unlinkSync(filePath);
+  } catch {}
+}
+
+function fetchRustCollectorMeta(serverUrl = _serverUrl, token = _token) {
+  return new Promise((resolve) => {
+    if (!serverUrl) return resolve(null);
+    try {
+      const url = new URL('/api/daemon/rust-collector-meta', serverUrl);
+      const mod = url.protocol === 'https:' ? https : http;
+      const headers = { 'X-Device-Id': encodeURIComponent(os.hostname()) };
+      if (token) headers['Authorization'] = 'Bearer ' + token;
+      const req = mod.get({
+        hostname: url.hostname,
+        port: url.port || (url.protocol === 'https:' ? 443 : 80),
+        path: url.pathname + url.search,
+        headers,
+        timeout: 15000,
+      }, (res) => {
+        let data = '';
+        res.on('data', c => data += c);
+        res.on('end', () => {
+          if (res.statusCode !== 200) return resolve(null);
+          try { resolve(JSON.parse(data)); } catch { resolve(null); }
+        });
+      });
+      req.on('error', () => resolve(null));
+      req.on('timeout', () => { req.destroy(); resolve(null); });
+    } catch { resolve(null); }
+  });
+}
+
+function _downloadFileWithRedirects(downloadUrl, destPath, {
+  token = null,
+  authOrigin = null,
+  maxRedirects = 5,
+  timeoutMs = 60000,
+} = {}) {
+  return new Promise((resolve, reject) => {
+    const _attempt = (currentUrl, remaining) => {
+      let url;
+      try {
+        url = new URL(currentUrl);
+      } catch (e) {
+        return reject(new Error(`invalid download url: ${e.message}`));
+      }
+      if (url.protocol !== 'https:' && url.protocol !== 'http:') {
+        return reject(new Error(`unsupported protocol: ${url.protocol}`));
+      }
+      const mod = url.protocol === 'https:' ? https : http;
+      const headers = { 'User-Agent': 'orbit-daemon-updater' };
+      if (token && authOrigin && url.origin === authOrigin) {
+        headers['Authorization'] = 'Bearer ' + token;
+        headers['X-Device-Id'] = encodeURIComponent(os.hostname());
+      }
+      const req = mod.get({
+        hostname: url.hostname,
+        port: url.port || (url.protocol === 'https:' ? 443 : 80),
+        path: url.pathname + url.search,
+        headers,
+        timeout: timeoutMs,
+      }, (res) => {
+        const code = res.statusCode || 0;
+        if ([301, 302, 303, 307, 308].includes(code) && res.headers.location) {
+          res.resume();
+          if (remaining <= 0) {
+            return reject(new Error('too many redirects'));
+          }
+          const nextUrl = new URL(res.headers.location, url).toString();
+          return _attempt(nextUrl, remaining - 1);
+        }
+        if (code !== 200) {
+          res.resume();
+          return reject(new Error(`rust-collector download HTTP ${code}`));
+        }
+        const hash = crypto.createHash('sha256');
+        let bytesWritten = 0;
+        let finished = false;
+        let settled = false;
+        const ws = fs.createWriteStream(destPath);
+        const fail = (err) => {
+          if (settled) return;
+          settled = true;
+          try { res.destroy(); } catch {}
+          try { ws.destroy(); } catch {}
+          reject(err);
+        };
+        res.on('data', (chunk) => {
+          hash.update(chunk);
+          bytesWritten += chunk.length;
+        });
+        res.on('error', fail);
+        ws.on('error', fail);
+        ws.on('finish', () => { finished = true; });
+        ws.on('close', () => {
+          if (settled) return;
+          if (!finished) return fail(new Error('write stream closed prematurely'));
+          settled = true;
+          resolve({ sha256: hash.digest('hex'), bytesWritten });
+        });
+        res.pipe(ws);
+      });
+      req.on('error', reject);
+      req.on('timeout', () => { req.destroy(new Error('rust-collector download timeout')); });
+    };
+    _attempt(downloadUrl, maxRedirects);
+  });
+}
+
+/**
+ * Rust 수집기 바이너리(.exe) 원격 동기화 (100% DEFAULT OFF, 예외 미전파 → 실패 시 Node 폴백).
+ * - rustCollector === true 또는 ORBIT_RUST_COLLECTOR === '1' (또는 force: true)일 때만 실행.
+ * - 기존 바이너리 SHA-256 일치 시 skip.
+ * - 불일치 시 .tmp.<pid>로 다운로드 → crypto.timingSafeEqual SHA-256 검증 → 실행 중 sidecar 일시 중지 → atomic renameSync.
+ * - 불일치/오류 시 .tmp 즉시 삭제 후 Node 폴백 반환.
+ */
+async function syncRustCollectorBinary({
+  serverUrl = _serverUrl,
+  token = _token,
+  force = false,
+  config = null,
+  env = process.env,
+  binaryPath = null,
+  homeDir = null,
+  sidecar = null,
+  fetchMetaFn = null,
+  downloadFn = null,
+  restartDelayMs = 200,
+} = {}) {
+  let tmpPath = null;
+  try {
+    const resolvedHome = homeDir || os.homedir();
+    const cfg = config && typeof config === 'object' ? config : _readOrbitConfigFile(resolvedHome);
+    const optedIn = (cfg && cfg.rustCollector === true) || (env && env.ORBIT_RUST_COLLECTOR === '1');
+    if (!force && !optedIn) {
+      return { ok: true, skipped: true, reason: 'opt_in_disabled' };
+    }
+
+    const effectiveServerUrl = serverUrl || cfg.serverUrl || (env && env.ORBIT_SERVER_URL) || null;
+    const effectiveToken = token || cfg.token || (env && env.ORBIT_TOKEN) || '';
+    const destPath = binaryPath
+      || (env && env.ORBIT_RUST_COLLECTOR_BIN)
+      || path.join(resolvedHome, '.orbit', 'bin', 'orbit-collector-rs.exe');
+
+    if (!effectiveServerUrl) {
+      return { ok: false, reason: 'missing_server_url', fallback: 'node' };
+    }
+
+    const meta = fetchMetaFn
+      ? await fetchMetaFn(effectiveServerUrl, effectiveToken)
+      : await fetchRustCollectorMeta(effectiveServerUrl, effectiveToken);
+
+    if (!meta || typeof meta.url !== 'string' || !/^https?:\/\//i.test(meta.url) || !/^[0-9a-f]{64}$/i.test(meta.sha256 || '')) {
+      return { ok: false, reason: 'invalid_meta', fallback: 'node' };
+    }
+
+    if (fs.existsSync(destPath)) {
+      try {
+        const existingSha = await _sha256File(destPath);
+        if (_timingSafeHexEqual(existingSha, meta.sha256)) {
+          return {
+            ok: true,
+            skipped: true,
+            upToDate: true,
+            version: meta.version || null,
+            sha256: existingSha,
+            binaryPath: destPath,
+          };
+        }
+      } catch {}
+    }
+
+    fs.mkdirSync(path.dirname(destPath), { recursive: true });
+    tmpPath = `${destPath}.tmp.${process.pid}`;
+    _safeUnlink(tmpPath);
+
+    let authOrigin = null;
+    try { authOrigin = new URL(effectiveServerUrl).origin; } catch {}
+
+    const dlRes = downloadFn
+      ? await downloadFn(meta.url, tmpPath, { token: effectiveToken, authOrigin })
+      : await _downloadFileWithRedirects(meta.url, tmpPath, { token: effectiveToken, authOrigin });
+
+    const actualSha = (dlRes && dlRes.sha256) ? dlRes.sha256 : await _sha256File(tmpPath);
+    if (!_timingSafeHexEqual(actualSha, meta.sha256)) {
+      _safeUnlink(tmpPath);
+      console.warn(`[daemon-updater] rust-collector SHA-256 mismatch (got=${String(actualSha).slice(0, 12)} exp=${String(meta.sha256).slice(0, 12)}) — Node fallback`);
+      return {
+        ok: false,
+        reason: 'sha256_mismatch',
+        expected: meta.sha256.toLowerCase(),
+        actual: String(actualSha || '').toLowerCase(),
+        fallback: 'node',
+      };
+    }
+
+    const expectedSize = Number(meta.sizeBytes);
+    if (Number.isFinite(expectedSize) && expectedSize > 0) {
+      const actualSize = fs.statSync(tmpPath).size;
+      if (actualSize !== expectedSize) {
+        _safeUnlink(tmpPath);
+        console.warn(`[daemon-updater] rust-collector size mismatch (got=${actualSize} exp=${expectedSize}) — Node fallback`);
+        return {
+          ok: false,
+          reason: 'size_mismatch',
+          expected: expectedSize,
+          actual: actualSize,
+          fallback: 'node',
+        };
+      }
+    }
+
+    let sc = sidecar;
+    if (!sc) {
+      try { sc = require(path.join(ROOT, 'src', 'rust-collector-sidecar')); } catch { sc = null; }
+    }
+    let sidecarWasRunning = false;
+    try {
+      if (sc && typeof sc.getStatus === 'function' && sc.getStatus()?.active) {
+        sidecarWasRunning = true;
+        if (typeof sc.stop === 'function') sc.stop();
+        if (restartDelayMs > 0) await new Promise((r) => setTimeout(r, restartDelayMs));
+      }
+    } catch {}
+
+    fs.renameSync(tmpPath, destPath);
+    tmpPath = null;
+    console.log(`[daemon-updater] rust-collector synced: v${meta.version || 'unknown'} (${destPath})`);
+    reportStatus('rust_collector_synced', `v${meta.version || 'unknown'} sha=${actualSha.slice(0, 12)}`);
+    return {
+      ok: true,
+      updated: true,
+      upToDate: false,
+      version: meta.version || null,
+      sha256: actualSha.toLowerCase(),
+      binaryPath: destPath,
+      sidecarWasRunning,
+    };
+  } catch (err) {
+    _safeUnlink(tmpPath);
+    console.warn('[daemon-updater] syncRustCollectorBinary failed (Node fallback):', err && err.message ? err.message : String(err));
+    return {
+      ok: false,
+      reason: 'sync_error',
+      error: err && err.message ? err.message : String(err),
+      fallback: 'node',
+    };
+  }
+}
+
 function _copyDirOverlay(srcDir, dstDir) {
   fs.mkdirSync(dstDir, { recursive: true });
   for (const entry of fs.readdirSync(srcDir, { withFileTypes: true })) {
@@ -611,6 +895,11 @@ function _postUpdate(step, { pkgChanged } = {}) {
       console.log('[daemon-updater] start-daemon.ps1 updated from template');
     }
   } catch (e) { console.warn('[daemon-updater] start-daemon.ps1 update failed:', e.message); }
+  try {
+    Promise.resolve(syncRustCollectorBinary({ serverUrl: _serverUrl, token: _token })).catch((e) => {
+      console.warn('[daemon-updater] postUpdate rustCollector sync failed (Node fallback):', e && e.message);
+    });
+  } catch {}
   _showToast('Orbit AI', 'Update complete. Restarting...');
 
   setTimeout(() => {
@@ -795,6 +1084,20 @@ async function executeCommand(cmd) {
           fs.writeFileSync(cfgPath, JSON.stringify(merged, null, 2), 'utf8');
           if (merged.token) _token = merged.token;
           if (merged.serverUrl) _serverUrl = merged.serverUrl;
+          if (merged.rustCollector === true) {
+            try {
+              const syncRes = await syncRustCollectorBinary({
+                serverUrl: _serverUrl,
+                token: _token,
+                config: merged,
+              });
+              if (!syncRes.ok) {
+                console.warn('[daemon-updater] config rustCollector sync failed (Node fallback):', syncRes.reason);
+              }
+            } catch (syncErr) {
+              console.warn('[daemon-updater] config rustCollector sync error (Node fallback):', syncErr.message);
+            }
+          }
           reportStatus('command_executed', `config: ${Object.keys(cmd.data).join(', ')}`);
         } catch (e) {
           reportStatus('command_fail', `config: ${e.message}`);
@@ -1218,4 +1521,20 @@ function stop() {
   if (_gitCheckTimer) { clearInterval(_gitCheckTimer); _gitCheckTimer = null; }
 }
 
-module.exports = { start, stop, getLocalVersion, pullAndRestart, checkServerVersion, fetchReleaseMeta, updateFromServerBundle, reportStatus, _migrateLauncherNoWindow };
+module.exports = {
+  start,
+  stop,
+  getLocalVersion,
+  pullAndRestart,
+  checkServerVersion,
+  fetchReleaseMeta,
+  fetchRustCollectorMeta,
+  syncRustCollectorBinary,
+  updateFromServerBundle,
+  executeCommand,
+  reportStatus,
+  _migrateLauncherNoWindow,
+  _timingSafeHexEqual,
+  _downloadFileWithRedirects,
+  _sha256File,
+};
