@@ -218,8 +218,8 @@ function issueApiToken(userId) {
     INSERT INTO tokens (token, userId, type)
     VALUES (?, ?, 'api')
   `).run(token, userId);
-  // PG에 즉시 백업 (fire-and-forget이지만 로깅 강화)
-  _pgBackupToken(token, userId, null).catch(e => {
+  // PG에 즉시 백업 (fire-and-forget이지만 로깅 강화, type='api' 명시 보존)
+  _pgBackupToken(token, userId, null, 'api').catch(e => {
     console.error(`[AUTH] CRITICAL: PG token backup failed for ${userId}:`, e.message);
   });
   return token;
@@ -235,7 +235,7 @@ async function issueApiTokenAsync(userId) {
   `).run(token, userId);
   // PG에 반드시 저장 (await — 실패 시 재시도 3회)
   try {
-    await _pgBackupToken(token, userId, null);
+    await _pgBackupToken(token, userId, null, 'api');
     console.log(`[AUTH] Token issued + PG saved: ${userId} ${token.slice(0,12)}...`);
   } catch (e) {
     console.error(`[AUTH] CRITICAL: PG token backup failed for ${userId}:`, e.message);
@@ -754,15 +754,35 @@ async function _pgBackupUser(user, passwordHash) {
     });
   } catch (e) { console.warn('[AUTH-PG] user backup failed:', e.message); }
 }
-async function _pgBackupToken(token, userId, expiresAt) {
+function _resolveTokenType(token, explicitType) {
+  const normalized = typeof explicitType === 'string' ? explicitType.trim().toLowerCase() : '';
+  if (normalized === 'api' || normalized === 'session') return normalized;
+  if (db && token) {
+    try {
+      const row = db.prepare('SELECT type FROM tokens WHERE token = ?').get(token);
+      if (row && (row.type === 'api' || row.type === 'session')) return row.type;
+    } catch {}
+  }
+  return 'session';
+}
+async function _pgBackupToken(token, userId, expiresAt, type) {
   if (!_pgPool || !token) return;
+  const tokenType = _resolveTokenType(token, type);
+  const effectiveExpiresAt = expiresAt || new Date(Date.now() + 90 * 24 * 3600 * 1000).toISOString();
   for (let attempt = 1; attempt <= 3; attempt++) {
     try {
       await _pgInit();
       await _pgPool.query(
-        `INSERT INTO orbit_auth_tokens (token, user_id, expires_at) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`,
-        // 2026-11-10 토큰 누수 수정: 만료 없는 무한 적체 방지 — 기본 90일(사용 시 연장됨). api 등 무만료 필요 시 호출부에서 명시.
-        [token, userId, expiresAt || new Date(Date.now() + 90 * 24 * 3600 * 1000).toISOString()]
+        `INSERT INTO orbit_auth_tokens (token, user_id, type, expires_at)
+         VALUES ($1, $2, $3, $4)
+         ON CONFLICT (token) DO UPDATE SET
+           type = CASE
+             WHEN EXCLUDED.type = 'api' THEN 'api'
+             ELSE COALESCE(orbit_auth_tokens.type, EXCLUDED.type)
+           END,
+           expires_at = COALESCE(orbit_auth_tokens.expires_at, EXCLUDED.expires_at)`,
+        // 2026-11-10 토큰 누수 수정 + 2026-11-25 type 보존 수정: 데몬 api 토큰이 'session'으로 오분류되지 않도록 type 명시 upsert
+        [token, userId, tokenType, effectiveExpiresAt]
       );
       return; // 성공
     } catch (e) {
@@ -771,7 +791,6 @@ async function _pgBackupToken(token, userId, expiresAt) {
     }
   }
 }
-
 // 부팅 시 PG의 인증 데이터를 SQLite에 동기화 (이메일 기반 머지)
 // SQLite에 이미 유저가 있어도 PG 유저를 우선시 (원본 ID 유지 → 이벤트 매칭)
 async function initFromPg() {
@@ -824,9 +843,9 @@ async function initFromPg() {
       setInterval(async () => {
         if (!_pgPool || !db) return;
         try {
-          const allToks = db.prepare("SELECT token, userId FROM tokens WHERE type='api'").all();
+          const allToks = db.prepare("SELECT token, userId, type, expiresAt FROM tokens WHERE type='api'").all();
           for (const t of allToks) {
-            _pgBackupToken(t.token, t.userId, null).catch(() => {});
+            _pgBackupToken(t.token, t.userId, t.expiresAt || null, t.type || 'api').catch(() => {});
           }
           if (allToks.length > 0) console.log(`[AUTH-PG] 주기적 토큰 동기화: ${allToks.length}개`);
         } catch {}
@@ -846,7 +865,7 @@ function registerWithPgBackup(params) {
     const pwHash = params.password ? bcrypt.hashSync(params.password, BCRYPT_ROUNDS) : '';
     _pgInit().then(() => {
       _pgBackupUser(result.user, pwHash);
-      if (result.token) _pgBackupToken(result.token, result.user.id, null);
+      if (result.token) _pgBackupToken(result.token, result.user.id, null, 'api');
     });
   }
   return result;
@@ -859,10 +878,14 @@ function loginWithPgBackup(params) {
     _pgBackupUser(result.user);
     if (result.token) {
       const expAt = new Date(Date.now() + 30 * 24 * 3600 * 1000).toISOString();
-      _pgBackupToken(result.token, result.user.id, expAt);
+      _pgBackupToken(result.token, result.user.id, expAt, 'session');
     }
   }
   return result;
+}
+
+function _setPgPoolForTest(pool) {
+  _pgPool = pool;
 }
 
 module.exports = {
@@ -881,4 +904,5 @@ module.exports = {
   verifyTokenAsync, // hook 핸들러 전용 (SQLite → PG fallback)
   pgBackupUser: _pgBackupUser,   // create-employee-token에서 await용
   pgBackupToken: _pgBackupToken, // create-employee-token에서 await용
+  _setPgPoolForTest,
 };

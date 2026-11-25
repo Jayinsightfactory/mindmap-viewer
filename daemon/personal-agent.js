@@ -705,6 +705,7 @@ let screenCapture   = null;
 let resourceGovernor = null;
 let workActionRecorder = null; // nenova 행동순서 캡쳐 사이드카 감시자 (추가·격리)
 let perfSelfCheck   = null;    // CPU 자기측정/느림판정/업데이트 성능게이트 (추가·격리)
+let rustCollectorSidecar = null; // Phase 1 카나리 1대 Opt-in Rust 수집기 (기본 OFF)
 const _daemonStartedAt = Date.now();
 // 코드세대(git HEAD 8자) — 데몬 수명 동안 불변(code-sync가 HEAD 바뀌면 재시작)이라 1회 계산 후 캐시.
 let _codeVersion = null;
@@ -759,6 +760,7 @@ function _emitHeartbeat() {
       egress: (() => { try { return _egressRef && _egressRef.getStats ? _egressRef.getStats() : null; } catch { return null; } })(), // 유출 이력 감시 통계 // 업무 드라이브 업로더 통계(원격 진단)
       workAction: (() => { try { return workActionRecorder && workActionRecorder.getStatus ? workActionRecorder.getStatus() : null; } catch { return null; } })(), // nenova 행동순서 캡쳐 사이드카 상태
       perf: (() => { try { return perfSelfCheck && perfSelfCheck.getStatus ? perfSelfCheck.getStatus() : null; } catch { return null; } })(), // 우리 프로세스 CPU%/RSS/핸들 + 느림판정
+      rustCollector: (() => { try { return rustCollectorSidecar && rustCollectorSidecar.getStatus ? rustCollectorSidecar.getStatus() : null; } catch { return null; } })(), // Rust 수집기 카나리 상태(기본 OFF=null)
       codeVersion: _getCodeVersion(), // git HEAD(8) — fleet 코드세대 가시화(누가 최신인지)
     });
   } catch (e) {
@@ -918,15 +920,48 @@ async function main() {
     _reportError('resource-governor', err.message, err.stack);
   }
 
-  // ②-c screen-capture 시작 + keyboard-watcher 연결
+  // ②-c' Rust 수집기 카나리 1대 Opt-in (100% DEFAULT OFF — 미설정/바이너리 없음 시 기존 Node 경로 무변형)
+  let _rustSidecarActive = false;
+  const _startNodeScreenCapture = () => {
+    try {
+      _stage('screen-capture');
+      if (!screenCapture) screenCapture = require(path.join(ROOT, 'src/screen-capture'));
+      screenCapture.start();
+      // 키보드 와처 → 스크린 캡처 이벤트 연결 (앱 전환/idle 시 캡처)
+      if (keyboardWatcher?.setScreenCapture) keyboardWatcher.setScreenCapture(screenCapture);
+    } catch (err) {
+      console.error('[personal-agent] 스크린 캡처 시작 실패:', err.message);
+    }
+  };
   try {
-    _stage('screen-capture');
-    screenCapture = require(path.join(ROOT, 'src/screen-capture'));
-    screenCapture.start();
-    // 키보드 와처 → 스크린 캡처 이벤트 연결 (앱 전환/idle 시 캡처)
-    if (keyboardWatcher?.setScreenCapture) keyboardWatcher.setScreenCapture(screenCapture);
+    const _rcMod = require(path.join(ROOT, 'src/rust-collector-sidecar'));
+    if (_rcMod.isOptedIn(_orbitConfig, process.env)) {
+      _stage('rust-collector-sidecar');
+      rustCollectorSidecar = _rcMod;
+      const rcRes = rustCollectorSidecar.start({
+        config: _orbitConfig,
+        env: process.env,
+        serverUrl: REMOTE_URL,
+        token: REMOTE_TOKEN,
+        userId: _orbitConfig.userId || os.hostname(),
+        reportEvent: _reportEvent,
+        onFallback: (info) => {
+          console.warn(`[personal-agent] Rust 수집기 서킷브레이커 폴백(${info?.reason || 'crash'}) — Node screen-capture/local-buffer 즉시 기동`);
+          _rustSidecarActive = false;
+          _startNodeScreenCapture();
+          try { if (_localBuffer) _localBuffer.start(_sendHookPayload, 60 * 1000); } catch {}
+        },
+      });
+      _rustSidecarActive = !!(rcRes && rcRes.active);
+    }
   } catch (err) {
-    console.error('[personal-agent] 스크린 캡처 시작 실패:', err.message);
+    console.warn('[personal-agent] Rust 수집기 사이드카 로드 실패 — Node 경로 유지:', err.message);
+    _rustSidecarActive = false;
+  }
+
+  // ②-c screen-capture 시작 + keyboard-watcher 연결 (기본 OFF 또는 바이너리 없음 시 100% 기존 Node 경로)
+  if (!_rustSidecarActive) {
+    _startNodeScreenCapture();
   }
 
   // ②-c' [골 S1c] nenova 행동순서 캡쳐 사이드카 (추가·격리 모듈, Windows 전용)
@@ -1324,6 +1359,7 @@ async function main() {
     try { resourceGovernor?.stop?.(); } catch {}
     try { workActionRecorder?.stop?.(); } catch {}
     try { perfSelfCheck?.stop?.(); } catch {}
+    try { rustCollectorSidecar?.stop?.(); } catch {}
     if (_isKstWorkHours()) {
       try {
         if (driveUploader?.isEnabled?.()) {
