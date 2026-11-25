@@ -29,23 +29,70 @@ function createKakaoDecryptRouter({
   importTokenSha256 = KAKAO_IMPORT_TOKEN_SHA256,
   salesReadTokenSha256 = process.env.NENOVA_SALES_READ_TOKEN_SHA256 || '',
   salesRoomId = process.env.NENOVA_SALES_ROOM_ID || '',
+  authenticateAdmin = null,
 }) {
   const router = express.Router();
+  const _ensuredDbs = new WeakSet();
+
+  function matchesSha256(provided, expectedHex) {
+    if (!provided || !/^[a-f0-9]{64}$/i.test(String(expectedHex || ''))) return false;
+    const providedHash = crypto.createHash('sha256').update(provided).digest('hex');
+    const expectedBytes = Buffer.from(expectedHex, 'hex');
+    const providedBytes = Buffer.from(providedHash, 'hex');
+    return expectedBytes.length === providedBytes.length && crypto.timingSafeEqual(expectedBytes, providedBytes);
+  }
 
   function requireImportToken(req, res, next) {
     const bearer = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '');
     const provided = bearer || String(req.headers['x-kakao-import-token'] || '');
-    const providedHash = crypto.createHash('sha256').update(provided).digest('hex');
-    const expectedBytes = Buffer.from(importTokenSha256, 'hex');
-    const providedBytes = Buffer.from(providedHash, 'hex');
-    if (!provided || expectedBytes.length !== providedBytes.length || !crypto.timingSafeEqual(expectedBytes, providedBytes)) {
+    if (!matchesSha256(provided, importTokenSha256)) {
       return res.status(401).json({ error: 'Unauthorized' });
     }
     next();
   }
 
+  async function _defaultAuthenticateAdmin(rawToken) {
+    if (!rawToken) return { ok: false, status: 401 };
+    try {
+      const env = require('../config/environment');
+      if (env.isMasterToken(rawToken) || env.isAdminToken(rawToken)) {
+        return { ok: true, status: 200 };
+      }
+      const auth = require('../src/auth');
+      const user = auth.verifyToken(rawToken) || (auth.verifyTokenAsync ? await auth.verifyTokenAsync(rawToken) : null);
+      if (!user) return { ok: false, status: 401 };
+      if (!env.isAdmin(user.email)) return { ok: false, status: 403 };
+      return { ok: true, status: 200 };
+    } catch {
+      return { ok: false, status: 401 };
+    }
+  }
+
+  async function requireWorkerOrAdminToken(req, res, next) {
+    const bearer = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '').trim();
+    const provided = bearer
+      || String(req.headers['x-kakao-import-token'] || '').trim()
+      || String(req.headers['x-orbit-token'] || '').trim()
+      || String(req.headers['x-api-key'] || '').trim();
+    if (!provided) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+    if (matchesSha256(provided, importTokenSha256)) {
+      return next();
+    }
+    const checkFn = typeof authenticateAdmin === 'function' ? authenticateAdmin : _defaultAuthenticateAdmin;
+    const authRes = await checkFn(provided, req);
+    if (authRes && authRes.ok) {
+      return next();
+    }
+    const code = authRes && authRes.status === 403 ? 403 : 401;
+    return res.status(code).json({ error: code === 403 ? 'Forbidden' : 'Unauthorized' });
+  }
+
   // ── 테이블 초기화 ──
   async function _ensureTables(db) {
+    if (!db || typeof db.query !== 'function') return;
+    if (_ensuredDbs.has(db)) return;
     await db.query(`
       CREATE TABLE IF NOT EXISTS kakao_messages (
         id SERIAL PRIMARY KEY,
@@ -61,7 +108,10 @@ function createKakaoDecryptRouter({
         original_encrypted TEXT,
         source TEXT DEFAULT 'import',
         created_at TIMESTAMPTZ DEFAULT NOW(),
-        imported_at TIMESTAMPTZ DEFAULT NOW()
+        imported_at TIMESTAMPTZ DEFAULT NOW(),
+        order_parsed JSONB DEFAULT NULL,
+        order_parsed_at TIMESTAMPTZ DEFAULT NULL,
+        order_parser_version SMALLINT DEFAULT NULL
       )
     `);
     await db.query(`ALTER TABLE kakao_messages ADD COLUMN IF NOT EXISTS external_message_id TEXT`);
@@ -77,6 +127,9 @@ function createKakaoDecryptRouter({
     await db.query(`ALTER TABLE kakao_messages ADD COLUMN IF NOT EXISTS timestamp_approximate BOOLEAN DEFAULT FALSE`);
     await db.query(`ALTER TABLE kakao_messages ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW()`);
     await db.query(`ALTER TABLE kakao_messages ADD COLUMN IF NOT EXISTS imported_at TIMESTAMPTZ DEFAULT NOW()`);
+    await db.query(`ALTER TABLE kakao_messages ADD COLUMN IF NOT EXISTS order_parsed JSONB DEFAULT NULL`);
+    await db.query(`ALTER TABLE kakao_messages ADD COLUMN IF NOT EXISTS order_parsed_at TIMESTAMPTZ DEFAULT NULL`);
+    await db.query(`ALTER TABLE kakao_messages ADD COLUMN IF NOT EXISTS order_parser_version SMALLINT DEFAULT NULL`);
     await db.query(`
       CREATE UNIQUE INDEX IF NOT EXISTS uq_kakao_messages_external_message_id
       ON kakao_messages(external_message_id)
@@ -102,6 +155,10 @@ function createKakaoDecryptRouter({
     await db.query(`
       CREATE INDEX IF NOT EXISTS idx_kakao_messages_created_at ON kakao_messages(created_at)
     `);
+    await db.query(`
+      CREATE INDEX IF NOT EXISTS idx_kakao_messages_chatroom_created_at ON kakao_messages(chatroom, created_at DESC)
+    `);
+    _ensuredDbs.add(db);
   }
 
   // ═══════════════════════════════════════════════════════════════
@@ -671,6 +728,207 @@ function createKakaoDecryptRouter({
   });
 
   // ═══════════════════════════════════════════════════════════════
+  // GET /api/kakao/messages/unparsed-orders — 미분석 수입방 발주 카톡 증분 조회 (발신자/개인식별자 미노출)
+  // ═══════════════════════════════════════════════════════════════
+  router.get('/messages/unparsed-orders', requireWorkerOrAdminToken, async (req, res) => {
+    res.set('Cache-Control', 'no-store');
+    try {
+      const db = getDb();
+      if (!db?.query) return res.status(503).json({ error: 'DB not available' });
+      await _ensureTables(db);
+
+      const parseBoundedInt = (val, fallback, min, max) => {
+        if (val === undefined || val === '') return fallback;
+        if (typeof val !== 'string' || !/^\d+$/.test(val.trim())) return null;
+        const n = Number(val.trim());
+        return Number.isSafeInteger(n) && n >= min && n <= max ? n : null;
+      };
+
+      const chatroom = req.query.chatroom === undefined || req.query.chatroom === ''
+        ? '수입방'
+        : String(req.query.chatroom).trim();
+      if (!chatroom || chatroom.length > 64 || !chatroom.includes('수입')) {
+        return res.status(400).json({ error: 'Invalid chatroom for import order parser' });
+      }
+
+      const days = parseBoundedInt(req.query.days, 14, 1, 60);
+      const limit = parseBoundedInt(req.query.limit, 30, 1, 100);
+      const parserVersion = parseBoundedInt(req.query.parserVersion, 1, 1, 32767);
+      const contextCount = parseBoundedInt(req.query.contextCount, 6, 0, 20);
+      if (days === null || limit === null || parserVersion === null || contextCount === null) {
+        return res.status(400).json({ error: 'Invalid query parameters' });
+      }
+
+      const sinceIso = new Date(Date.now() - days * 86400 * 1000).toISOString();
+      const unparsedRes = await db.query(
+        `SELECT id, external_message_id, chatroom, message, message_type, source, created_at, timestamp_approximate, order_parser_version
+         FROM kakao_messages
+         WHERE chatroom = $1
+           AND created_at >= $2
+           AND (order_parsed IS NULL OR COALESCE(order_parser_version, 0) < $3)
+         ORDER BY created_at ASC, id ASC
+         LIMIT $4`,
+        [chatroom, sinceIso, parserVersion, limit]
+      );
+
+      const unparsedRows = Array.isArray(unparsedRes?.rows) ? unparsedRes.rows : [];
+      if (unparsedRows.length === 0) {
+        return res.json({
+          ok: true,
+          chatroom,
+          days,
+          limit,
+          parserVersion,
+          remainingTotal: 0,
+          messages: [],
+          contextMessages: [],
+        });
+      }
+
+      const targetIds = unparsedRows.map(r => Number(r.id)).filter(n => Number.isSafeInteger(n) && n > 0);
+      const firstCreatedAt = unparsedRows[0].created_at;
+
+      const [countRes, contextRes] = await Promise.all([
+        db.query(
+          `SELECT COUNT(*) AS remaining
+           FROM kakao_messages
+           WHERE chatroom = $1
+             AND created_at >= $2
+             AND (order_parsed IS NULL OR COALESCE(order_parser_version, 0) < $3)`,
+          [chatroom, sinceIso, parserVersion]
+        ),
+        contextCount > 0
+          ? db.query(
+              `SELECT id, external_message_id, chatroom, message, message_type, source, created_at, order_parsed, order_parser_version
+               FROM kakao_messages
+               WHERE chatroom = $1
+                 AND created_at <= $2
+                 AND NOT (id = ANY($3::int[]))
+               ORDER BY created_at DESC, id DESC
+               LIMIT $4`,
+              [chatroom, firstCreatedAt, targetIds, contextCount]
+            )
+          : Promise.resolve({ rows: [] }),
+      ]);
+
+      const remainingTotal = parseInt(countRes?.rows?.[0]?.remaining, 10) || unparsedRows.length;
+      const contextRows = Array.isArray(contextRes?.rows) ? contextRes.rows.slice().reverse() : [];
+
+      res.json({
+        ok: true,
+        chatroom,
+        days,
+        limit,
+        parserVersion,
+        remainingTotal,
+        messages: unparsedRows.map(r => ({
+          id: r.id,
+          external_message_id: r.external_message_id,
+          chatroom: r.chatroom,
+          message: r.message,
+          message_type: r.message_type,
+          source: r.source,
+          created_at: r.created_at,
+          timestamp_approximate: r.timestamp_approximate,
+          order_parser_version: r.order_parser_version ?? null,
+        })),
+        contextMessages: contextRows.map(r => ({
+          id: r.id,
+          external_message_id: r.external_message_id,
+          chatroom: r.chatroom,
+          message: r.message,
+          message_type: r.message_type,
+          source: r.source,
+          created_at: r.created_at,
+          order_parsed: r.order_parsed ?? null,
+          order_parser_version: r.order_parser_version ?? null,
+        })),
+      });
+    } catch (err) {
+      console.error('[KakaoDecrypt] unparsed-orders error:', err.message);
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  });
+
+  // ═══════════════════════════════════════════════════════════════
+  // POST /api/kakao/messages/order-parsed — 증분 워커 LLM 발주 분석 결과 배치 저장
+  // ═══════════════════════════════════════════════════════════════
+  router.post('/messages/order-parsed', requireWorkerOrAdminToken, async (req, res) => {
+    res.set('Cache-Control', 'no-store');
+    try {
+      const db = getDb();
+      if (!db?.query) return res.status(503).json({ error: 'DB not available' });
+      await _ensureTables(db);
+
+      const batch = Array.isArray(req.body)
+        ? req.body
+        : (Array.isArray(req.body?.items) ? req.body.items : req.body?.results);
+      if (!Array.isArray(batch) || batch.length === 0 || batch.length > 100) {
+        return res.status(400).json({ error: 'Batch array of 1..100 items required' });
+      }
+
+      const VALID_KINDS = new Set(['addition', 'review', 'cleaned']);
+      const defaultVersionRaw = Number(req.body?.parser_version ?? req.body?.parserVersion ?? 1);
+      const defaultVersion = Number.isSafeInteger(defaultVersionRaw) && defaultVersionRaw >= 1 && defaultVersionRaw <= 32767
+        ? defaultVersionRaw
+        : 1;
+
+      let updated = 0;
+      let skipped = 0;
+
+      for (const entry of batch) {
+        if (!entry || typeof entry !== 'object') {
+          skipped++;
+          continue;
+        }
+        const parsedObj = entry.order_parsed;
+        if (!parsedObj || typeof parsedObj !== 'object' || Array.isArray(parsedObj) || !VALID_KINDS.has(parsedObj.kind)) {
+          skipped++;
+          continue;
+        }
+        const verRaw = Number(entry.parser_version ?? entry.parserVersion ?? defaultVersion);
+        const parserVersion = Number.isSafeInteger(verRaw) && verRaw >= 1 && verRaw <= 32767 ? verRaw : defaultVersion;
+        const safeJson = JSON.stringify(parsedObj).replace(/\\u0000|\u0000/g, '');
+
+        const numId = Number(entry.id);
+        const extId = typeof entry.external_message_id === 'string' ? entry.external_message_id.trim() : '';
+
+        let updRes;
+        if (Number.isSafeInteger(numId) && numId > 0) {
+          updRes = await db.query(
+            `UPDATE kakao_messages
+             SET order_parsed = $1::jsonb,
+                 order_parsed_at = NOW(),
+                 order_parser_version = $2
+             WHERE id = $3`,
+            [safeJson, parserVersion, numId]
+          );
+        } else if (extId) {
+          updRes = await db.query(
+            `UPDATE kakao_messages
+             SET order_parsed = $1::jsonb,
+                 order_parsed_at = NOW(),
+                 order_parser_version = $2
+             WHERE external_message_id = $3`,
+            [safeJson, parserVersion, extId]
+          );
+        } else {
+          skipped++;
+          continue;
+        }
+
+        if (updRes && updRes.rowCount > 0) updated++;
+        else skipped++;
+      }
+
+      res.json({ ok: true, updated, skipped, total: batch.length });
+    } catch (err) {
+      console.error('[KakaoDecrypt] order-parsed save error:', err.message);
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  });
+
+  // ═══════════════════════════════════════════════════════════════
   // GET /api/kakao/messages — 메시지 조회 (필터 지원)
   // ═══════════════════════════════════════════════════════════════
   router.get('/messages', async (req, res) => {
@@ -713,7 +971,7 @@ function createKakaoDecryptRouter({
       const total = parseInt(countRes.rows[0].total);
 
       const dataRes = await db.query(
-        `SELECT id, external_message_id, chat_id, chatroom, user_id, sender, message, message_type, source, created_at, timestamp_approximate
+        `SELECT id, external_message_id, chat_id, chatroom, user_id, sender, message, message_type, source, created_at, timestamp_approximate, order_parsed, order_parsed_at, order_parser_version
          FROM kakao_messages ${where}
          ORDER BY created_at DESC
          LIMIT ${queryLimit} OFFSET ${queryOffset}`,

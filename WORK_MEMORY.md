@@ -2572,3 +2572,12 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 3. 남은 할 일: PR CI 통과 및 @p3-verifier APPROVE 수령 후 squash 머지 → worktree 정리 → 라이브 /health & /api/daemon/rust-collector-meta 200 확인 → Wave 1 카나리 1호(DESKTOP-S4S2HMU) 라이브 검증 후 @p3-ops-s3-env에 Wave 2 확대 신호 전달.
 4. 검증 상태: 전체 Jest 38/38 스위트(388/388 테스트) 통과, node --check 전 파일 통과, pstack-verify.cjs PASS, GitHub Release HTTPS 302→200 확인.
 5. 주의/잠금: 기본값 100% OFF(rustCollector===true 또는 ORBIT_RUST_COLLECTOR=1 시만 동작), GDRIVE_SYNC_DISABLED=1|true 시 직원 PC Drive 업로더 영구 차단, Codex PR #102 파일 미수정. 연결 목표: g12, g14, g18 / 학습 반영: 없음
+
+
+## 2026-11-25 수입방 카톡 LLM 증분 발주 분석 영구 캐시 DB·API 추가
+검색어: kakao_messages order_parsed order_parsed_at order_parser_version unparsed-orders kakao-decrypt requireWorkerOrAdminToken g01 g17 g19
+1. 작업 위치: mindmap-viewer / 브랜치 feat/kakao-order-parsed-api / worktree C:/Users/USER/mv-agy-kakao-order-parsed (직원 PC 데몬 파일 0건 수정, 오직 routes/kakao-decrypt.js · tests/unit/kakao-import.test.js · WORK_MEMORY.md만 수정).
+2. 완료된 것: ① routes/kakao-decrypt.js `_ensureTables`에 `order_parsed JSONB`, `order_parsed_at TIMESTAMPTZ`, `order_parser_version SMALLINT` 자동 마이그레이션(`IF NOT EXISTS`) 및 DB 인스턴스별 WeakSet 1회 가드·복합 인덱스 추가. ② 기존 `GET /api/kakao/messages` 응답 row에 `order_parsed`, `order_parsed_at`, `order_parser_version` 추가(하위호환 100%). ③ 관리자/워커 전용(`requireWorkerOrAdminToken`, 직원 데몬 토큰 403 차단) `GET /api/kakao/messages/unparsed-orders`(발신자/user_id 미노출, 미분석 0건 즉시 반환, 직전 대화 문맥 동반) 및 `POST /api/kakao/messages/order-parsed`(JSONB NUL 제거·배치 저장) 추가 + 단위 테스트 5건 검증.
+3. 남은 할 일: PR 생성 → CI 통과 → main 머지 및 Railway 운영 헬스·신규 엔드포인트 응답 확인 후 `nenova-pm/kakao-import-order-llm-worker.js` 3단 구독 워커로 최근 14일치 백필 실행.
+4. 검증 상태: `tests/unit/kakao-import.test.js` 5/5 PASS, `node --check routes/kakao-decrypt.js` PASS, `pstack-verify.cjs` PASS.
+5. 주의/잠금: main 머지 시 Railway 자동 배포 및 데몬 동기화가 발생하므로 데몬 파일 변경 0건 엄수 및 배포 직후 `/health` 200 확인 필수. 연결 목표: g01, g17, g19 / 학습 반영: 반영예정
