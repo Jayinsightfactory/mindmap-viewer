@@ -92,6 +92,7 @@
   "overrides": {
     "passport-kakao": {
       "passport-oauth2": "^1.8.0"
-    }
+    },
+    "tar-fs": "^2.1.4"
   }
 }

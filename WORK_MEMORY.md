@@ -2581,3 +2581,13 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 3. 남은 할 일: PR 생성 → CI 통과 → main 머지 및 Railway 운영 헬스·신규 엔드포인트 응답 확인 후 `nenova-pm/kakao-import-order-llm-worker.js` 3단 구독 워커로 최근 14일치 백필 실행.
 4. 검증 상태: `tests/unit/kakao-import.test.js` 5/5 PASS, `node --check routes/kakao-decrypt.js` PASS, `pstack-verify.cjs` PASS.
 5. 주의/잠금: main 머지 시 Railway 자동 배포 및 데몬 동기화가 발생하므로 데몬 파일 변경 0건 엄수 및 배포 직후 `/health` 200 확인 필수. 연결 목표: g01, g17, g19 / 학습 반영: 반영예정
+
+## 2026-11-26 tar-fs 보안 업데이트 실패 조사 (auto-ci-45557397255)
+- 원인: html-pdf-node → puppeteer@10.4.0 이 tar-fs 2.0.0(취약)을 고정 → Dependabot 이 올릴 방법 없음(security_update_not_possible). 최상위 tar-fs 는 이미 2.1.4.
+- 조치: package.json overrides 에 "tar-fs": "^2.1.4" 추가, 락파일 재생성(puppeteer 하위 tar-fs 2.0.0 제거, 2.1.6 단일화).
+- 검색어: tar-fs, html-pdf-node, puppeteer, Dependabot security_update_not_possible, overrides
+1. 작업 위치: mindmap-viewer / inv/tar-fs-override / C:\Users\USER\mv-inv-tarfs
+2. 완료: package.json overrides 1줄, package-lock.json 정리
+3. 남은 일: CI 확인 후 PM 반영, 반영 뒤 작업 폴더 정리
+4. 검증: 락 JSON 정상·tar-fs 단일 2.1.6 확인. 실제 PDF 생성(routes/portfolio.js) 미검증 (puppeteer 는 optional·폴백 있음)
+5. 주의: 없음. 연결 목표: 해당없음 / 학습 반영: 없음
