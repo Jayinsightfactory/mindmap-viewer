@@ -2582,6 +2582,24 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 4. 검증 상태: `tests/unit/kakao-import.test.js` 5/5 PASS, `node --check routes/kakao-decrypt.js` PASS, `pstack-verify.cjs` PASS.
 5. 주의/잠금: main 머지 시 Railway 자동 배포 및 데몬 동기화가 발생하므로 데몬 파일 변경 0건 엄수 및 배포 직후 `/health` 200 확인 필수. 연결 목표: g01, g17, g19 / 학습 반영: 반영예정
 
+## 2026-11-26 tar-fs 보안 업데이트 실패 조사 (auto-ci-45557397255)
+- 원인: html-pdf-node → puppeteer@10.4.0 이 tar-fs 2.0.0(취약)을 고정 → Dependabot 이 올릴 방법 없음(security_update_not_possible). 최상위 tar-fs 는 이미 2.1.4.
+- 조치: package.json overrides 에 "tar-fs": "^2.1.4" 추가, 락파일 재생성(puppeteer 하위 tar-fs 2.0.0 제거, 2.1.6 단일화).
+- 검색어: tar-fs, html-pdf-node, puppeteer, Dependabot security_update_not_possible, overrides
+1. 작업 위치: mindmap-viewer / inv/tar-fs-override / C:\Users\USER\mv-inv-tarfs
+2. 완료: package.json overrides 1줄, package-lock.json 정리
+3. 남은 일: CI 확인 후 PM 반영, 반영 뒤 작업 폴더 정리
+4. 검증: 락 JSON 정상·tar-fs 단일 2.1.6 확인. 실제 PDF 생성(routes/portfolio.js) 미검증 (puppeteer 는 optional·폴백 있음)
+5. 주의: 없음. 연결 목표: 해당없음 / 학습 반영: 없음
+
+## 2026-11-26 배포 때마다 옛 표로 PC 에 엉뚱한 토큰을 보내던 것 + 화면 그림이 PC 설정 번호로 쌓이던 것 수리
+검색어: startup push-token PC_USER_MAP PC_NAME_MAP 옛 표 orbit_pc_links 화면 그림 spool userId 엉뚱한 번호 조현욱 박성수 송준호 정재훈
+1. 작업 위치: mindmap-viewer / cld/startup-push-pclinks / C:\Users\USER\mv-cld-startup-push. server.js 두 곳.
+2. 완료: ① 서버가 뜬 뒤 60초에 도는 「PC 토큰 일괄 보내기」가 코드에 박힌 옛 표(CAA5TA1 → 옛 자리 주인 번호, 4OM3URA → 숨김 처리된 옛 번호, NENOVA2025·HGNEA1S → 이름 ILIKE LIMIT 1)를 써서 배포마다 엉뚱한 토큰을 보냈다 → 기준을 orbit_pc_links 하나로 바꾸고(숨김 번호·pc_ 번호 제외), 보내는 설정에 userId 도 같이 실음. ② /api/vision/spool 이 보내온 userId 를 그대로 믿던 것을 /api/hook 과 같은 묶음 캐시로 덮어쓰게 함(묶음 없음·조회 실패 시 보내온 값 유지).
+3. 남은 일: 본편 반영은 사장님 승인 뒤(반영하면 전 직원 PC 가 다시 뜸). 반영 뒤 pg-commands-inspect 로 보내진 config 명령의 대상이 묶음과 같은지, 두 자리(조현욱·박성수)의 화면 캡처가 제 번호로만 들어오는지 확인.
+4. 검증: node --check 통과, pstack-verify · 단위 검사는 수정안 검사 결과 참조. 운영 반영 뒤 동작은 미검증.
+5. 주의: server.js 는 CRLF — `git -c core.autocrlf=false add` 로 커밋. 11-26 10:59 운영 큐의 옛 표발 config 명령 4건(4OM3URA · CAA5TA1 · F3HGS86 · NENOVA2025)은 관리 통로로 지웠다. 연결 목표: g01 / 학습 반영: 없음
+
 ## 2026-11-26 본편 반영 시간 규칙 + 자동 부품 갱신 묶기 (g01, g19)
 - 요약: 11-26 하루에 자동 부품 갱신 약 20건이 업무 시간(09:21~14:10)에 하나씩 합쳐져 서버·직원 PC 수집 프로그램이 그만큼 다시 떴다. AGENTS.md 에 "평일 08:30~18:20 에는 합치지 않는다" 규칙을 넣고, `.github/dependabot.yml` 로 보안 갱신을 폴더마다 한 수정안으로 묶었다(일반 판 올림은 올리지 않음).
   1. 작업 위치: mindmap-viewer / 브랜치 cld/deploy-window-dependabot / C:\Users\USER\mv-cld-deploy-window
