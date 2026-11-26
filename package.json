@@ -88,5 +88,10 @@
     "testMatch": [
       "**/tests/**/*.test.js"
     ]
+  },
+  "overrides": {
+    "passport-kakao": {
+      "passport-oauth2": "^1.8.0"
+    }
   }
 }
