@@ -2591,3 +2591,11 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 3. 남은 일: CI 확인 후 PM 반영, 반영 뒤 작업 폴더 정리
 4. 검증: 락 JSON 정상·tar-fs 단일 2.1.6 확인. 실제 PDF 생성(routes/portfolio.js) 미검증 (puppeteer 는 optional·폴백 있음)
 5. 주의: 없음. 연결 목표: 해당없음 / 학습 반영: 없음
+
+## 2026-11-26 배포 때마다 옛 표로 PC 에 엉뚱한 토큰을 보내던 것 + 화면 그림이 PC 설정 번호로 쌓이던 것 수리
+검색어: startup push-token PC_USER_MAP PC_NAME_MAP 옛 표 orbit_pc_links 화면 그림 spool userId 엉뚱한 번호 조현욱 박성수 송준호 정재훈
+1. 작업 위치: mindmap-viewer / cld/startup-push-pclinks / C:\Users\USER\mv-cld-startup-push. server.js 두 곳.
+2. 완료: ① 서버가 뜬 뒤 60초에 도는 「PC 토큰 일괄 보내기」가 코드에 박힌 옛 표(CAA5TA1 → 옛 자리 주인 번호, 4OM3URA → 숨김 처리된 옛 번호, NENOVA2025·HGNEA1S → 이름 ILIKE LIMIT 1)를 써서 배포마다 엉뚱한 토큰을 보냈다 → 기준을 orbit_pc_links 하나로 바꾸고(숨김 번호·pc_ 번호 제외), 보내는 설정에 userId 도 같이 실음. ② /api/vision/spool 이 보내온 userId 를 그대로 믿던 것을 /api/hook 과 같은 묶음 캐시로 덮어쓰게 함(묶음 없음·조회 실패 시 보내온 값 유지).
+3. 남은 일: 본편 반영은 사장님 승인 뒤(반영하면 전 직원 PC 가 다시 뜸). 반영 뒤 pg-commands-inspect 로 보내진 config 명령의 대상이 묶음과 같은지, 두 자리(조현욱·박성수)의 화면 캡처가 제 번호로만 들어오는지 확인.
+4. 검증: node --check 통과, pstack-verify · 단위 검사는 수정안 검사 결과 참조. 운영 반영 뒤 동작은 미검증.
+5. 주의: server.js 는 CRLF — `git -c core.autocrlf=false add` 로 커밋. 11-26 10:59 운영 큐의 옛 표발 config 명령 4건(4OM3URA · CAA5TA1 · F3HGS86 · NENOVA2025)은 관리 통로로 지웠다. 연결 목표: g01 / 학습 반영: 없음
