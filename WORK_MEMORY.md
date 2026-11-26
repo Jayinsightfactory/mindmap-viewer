@@ -2599,3 +2599,12 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 3. 남은 일: 본편 반영은 사장님 승인 뒤(반영하면 전 직원 PC 가 다시 뜸). 반영 뒤 pg-commands-inspect 로 보내진 config 명령의 대상이 묶음과 같은지, 두 자리(조현욱·박성수)의 화면 캡처가 제 번호로만 들어오는지 확인.
 4. 검증: node --check 통과, pstack-verify · 단위 검사는 수정안 검사 결과 참조. 운영 반영 뒤 동작은 미검증.
 5. 주의: server.js 는 CRLF — `git -c core.autocrlf=false add` 로 커밋. 11-26 10:59 운영 큐의 옛 표발 config 명령 4건(4OM3URA · CAA5TA1 · F3HGS86 · NENOVA2025)은 관리 통로로 지웠다. 연결 목표: g01 / 학습 반영: 없음
+
+## 2026-11-26 본편 반영 시간 규칙 + 자동 부품 갱신 묶기 (g01, g19)
+- 요약: 11-26 하루에 자동 부품 갱신 약 20건이 업무 시간(09:21~14:10)에 하나씩 합쳐져 서버·직원 PC 수집 프로그램이 그만큼 다시 떴다. AGENTS.md 에 "평일 08:30~18:20 에는 합치지 않는다" 규칙을 넣고, `.github/dependabot.yml` 로 보안 갱신을 폴더마다 한 수정안으로 묶었다(일반 판 올림은 올리지 않음).
+  1. 작업 위치: mindmap-viewer / 브랜치 cld/deploy-window-dependabot / C:\Users\USER\mv-cld-deploy-window
+  2. 완료: `.github/dependabot.yml` 신규(루트·nenova-erp-ui·vscode-extension 3곳), `AGENTS.md` 「이 저장소의 함정」에 반영 시간 줄 추가
+  3. 남은 할 일: 업무 시간 밖에 반영. 반영 뒤 다음 보안 갱신이 묶여 올라오는지 확인. 저장소 보호 설정(시간대 잠금)은 바꾸지 않았다 — 필요하면 사장님 결정
+  4. 검증 상태: yaml 형식 확인, 서버 코드 변경 없음. 미검증: 깃허브가 묶음 설정을 실제로 적용하는지(다음 보안 경고 때 확인)
+  5. 주의/잠금: 없음. 연결 목표: g01, g19 / 학습 반영: 없음
+- 검색어: 본편 반영 시간 18:20 08:30 dependabot 묶기 security-updates groups 자동 부품 갱신 업무 시간 재시작

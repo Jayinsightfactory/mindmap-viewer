@@ -1,0 +1,47 @@
+# 자동 부품 갱신(Dependabot) 묶기 — 2026-11-26
+# 이 저장소는 본편(main)에 반영될 때마다 수집 서버가 다시 뜨고 직원 PC 수집 프로그램도 새 판을 받는다.
+# 그래서 갱신 수정안이 하나씩 따로 올라와 하나씩 반영되면 그 횟수만큼 업무 시간에 다시 뜬다(11-26 하루 약 20회).
+# - 보안 갱신: 폴더마다 한 수정안으로 묶는다(applies-to: security-updates).
+# - 일반 판 올림: 올리지 않는다(open-pull-requests-limit: 0). 필요하면 사람이 묶어서 올린다.
+# 반영 시간 규칙은 AGENTS.md 「본편 반영 시간」 참고.
+version: 2
+updates:
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "saturday"
+      time: "19:00"
+      timezone: "Asia/Seoul"
+    open-pull-requests-limit: 0
+    groups:
+      security-all:
+        applies-to: security-updates
+        patterns:
+          - "*"
+  - package-ecosystem: "npm"
+    directory: "/nenova-erp-ui"
+    schedule:
+      interval: "weekly"
+      day: "saturday"
+      time: "19:00"
+      timezone: "Asia/Seoul"
+    open-pull-requests-limit: 0
+    groups:
+      security-all:
+        applies-to: security-updates
+        patterns:
+          - "*"
+  - package-ecosystem: "npm"
+    directory: "/vscode-extension"
+    schedule:
+      interval: "weekly"
+      day: "saturday"
+      time: "19:00"
+      timezone: "Asia/Seoul"
+    open-pull-requests-limit: 0
+    groups:
+      security-all:
+        applies-to: security-updates
+        patterns:
+          - "*"
