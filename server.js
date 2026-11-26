@@ -4942,8 +4942,18 @@ function _spoolSafeFile(name) { return /^[A-Za-z0-9._-]+\.json$/.test(name) ? na
 app.post('/api/vision/spool', async (req, res) => {
   const token = (req.headers.authorization || '').replace('Bearer ', '').trim();
   if (!token.startsWith('orbit_')) return res.status(401).json({ error: 'orbit token required' });
-  const { imageBase64, app: appName, hostname, windowTitle, userId, ts, trigger, captureId, excel, lastClick } = req.body || {};
-  if (!imageBase64 || !userId) return res.status(400).json({ error: 'imageBase64, userId required' });
+  const { imageBase64, app: appName, hostname, windowTitle, userId: _bodyUserId, ts, trigger, captureId, excel, lastClick } = req.body || {};
+  if (!imageBase64 || !_bodyUserId) return res.status(400).json({ error: 'imageBase64, userId required' });
+  // [2026-11-26] 화면 그림도 컴퓨터-번호 묶음(orbit_pc_links)을 따른다. PC 설정 파일에 옛 번호가 남아 있으면
+  //   그림만 엉뚱한 번호로 쌓였다(11-24~25 조현욱·박성수 자리). 묶음이 없거나 조회가 실패하면 보내온 번호를 그대로 쓴다.
+  let userId = _bodyUserId;
+  try {
+    const _spoolPool = dbModule.getDb ? dbModule.getDb() : null;
+    if (_spoolPool && process.env.DATABASE_URL && hostname) {
+      const _pl = await _pcLinkCache.resolve(_spoolPool, hostname);
+      if (_pl && _pl.userId && _pl.userId !== userId) { console.warn(`[spool] pc_link override: ${hostname} body=${String(userId).slice(0, 10)} → ${String(_pl.userId).slice(0, 10)}`); userId = _pl.userId; }
+    }
+  } catch {}
   // [2026-10-14 exeFullRes] nenova.exe 창 원본 JPEG — 비전 스풀(소진·삭제)과 분리해 보관(OmniParser용). 사용자당 300장 상한(≈90MB)
   if (req.body.fullRes) {
     try {
@@ -10000,33 +10010,20 @@ async function startServer() {
     const _pool = dbModule.getDb ? dbModule.getDb() : null;
     if (_pool?.query && process.env.DATABASE_URL) {
       // PC별 userId 직접 매핑 (알고 있는 것만)
-      const PC_USER_MAP = {
-        '이재만':           'MNH03H73690BB2CD82', // jaeyong lim (임재용)
-        'DESKTOP-T09911T':  'MNMRX6SR07F5FF7C0C', // 강현우
-        'PAPI-CHULO-PC':    'MNMRVD11EDCCF6E7CE', // wbk 원빈킴
-        'Papi-Chulo-PC':    'MNMRVD11EDCCF6E7CE', // wbk (대소문자 변형)
-        'DESKTOP-CAA5TA1':  'MNMR8568CC8950F81D', // hoon J (훈제이) — 전용 PC
-        'DESKTOP-L0C2IOT':  'MNMSAQJD78E544A631', // 강명훈
-        'DESKTOP-4OM3URA':  'MNSKAQSQ649D9E5936', // Luke 전용 PC
-      };
-      // PC별 이름 매핑 → PG orbit_auth_users에서 user_id 동적 조회
-      // ※ PC_USER_MAP에 이미 있는 호스트명은 여기서 제외해야 덮어쓰기 방지
-      const PC_NAME_MAP = {
-        'NENOVA2025':       '설연주',
-        'NEONVA':           '설연주',
-        'neonva':           '설연주', // 소문자 변형
-        'DESKTOP-HGNEA1S':  '박성수',
-      };
-      // 이름으로 userId 조회하여 PC_USER_MAP에 추가 (이미 매핑된 호스트는 스킵)
-      for (const [hostname, name] of Object.entries(PC_NAME_MAP)) {
-        if (PC_USER_MAP[hostname]) continue; // 직접 매핑 우선 — 덮어쓰기 방지
-        try {
-          const { rows: ur } = await _pool.query(
-            `SELECT id FROM orbit_auth_users WHERE name ILIKE $1 LIMIT 1`, [`%${name}%`]
-          );
-          if (ur.length > 0) PC_USER_MAP[hostname] = ur[0].id;
-        } catch {}
-      }
+      // [2026-11-26] 코드에 박아 둔 옛 표(PC_USER_MAP · PC_NAME_MAP)를 없앴다. 자리가 바뀐 컴퓨터에 옛 사람의 토큰을
+      //   배포 때마다 다시 보내(예: 조현욱 자리 → 정재훈 번호, 송준호 자리 → 숨김 처리된 옛 번호, 정재훈 자리 → 이름이 같은 줄의 다른 사람)
+      //   화면 그림·일부 기록이 엉뚱한 번호로 쌓였다. 기준은 관리자가 묶어 둔 orbit_pc_links 하나만 쓴다.
+      //   숨김 목록 번호 · 임시 번호(pc_)로 묶인 컴퓨터는 건드리지 않는다.
+      const PC_USER_MAP = {};
+      try {
+        const _hiddenUsers = require('./src/hidden-users');
+        const { rows: _linkRows } = await _pool.query(`SELECT hostname, user_id FROM orbit_pc_links`);
+        for (const r of _linkRows) {
+          const id = String(r.user_id || '');
+          if (!r.hostname || !id || id.startsWith('pc_') || _hiddenUsers.isHiddenValue(id)) continue;
+          PC_USER_MAP[r.hostname] = id;
+        }
+      } catch (e) { console.warn('[startup/push-token] pc_links 조회 실패 — 이번에는 보내지 않음:', e.message); }
       const DEFAULT_USER_ID = null; // 매핑 없는 PC는 건드리지 않음
       const SERVER_URL = process.env.SERVER_URL || 'https://mindmap-viewer-production-adb2.up.railway.app';
       // 과거 이벤트를 보낸 모든 PC 호스트명 조회 (동적 — 하드코딩 불필요)
@@ -10076,7 +10073,7 @@ async function startServer() {
         if (!userId) continue; // 매핑 없는 PC는 건드리지 않음
         const token = await getTokenForUser(userId).catch(() => null);
         if (!token) continue;
-        const cmdData = { token, serverUrl: SERVER_URL };
+        const cmdData = { token, userId, serverUrl: SERVER_URL }; // userId 도 같이 — 화면 그림은 PC 설정의 userId 로 올라온다
         // config 명령만 등록 — 데몬이 파일 업데이트 후 재시작 없이 live config 반영
         // (restart INSERT 제거 이유: 매 server 재배포마다 모든 데몬이 process.exit →
         //  매분 재시작 loop의 원인이었음. config만으로 충분)
