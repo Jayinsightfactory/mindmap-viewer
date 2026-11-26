@@ -4,6 +4,7 @@
 
 ## 이 저장소의 함정
 - **main push = 즉시 배포**(Railway) + 직원 PC 데몬이 git 동기화로 재시작될 수 있음. 커밋은 바로 push(로컬 미푸시 커밋은 `~/.orbit/code-sync.ps1`이 지움).
+- **본편 반영 시간(2026-11-26 사장님 위임)**: 이 저장소의 수정안은 검사를 통과해도 **평일 08:30~18:20 사이에는 본편에 합치지 않는다.** 합칠 때마다 서버가 2~4분 끊기고 전 직원 PC 수집 프로그램이 다시 뜬다. 18:20~08:30 또는 주말에 **모아서 한 번에** 합친다. 전역 규칙의 "검사 통과 시 묻지 말고 반영"보다 이 줄이 우선한다. 예외는 수집이 멈춘 장애를 고치는 수정뿐이며, 그때도 사장님께 먼저 알린다. 자동 부품 갱신은 `.github/dependabot.yml`에서 폴더마다 한 수정안으로 묶는다(하나씩 따로 합치지 말 것).
 - 재배포 전 `orbit_auth_tokens` 규모 확인(콜드부팅 OOM 이력). 502/크래시루프면 `railway logs`로 OOM 먼저.
 - 직원 PC 데몬 코드에서 COM `New-Object` 금지(GetActiveObject만). 창 띄우는 명령(cmd/nssm 창) 금지 → `Invoke-NssmHidden` 패턴.
 - 원격 exec 는 `powershell -EncodedCommand <b64>`로(워커가 `-Command "<원문>"`으로 감싸 여러 줄 스크립트가 조용히 깨짐). hostname은 lifeline에 찍힌 표기 그대로(대소문자 큐 분열).

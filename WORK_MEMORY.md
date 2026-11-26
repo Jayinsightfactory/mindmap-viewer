@@ -2581,3 +2581,12 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 3. 남은 할 일: PR 생성 → CI 통과 → main 머지 및 Railway 운영 헬스·신규 엔드포인트 응답 확인 후 `nenova-pm/kakao-import-order-llm-worker.js` 3단 구독 워커로 최근 14일치 백필 실행.
 4. 검증 상태: `tests/unit/kakao-import.test.js` 5/5 PASS, `node --check routes/kakao-decrypt.js` PASS, `pstack-verify.cjs` PASS.
 5. 주의/잠금: main 머지 시 Railway 자동 배포 및 데몬 동기화가 발생하므로 데몬 파일 변경 0건 엄수 및 배포 직후 `/health` 200 확인 필수. 연결 목표: g01, g17, g19 / 학습 반영: 반영예정
+
+## 2026-11-26 본편 반영 시간 규칙 + 자동 부품 갱신 묶기 (g01, g19)
+- 요약: 11-26 하루에 자동 부품 갱신 약 20건이 업무 시간(09:21~14:10)에 하나씩 합쳐져 서버·직원 PC 수집 프로그램이 그만큼 다시 떴다. AGENTS.md 에 "평일 08:30~18:20 에는 합치지 않는다" 규칙을 넣고, `.github/dependabot.yml` 로 보안 갱신을 폴더마다 한 수정안으로 묶었다(일반 판 올림은 올리지 않음).
+  1. 작업 위치: mindmap-viewer / 브랜치 cld/deploy-window-dependabot / C:\Users\USER\mv-cld-deploy-window
+  2. 완료: `.github/dependabot.yml` 신규(루트·nenova-erp-ui·vscode-extension 3곳), `AGENTS.md` 「이 저장소의 함정」에 반영 시간 줄 추가
+  3. 남은 할 일: 업무 시간 밖에 반영. 반영 뒤 다음 보안 갱신이 묶여 올라오는지 확인. 저장소 보호 설정(시간대 잠금)은 바꾸지 않았다 — 필요하면 사장님 결정
+  4. 검증 상태: yaml 형식 확인, 서버 코드 변경 없음. 미검증: 깃허브가 묶음 설정을 실제로 적용하는지(다음 보안 경고 때 확인)
+  5. 주의/잠금: 없음. 연결 목표: g01, g19 / 학습 반영: 없음
+- 검색어: 본편 반영 시간 18:20 08:30 dependabot 묶기 security-updates groups 자동 부품 갱신 업무 시간 재시작
