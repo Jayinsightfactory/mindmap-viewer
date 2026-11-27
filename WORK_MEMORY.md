@@ -2608,3 +2608,9 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
   4. 검증 상태: yaml 형식 확인, 서버 코드 변경 없음. 미검증: 깃허브가 묶음 설정을 실제로 적용하는지(다음 보안 경고 때 확인)
   5. 주의/잠금: 없음. 연결 목표: g01, g19 / 학습 반영: 없음
 - 검색어: 본편 반영 시간 18:20 08:30 dependabot 묶기 security-updates groups 자동 부품 갱신 업무 시간 재시작
+
+## 2026-11-28 카톡 시트 2호 전환 — 읽기를 2호로, 1호는 아카이브로 되돌림
+- 배경: 1호 `네노바 AI 학습 데이터`(1pXLVZ…)가 1천만 셀의 96.5%에 도달. 운영 PC(nenovakakao)는 #62 로 `GSHEET_TARGET_SPREADSHEET_ID` 만 바꿔 2호로 옮길 수 있게 되어 있는데, 이 저장소는 `routes/process-mining.js` 에 ID 가 박혀 있어 2호에 데이터가 쌓여도 화면에 안 나왔다.
+- 2호 `네노바 AI 학습 데이터 2호` = `1x7kGxLMOgHcf4_120vDXRa77-2Pi3VKXs2NlBe-4dAE` (35개 탭, 같은 헤더).
+- 변경: `src/kakao-sheet-target.js` 신규 → `resolveKakaoSheetIds()` 가 `[2호, 1호]` 를 돌려주고 `KAKAO_SHEET_ID`/`GOOGLE_SHEET_URL`/`KAKAO_ARCHIVE_SHEET_ID` 로 덮어쓸 수 있다. `_fetchKakaoSheetData` 와 `_fetchFullKakaoTabs` 는 2호에서 먼저 읽고 행이 없으면 1호에서 읽는다. 시트 진단 라우트의 SHEET_ID 도 같은 값 사용.
+- 검증: `tests/kakao-sheet-target.test.js`(jest), 운영 PC 쪽은 `.env` 의 `GSHEET_TARGET_SPREADSHEET_ID` 한 줄만 바꾸면 된다.
