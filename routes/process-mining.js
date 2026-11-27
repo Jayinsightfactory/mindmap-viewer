@@ -22,6 +22,7 @@
 const express = require('express');
 const path = require('path');
 const fs = require('fs');
+const { resolveKakaoSheetIds } = require('../src/kakao-sheet-target');
 
 // ── 상수 ─────────────────────────────────────────────────────────────────────
 const SESSION_GAP_MS  = 5 * 60 * 1000;   // 5분 이상 공백 → 새 세션
@@ -1836,7 +1837,7 @@ function createProcessMining({ getDb, reportSheet }) {
     try {
       const https = require('https');
       const crypto = require('crypto');
-      const SHEET_ID = '1pXLVZqiMwWt6Vh0IhWwASBvgLtZqLnbHXMWqOLNwAXU';
+      const SHEET_ID = KAKAO_SHEET_ID;
 
       let cred;
       try { cred = await _parseServiceAccountJson(); } catch (e) { return res.json({ error: e.message }); }
@@ -2660,7 +2661,17 @@ function createProcessMining({ getDb, reportSheet }) {
 }
 
 // ── 카톡 시트 전체 탭 읽기 (total-analysis 전용) ────────────────────────────
+// 2호에서 먼저 읽고, 모든 탭이 비었으면 1호(아카이브)에서 읽는다.
 async function _fetchFullKakaoTabs(token) {
+  let last = { tabs: {}, truncation: {} };
+  for (const sheetId of KAKAO_SHEET_IDS) {
+    last = await _fetchFullKakaoTabsFrom(token, sheetId);
+    if (Object.values(last.tabs).some(rows => Array.isArray(rows) && rows.length)) return { ...last, sheetId };
+  }
+  return last;
+}
+
+async function _fetchFullKakaoTabsFrom(token, sheetId) {
   const https = require('https');
   // cap = 쿼리 상한(range 마지막 행). 데이터행이 cap-1(헤더 제외)에 도달하면 절단(truncated)으로 표기.
   const TABS = [
@@ -2678,7 +2689,7 @@ async function _fetchFullKakaoTabs(token) {
     const r = encodeURIComponent(`${name}!${range}`);
     const data = await new Promise(resolve => {
       https.get({ hostname:'sheets.googleapis.com',
-        path:`/v4/spreadsheets/${KAKAO_SHEET_ID}/values/${r}`,
+        path:`/v4/spreadsheets/${sheetId}/values/${r}`,
         headers:{ Authorization:`Bearer ${token}` } }, res => {
         let d=''; res.on('data',c=>d+=c);
         res.on('end',()=>{ try{resolve(JSON.parse(d));}catch{resolve(null);} });
@@ -2839,7 +2850,8 @@ async function _parseServiceAccountJson() {
 }
 
 // ── 구글시트에서 카톡 분석 데이터 읽기 ───────────────────────────────────────
-const KAKAO_SHEET_ID = '1pXLVZqiMwWt6Vh0IhWwASBvgLtZqLnbHXMWqOLNwAXU';
+const KAKAO_SHEET_IDS = resolveKakaoSheetIds();
+const KAKAO_SHEET_ID = KAKAO_SHEET_IDS[0];
 let _kakaoSheetCache = null;
 let _kakaoSheetCacheTs = 0;
 
@@ -2870,16 +2882,32 @@ async function _fetchKakaoSheetData() {
   });
   if (!token) { console.warn('[kakao-sheet] 토큰 발급 실패'); return []; }
 
+  // 2호에서 먼저 읽고, 읽은 행이 없으면 1호(아카이브)에서 읽는다.
+  for (const sheetId of KAKAO_SHEET_IDS) {
+    const events = await _readKakaoSheetTabs(token, sheetId);
+    if (events && events.length) {
+      console.log(`[kakao-sheet] ${events.length}행 읽음 (${sheetId})`);
+      _kakaoSheetCache = events;
+      _kakaoSheetCacheTs = Date.now();
+      return events;
+    }
+  }
+  return [];
+}
+
+// 시트 한 벌(2호 또는 1호)에서 핵심 탭들을 읽어 행 배열로 돌려준다. 읽을 게 없으면 빈 배열.
+async function _readKakaoSheetTabs(token, sheetId) {
+  const https = require('https');
   // 시트 탭 목록 조회
   const sheetMeta = await new Promise((resolve) => {
-    https.get({ hostname: 'sheets.googleapis.com', path: `/v4/spreadsheets/${KAKAO_SHEET_ID}?fields=sheets.properties`, headers: { Authorization: `Bearer ${token}` } }, res => {
+    https.get({ hostname: 'sheets.googleapis.com', path: `/v4/spreadsheets/${sheetId}?fields=sheets.properties`, headers: { Authorization: `Bearer ${token}` } }, res => {
       res.setEncoding('utf8'); let d = ''; res.on('data', c => d += c); res.on('end', () => { try { resolve(JSON.parse(d)); } catch { resolve(null); } });
     }).on('error', () => resolve(null));
   });
 
-  if (!sheetMeta?.sheets) { console.warn('[kakao-sheet] 시트 메타 조회 실패:', JSON.stringify(sheetMeta)?.substring(0, 200)); return []; }
+  if (!sheetMeta?.sheets) { console.warn(`[kakao-sheet] ${sheetId} 메타 조회 실패:`, JSON.stringify(sheetMeta)?.substring(0, 200)); return []; }
   const tabs = sheetMeta.sheets.map(s => s.properties?.title).filter(Boolean);
-  console.log('[kakao-sheet] 탭 목록:', tabs.join(', '));
+  console.log(`[kakao-sheet] ${sheetId} 탭 목록:`, tabs.join(', '));
 
   // 핵심 탭 읽기: 메시지분류, 비즈니스이벤트, 의사결정추적, 파이프라인보고서
   const allEvents = [];
@@ -2891,7 +2919,7 @@ async function _fetchKakaoSheetData() {
   const TAIL = parseInt(process.env.KAKAO_SHEET_TAIL_ROWS) || 5000;
   const rowCountOf = Object.fromEntries(sheetMeta.sheets.map(s => [s.properties?.title, s.properties?.gridProperties?.rowCount || 0]));
   const getValues = (rangeStr) => new Promise((resolve) => {
-    https.get({ hostname: 'sheets.googleapis.com', path: `/v4/spreadsheets/${KAKAO_SHEET_ID}/values/${encodeURIComponent(rangeStr)}`, headers: { Authorization: `Bearer ${token}` } }, res => {
+    https.get({ hostname: 'sheets.googleapis.com', path: `/v4/spreadsheets/${sheetId}/values/${encodeURIComponent(rangeStr)}`, headers: { Authorization: `Bearer ${token}` } }, res => {
       res.setEncoding('utf8');
       let d = ''; res.on('data', c => d += c); res.on('end', () => { try { resolve(JSON.parse(d)); } catch { resolve(null); } });
     }).on('error', () => resolve(null));
@@ -2914,8 +2942,6 @@ async function _fetchKakaoSheetData() {
     }
   }
 
-  _kakaoSheetCache = allEvents;
-  _kakaoSheetCacheTs = Date.now();
   return allEvents;
 }
 
