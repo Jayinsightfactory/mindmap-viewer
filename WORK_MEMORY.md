@@ -2608,3 +2608,12 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
   4. 검증 상태: yaml 형식 확인, 서버 코드 변경 없음. 미검증: 깃허브가 묶음 설정을 실제로 적용하는지(다음 보안 경고 때 확인)
   5. 주의/잠금: 없음. 연결 목표: g01, g19 / 학습 반영: 없음
 - 검색어: 본편 반영 시간 18:20 08:30 dependabot 묶기 security-updates groups 자동 부품 갱신 업무 시간 재시작
+
+## 2026-11-27 카톡 인텔리전스(`public/kakao-intel.html`) 무렉(Zero-Lag) 4원칙 및 Anti-AI Slop 적용 (g01, g03, g19)
+- 요약: 사장님 지시("카톡데이터를 보여주는 모든 기존 기능들에도 적용되어야해")에 따라 `public/kakao-intel.html` 전 탭(조기경보·이슈 대응보드·거래처 대응·직원 역량매트릭스)에 100행 초기 렌더링 상한+`[더 보기 (+100건)]` 페이지네이션, 실시간 키워드 필터(`#search`), 5분 클라이언트 응답 캐시(`?fresh=1` 새로고침 우회), `content-visibility: auto`, `Pretendard` 한글 서체 스택·`tabular-nums` 및 장식성 이모지 제거를 적용했다.
+  1. 작업 위치: `mindmap-viewer` / 브랜치 `feat/kakao-intel-zerolag` / `C:\Users\USER\mv-agy-kakao-intel-zerolag` (`public/kakao-intel.html`, `WORK_MEMORY.md`)
+  2. 완료: 4개 대용량 테이블 100건 페이지네이션(`loadMoreSection`) + 즉시 검색(`#search`) + `tbody tr:not(.det-row)` `content-visibility: auto` + 5분 TTL 캐시(`_intelCache`) + `Pretendard`·`tabular-nums`·슬롭 이모지 제거
+  3. 남은 할 일: 평일 업무 시간(08:30~18:20) 본편 병합 금지 규칙에 따라 PR만 열어두고 18:20 이후 또는 주말 일괄 반영 시간에 머지
+  4. 검증 상태: `pstack-verify.cjs` 5/5 PASS 및 HTML 스크립트 구문 검증 완료
+  5. 주의/잠금: 평일 08:30~18:20 `main` 머지 금지 준수(직원 PC 수집 데몬 재시작 방지). 연결 목표: g01, g03, g19 / 학습 반영: 있음
+- 검색어: kakao-intel 카톡 인텔리전스 무렉 Zero-Lag 100건 페이지네이션 content-visibility tabular-nums Pretendard
