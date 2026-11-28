@@ -407,6 +407,15 @@ function resolveAdmin(req) {
   };
 }
 
+// [2026-11-28 보안] 관리자 전용 주소의 자격 확인 — 규칙은 src/admin-gate.js 한 곳에 둔다.
+// 캡처 썸네일(_visionThumbAdminOk)과 카톡 원문·인텔 집계(/api/kakao/*, /api/admin/kakao-intel)가 같이 쓴다.
+// 지금까지 _visionThumbAdminOk 안에 있던 판단을 그대로 옮긴 것이라, 이미 잠겨 있던 주소의 통과·거부는 바뀌지 않는다.
+const _adminGate = require('./src/admin-gate')({
+  isMasterToken: (t) => env.isMasterToken(t),
+  isAdminToken: (t) => env.isAdminToken(t),
+  isAdminReqAsync: (req) => isAdminReqAsync(req),
+});
+
 const app    = express();
 app.set('trust proxy', 1);
 const server = http.createServer(app);
@@ -1604,6 +1613,9 @@ app.get('/api/admin/judgment-map', async (req, res) => {
 //   kakao-intel-worker(Claude CLI)가 만든 type='kakao.intel' 이벤트를 롤업.
 app.get('/api/admin/kakao-intel', async (req, res) => {
   try {
+    // [2026-11-28 보안] 거래처·직원 이름이 담긴 집계라 주소를 아는 사람에게 열지 않는다(관리자만).
+    const _gate = await _adminGate.check(req);
+    if (_gate) return res.status(_gate).json({ error: _gate === 401 ? 'unauthorized' : 'admin only' });
     const pool = dbModule.getDb(); if (!pool?.query) return res.json({ error: 'DB 없음' });
     const hours = Math.min(parseInt(req.query.hours) || 720, 2160);
     // [2026-07-31] 캐시 — kakao.intel 5000건 집계가 무거워(>100s) 관리자뷰 502/타임아웃. 5분 인메모리 TTL.
@@ -5037,12 +5049,7 @@ app.get('/api/vision/spool/stat', (req, res) => {
 // [2026-09-28] 캡처 썸네일(직원 화면·필드값) = 관리자 전용. 무인증 노출 차단.
 // Bearer 헤더(서버-서버: nenovaweb /my-work) 또는 ?token= (app.html·cctv.html 의 <img>/fetch 가 쿼리로 붙임) 둘 다 허용.
 async function _visionThumbAdminOk(req) {
-  const raw = ((req.headers.authorization || '').replace(/^Bearer\s+/i, '').trim()) || String(req.query.token || '').trim();
-  if (!raw) return 401;
-  if (env.isMasterToken(raw) || env.isAdminToken(raw)) return 0;
-  const fake = { headers: { ...req.headers, authorization: 'Bearer ' + raw }, query: req.query };
-  try { if (await isAdminReqAsync(fake)) return 0; } catch {}
-  return 403;
+  return _adminGate.check(req); // 판단 규칙은 src/admin-gate.js 한 곳(2026-11-28 통합)
 }
 
 // [2026-09-29] 네노바웹 /my-work 용 12시간 열람 토큰 — nenovaSS3 로그인만으로 Orbit 화면(통합본 등)이 보이게.
@@ -9171,7 +9178,8 @@ app.use('/api/mining', require('./routes/process-mining')({ getDb: dbModule.getD
 
 // ─── 카카오톡 복호화 + 메시지 분석 ──────────────────────────────────────────
 // [2026-09-29 보안] 카톡 원문 조회는 관리자 토큰만(워커는 owner 토큰 사용). /import 등 쓰기는 라우터 자체 토큰 검사 유지
-app.get('/api/kakao/messages', async (req, res, next) => { const code = await _visionThumbAdminOk(req); if (code) return res.status(code).json({ error: code === 401 ? 'unauthorized' : 'admin only' }); next(); });
+// [2026-11-28 보안] 채팅방 목록·통계도 같은 자료라 같은 자격으로 잠근다(방 이름·직원별 글 수가 그대로 드러났다).
+app.get(['/api/kakao/messages', '/api/kakao/chatrooms', '/api/kakao/stats'], _adminGate.middleware);
 app.use('/api/kakao', require('./routes/kakao-decrypt')({ getDb: dbModule.getDb }));
 // 해외 메신저(위챗·왓츠앱) 대화방 글 수신 — 카톡 표와 따로 둔다(2026-11-23). 조회 2종은 관리자만, 수신은 수신 토큰.
 app.get(['/api/messenger/messages', '/api/messenger/rooms'], async (req, res, next) => { const code = await _visionThumbAdminOk(req); if (code) return res.status(code).json({ error: code === 401 ? 'unauthorized' : 'admin only' }); next(); });
