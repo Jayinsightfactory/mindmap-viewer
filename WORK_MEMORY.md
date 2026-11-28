@@ -2623,5 +2623,5 @@ rg -n --ignore-case "검색어" WORK_MEMORY.md WORKSPACE.md PROGRESS.md CLAUDE.m
 1. 작업 위치: mindmap-viewer / 가지 fix/kakao-endpoints-auth / PR 초안(합치지 않음).
 2. 완료: GET /api/admin/kakao-intel·/api/kakao/chatrooms·/api/kakao/stats 세 주소가 토큰 없이 응답하던 것을 관리자 전용으로 잠갔다. 판단 규칙을 src/admin-gate.js로 모아(마스터·관리자 API 토큰·관리자 이메일 사용자 토큰, Bearer 또는 ?token=, 401/403 구분) 썸네일 보호(_visionThumbAdminOk)와 같이 쓰게 했고, 인텔 주소는 5분 캐시를 읽기 전에, 카톡 두 주소는 라우터를 붙이기 전에 같은 줄에서 막는다. tests/unit/admin-gate.test.js 16건 추가, 전체 407건 통과. 부르는 쪽이 붙일 헤더는 docs/kakao-admin-auth.md에 정리.
 3. 남은 일: ① 사장님 승인 뒤 본편 반영(main push = 즉시 배포) ② 지휘실(nenova-hq tools/checklist-reporter.cjs)이 그 두 주소를 헤더 없이 불러 「인증 실패」로 뜬다 — Authorization 한 줄 + ~/.orbit-config.json 토큰 읽기 필요 ③ /api/kakao/research는 숫자만 내보내 손대지 않음(필요하면 따로).
-4. 검증: node --check server.js, npx jest 전체 39묶음 407건 통과(실패 0). 새 테스트에 토큰 없음 401·모르는 토큰 403·관리자 토큰 200·거부 시 DB 조회 0건 확인. 미검증: 운영 배포 뒤 실제 호출(관리자 토큰 통과, 무토큰 401)과 카톡 워커·화면 동작.
+4. 검증: node --check server.js, npx jest 전체 39묶음 407건 통과(실패 0). 로컬 기동 실제 호출 — 토큰 없이 chatrooms·stats·kakao-intel 401, ADMIN_TOKENS 토큰으로 200(DB 없는 로컬이라 «DB 없음» 응답까지), ?token= 200, 모르는 토큰 403, 원래 잠겨 있던 messages·vision/thumbnail 은 401 그대로. 지휘실 점검기 고침안은 가짜 서버로 «토큰 있으면 정상·없으면 인증 실패» 확인. 미검증: 배포 뒤 운영 호출과 카톡 워커·화면 동작.
 5. 주의: main push는 Railway 배포와 직원 PC 재시작을 부르므로 승인 전에는 합치지 않는다. 운영 DB 쓰기·원격 명령 없음. 연결 목표: g01·g03 / 학습 반영: 없음
